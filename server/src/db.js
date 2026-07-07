@@ -1,0 +1,114 @@
+import Database from 'better-sqlite3';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+fs.mkdirSync(dataDir, { recursive: true });
+
+const db = new Database(path.join(dataDir, 'app.db'));
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  avatar_color TEXT NOT NULL,
+  title TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS channels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  is_private INTEGER NOT NULL DEFAULT 0,
+  is_dm INTEGER NOT NULL DEFAULT 0,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS channel_members (
+  channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (channel_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, id);
+
+CREATE TABLE IF NOT EXISTS workflows (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS workflow_stages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  is_done INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_stages_workflow ON workflow_stages(workflow_id, position);
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+  stage_id INTEGER NOT NULL REFERENCES workflow_stages(id),
+  assignee_id INTEGER REFERENCES users(id),
+  creator_id INTEGER NOT NULL REFERENCES users(id),
+  priority TEXT NOT NULL DEFAULT 'medium',
+  due_date TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_workflow ON tasks(workflow_id);
+
+CREATE TABLE IF NOT EXISTS task_comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS task_activity (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  action TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+
+// Seed the shared #general channel and a default workflow on first run.
+const seed = db.transaction(() => {
+  if (!db.prepare(`SELECT id FROM channels WHERE name = 'general' AND is_dm = 0`).get()) {
+    db.prepare(`INSERT INTO channels (name, description) VALUES ('general', 'Company-wide announcements and chatter')`).run();
+  }
+  if (!db.prepare(`SELECT id FROM workflows LIMIT 1`).get()) {
+    const wf = db.prepare(`INSERT INTO workflows (name, description) VALUES ('Default', 'Standard task flow')`).run();
+    const stage = db.prepare(`INSERT INTO workflow_stages (workflow_id, name, position, is_done) VALUES (?, ?, ?, ?)`);
+    ['To Do', 'In Progress', 'Review'].forEach((name, i) => stage.run(wf.lastInsertRowid, name, i, 0));
+    stage.run(wf.lastInsertRowid, 'Done', 3, 1);
+  }
+});
+seed();
+
+export default db;
