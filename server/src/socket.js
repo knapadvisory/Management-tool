@@ -1,5 +1,6 @@
 import db from './db.js';
 import { verifyToken, publicUser } from './auth.js';
+import { serializeMessage, recordMentions, linkAttachments } from './messages.js';
 
 // userId -> Set of socket ids (a user can have multiple tabs open)
 const onlineUsers = new Map();
@@ -34,20 +35,46 @@ export default function setupSocket(io) {
       if (member) socket.join(`channel:${channelId}`);
     });
 
-    socket.on('message:send', ({ channel_id, content }, ack) => {
+    socket.on('message:send', ({ channel_id, content, parent_id = null, attachment_ids = [], mention_user_ids = [] }, ack) => {
       content = (content || '').trim();
-      if (!content) return ack?.({ error: 'Empty message' });
+      const hasFiles = Array.isArray(attachment_ids) && attachment_ids.length > 0;
+      if (!content && !hasFiles) return ack?.({ error: 'Empty message' });
       const member = db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?')
         .get(channel_id, userId);
       if (!member) return ack?.({ error: 'Not a member of this channel' });
-      const info = db.prepare('INSERT INTO messages (channel_id, user_id, content) VALUES (?, ?, ?)')
-        .run(channel_id, userId, content);
-      const message = db.prepare(`
-        SELECT m.*, u.name AS user_name, u.avatar_color FROM messages m
-        JOIN users u ON u.id = m.user_id WHERE m.id = ?
-      `).get(info.lastInsertRowid);
+
+      // A reply must point at a real message in the same channel.
+      if (parent_id) {
+        const parent = db.prepare('SELECT id FROM messages WHERE id = ? AND channel_id = ?').get(parent_id, channel_id);
+        if (!parent) return ack?.({ error: 'Thread parent not found' });
+      }
+
+      const info = db.prepare('INSERT INTO messages (channel_id, user_id, content, parent_id) VALUES (?, ?, ?, ?)')
+        .run(channel_id, userId, content, parent_id);
+      const messageId = info.lastInsertRowid;
+      linkAttachments(messageId, userId, attachment_ids);
+      const notified = recordMentions(messageId, channel_id, mention_user_ids);
+
+      const message = serializeMessage(messageId, null);
       io.to(`channel:${channel_id}`).emit('message:new', { message });
-      ack?.({ message });
+
+      // If this is a reply, nudge the channel to refresh the root's reply count.
+      if (parent_id) {
+        io.to(`channel:${channel_id}`).emit('message:updated', { message: serializeMessage(parent_id, null) });
+      }
+
+      // Notify mentioned users who aren't the author.
+      for (const uid of notified) {
+        if (uid !== userId) {
+          io.to(`user:${uid}`).emit('mention', {
+            channel_id,
+            message_id: messageId,
+            from: publicUser(socket.user),
+            preview: content.slice(0, 120),
+          });
+        }
+      }
+      ack?.({ message: serializeMessage(messageId, userId) });
     });
 
     socket.on('typing', ({ channel_id }) => {

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
+import { serializeMessage, isChannelMember } from '../messages.js';
 
 const router = Router();
 
@@ -61,19 +62,95 @@ router.post('/:id/join', (req, res) => {
   res.json(channelWithMeta(channel, req.user.id));
 });
 
+// Top-level channel messages (thread replies are fetched separately).
 router.get('/:id/messages', (req, res) => {
-  const member = db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?')
-    .get(req.params.id, req.user.id);
-  if (!member) return res.status(403).json({ error: 'Not a member of this channel' });
+  if (!isChannelMember(req.params.id, req.user.id)) {
+    return res.status(403).json({ error: 'Not a member of this channel' });
+  }
   const before = Number(req.query.before) || Number.MAX_SAFE_INTEGER;
-  const messages = db.prepare(`
-    SELECT m.*, u.name AS user_name, u.avatar_color FROM messages m
-    JOIN users u ON u.id = m.user_id
-    WHERE m.channel_id = ? AND m.id < ?
-    ORDER BY m.id DESC LIMIT 50
+  const rows = db.prepare(`
+    SELECT id FROM messages
+    WHERE channel_id = ? AND parent_id IS NULL AND id < ?
+    ORDER BY id DESC LIMIT 50
   `).all(req.params.id, before).reverse();
-  res.json({ messages });
+  res.json({ messages: rows.map((r) => serializeMessage(r.id, req.user.id)) });
 });
+
+// Replies within a thread, plus the root message.
+router.get('/:id/messages/:msgId/thread', (req, res) => {
+  if (!isChannelMember(req.params.id, req.user.id)) {
+    return res.status(403).json({ error: 'Not a member of this channel' });
+  }
+  const root = db.prepare('SELECT id FROM messages WHERE id = ? AND channel_id = ?')
+    .get(req.params.msgId, req.params.id);
+  if (!root) return res.status(404).json({ error: 'Message not found' });
+  const replies = db.prepare('SELECT id FROM messages WHERE parent_id = ? ORDER BY id').all(root.id);
+  res.json({
+    root: serializeMessage(root.id, req.user.id),
+    replies: replies.map((r) => serializeMessage(r.id, req.user.id)),
+  });
+});
+
+function loadOwnedMessage(req, res) {
+  const msg = db.prepare('SELECT * FROM messages WHERE id = ? AND channel_id = ?')
+    .get(req.params.msgId, req.params.id);
+  if (!msg) { res.status(404).json({ error: 'Message not found' }); return null; }
+  if (!isChannelMember(req.params.id, req.user.id)) {
+    res.status(403).json({ error: 'Not a member of this channel' }); return null;
+  }
+  return msg;
+}
+
+router.patch('/:id/messages/:msgId', (req, res) => {
+  const msg = loadOwnedMessage(req, res);
+  if (!msg) return;
+  if (msg.user_id !== req.user.id) return res.status(403).json({ error: 'You can only edit your own messages' });
+  if (msg.deleted_at) return res.status(400).json({ error: 'Message was deleted' });
+  const content = (req.body.content || '').trim();
+  if (!content) return res.status(400).json({ error: 'Message cannot be empty' });
+  db.prepare(`UPDATE messages SET content = ?, edited_at = datetime('now') WHERE id = ?`).run(content, msg.id);
+  const message = serializeMessage(msg.id, req.user.id);
+  req.app.get('io')?.to(`channel:${msg.channel_id}`).emit('message:updated', { message });
+  res.json(message);
+});
+
+router.delete('/:id/messages/:msgId', (req, res) => {
+  const msg = loadOwnedMessage(req, res);
+  if (!msg) return;
+  if (msg.user_id !== req.user.id) return res.status(403).json({ error: 'You can only delete your own messages' });
+  db.prepare(`UPDATE messages SET deleted_at = datetime('now') WHERE id = ?`).run(msg.id);
+  db.prepare('DELETE FROM message_reactions WHERE message_id = ?').run(msg.id);
+  const message = serializeMessage(msg.id, req.user.id);
+  req.app.get('io')?.to(`channel:${msg.channel_id}`).emit('message:updated', { message });
+  res.json(message);
+});
+
+router.post('/:id/messages/:msgId/reactions', (req, res) => {
+  const msg = loadOwnedMessage(req, res);
+  if (!msg) return;
+  const emoji = (req.body.emoji || '').trim();
+  if (!emoji || emoji.length > 16) return res.status(400).json({ error: 'Invalid emoji' });
+  db.prepare('INSERT OR IGNORE INTO message_reactions (message_id, user_id, emoji) VALUES (?, ?, ?)')
+    .run(msg.id, req.user.id, emoji);
+  broadcastReactions(req, msg);
+  res.json(serializeMessage(msg.id, req.user.id));
+});
+
+router.delete('/:id/messages/:msgId/reactions/:emoji', (req, res) => {
+  const msg = loadOwnedMessage(req, res);
+  if (!msg) return;
+  db.prepare('DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?')
+    .run(msg.id, req.user.id, decodeURIComponent(req.params.emoji));
+  broadcastReactions(req, msg);
+  res.json(serializeMessage(msg.id, req.user.id));
+});
+
+function broadcastReactions(req, msg) {
+  // Broadcast without a "mine" flag; each client recomputes its own.
+  req.app.get('io')?.to(`channel:${msg.channel_id}`).emit('message:updated', {
+    message: serializeMessage(msg.id, null),
+  });
+}
 
 // Open (or find) a DM channel with another user.
 router.post('/dm/:userId', (req, res) => {

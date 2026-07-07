@@ -8,6 +8,13 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 - Public channels (everyone starts in `#general`) — create and join channels from the sidebar
 - 1:1 direct messages with any teammate
 - Real-time delivery, typing indicators, and online/offline presence dots
+- **File & image sharing** — attach files to any message; images preview inline
+- **Emoji reactions** on any message
+- **Threads** — reply in a side panel to keep channels tidy
+- **Edit & delete** your own messages
+- **@mentions** with autocomplete; mentioned teammates get a notification
+- **Message search** across every channel you're in
+- **Markdown formatting** — bold, italics, lists, links, and code blocks
 
 **📞 Calls**
 - 1:1 audio and video calls from any DM, powered by WebRTC (peer-to-peer media, server only relays signaling)
@@ -34,6 +41,8 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 | Auth | JWT + bcrypt |
 | Client | React 18 + Vite |
 | Calls | WebRTC with Socket.IO signaling |
+| Uploads | Multer (files stored under `DATA_DIR/uploads`) |
+| Formatting | Markdown via `marked`, sanitized with `DOMPurify` |
 
 ## Getting started
 

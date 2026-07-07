@@ -4,7 +4,7 @@ import Avatar from './Avatar.jsx';
 
 export default function Sidebar({
   user, channels, joinable, users, onlineIds, view,
-  onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout,
+  onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onOpenSearch,
 }) {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
@@ -32,7 +32,10 @@ export default function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-header">
         <span className="logo">TeamHub</span>
-        <button className="icon-btn" title="Sign out" onClick={onLogout}>⏻</button>
+        <div className="header-actions">
+          <button className="icon-btn" title="Search messages" onClick={onOpenSearch}>🔍</button>
+          <button className="icon-btn" title="Sign out" onClick={onLogout}>⏻</button>
+        </div>
       </div>
 
       <div className="sidebar-me">
