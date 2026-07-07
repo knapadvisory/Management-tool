@@ -1,2 +1,82 @@
-# Management-tool
-Management tool
+# TeamHub — Internal Team Tool
+
+A self-hosted internal collaboration tool inspired by **Slack** (messaging, calls) and **Bitrix24** (tasks, workflows).
+
+## Features
+
+**💬 Messaging (Slack-style)**
+- Public channels (everyone starts in `#general`) — create and join channels from the sidebar
+- 1:1 direct messages with any teammate
+- Real-time delivery, typing indicators, and online/offline presence dots
+
+**📞 Calls**
+- 1:1 audio and video calls from any DM, powered by WebRTC (peer-to-peer media, server only relays signaling)
+- Incoming-call screen with accept/decline
+
+**☑ Tasks (Bitrix-style)**
+- Create tasks with description, priority (low → urgent), due date
+- Assign tasks to any team member — assignees get a real-time notification
+- Kanban board grouped by workflow stage, with drag & drop between stages
+- Comments and an automatic activity log on every task
+- "Assigned to me" filter
+
+**⚙ Workflows**
+- Define custom workflows (e.g. *Client Onboarding: Intake → KYC → Proposal → Signed*)
+- Each workflow has ordered stages and its own task board
+- Add/remove stages at any time; a sensible Default workflow is seeded on first run
+
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| Server | Node.js, Express, Socket.IO |
+| Database | SQLite (`better-sqlite3`) — zero-setup, file-based |
+| Auth | JWT + bcrypt |
+| Client | React 18 + Vite |
+| Calls | WebRTC with Socket.IO signaling |
+
+## Getting started
+
+```bash
+# 1. Install dependencies
+npm install            # root (dev tooling)
+npm run install:all    # server + client
+
+# 2. Run in development (server on :3001, client on :5173)
+npm run dev
+```
+
+Open http://localhost:5173, create an account, and you're in. Teammates register themselves from the same screen.
+
+### Production
+
+```bash
+npm run build          # builds the client into client/dist
+JWT_SECRET=some-long-random-string npm start
+```
+
+The server serves the built client at http://localhost:3001 (single process, single port).
+
+**Environment variables**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORT` | `3001` | HTTP + WebSocket port |
+| `JWT_SECRET` | dev value | Set to a long random string in production |
+| `DATA_DIR` | `server/data` | Where the SQLite database lives |
+
+> Note: browsers require HTTPS (or localhost) for microphone/camera access, so put the app behind TLS (e.g. a reverse proxy) before using calls in production. For teams on restrictive networks you may also need a TURN server in `client/src/components/CallManager.jsx`.
+
+## Project layout
+
+```
+server/
+  src/index.js        Express app, REST API mounting, static client serving
+  src/db.js           SQLite schema + seed data
+  src/auth.js         Register/login, JWT helpers, auth middleware
+  src/socket.js       Real-time chat, presence, call signaling
+  src/routes/         channels, tasks, workflows
+client/
+  src/App.jsx         Session, socket lifecycle, view switching
+  src/components/     Sidebar, ChatView, CallManager, TasksBoard, TaskModal, WorkflowsView
+```
