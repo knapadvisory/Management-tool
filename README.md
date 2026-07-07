@@ -48,6 +48,14 @@ npm run dev
 
 Open http://localhost:5173, create an account, and you're in. Teammates register themselves from the same screen.
 
+### Tests
+
+```bash
+npm test --prefix server
+```
+
+Boots the real server against a throwaway database and smoke-tests the REST API (auth, channels, DMs, tasks, workflows) and the socket layer (messaging, presence, call signaling). The same suite runs in CI on every pull request.
+
 ### Production
 
 ```bash
