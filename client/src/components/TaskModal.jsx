@@ -22,7 +22,13 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   const fileRef = useRef(null);
 
   const load = useCallback(async () => {
-    const d = await api(`/tasks/${taskId}`);
+    let d;
+    try {
+      d = await api(`/tasks/${taskId}`);
+    } catch {
+      onClose(); // task was deleted, or we no longer have access
+      return;
+    }
     setTask(d.task);
     setComments(d.comments);
     setActivity(d.activity);
@@ -31,7 +37,7 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
     setAttachments(d.attachments);
     setReminders(d.reminders || []);
     setDescription(d.task.description || '');
-  }, [taskId]);
+  }, [taskId, onClose]);
 
   useEffect(() => { load(); }, [load]);
 

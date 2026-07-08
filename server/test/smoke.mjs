@@ -298,6 +298,26 @@ async function main() {
   const carolReloggedIn = await req('POST', '/api/auth/login', { body: { email: 'carol@smoke.test', password: 'newpass123' } });
   check('user logs in with reset password', carolReloggedIn.status === 200);
 
+  console.log('Task visibility');
+  const carolTok = carolReloggedIn.data.token;
+  // Admin creates a task for Carol; Bob (an uninvolved member) must not see it.
+  const secret = await req('POST', '/api/tasks', { token: a, body: { title: 'Alice private task', workflow_id: wf.data.id, assignee_id: carolId } });
+  check('admin creates a task assigned to a member', secret.status === 201);
+  const bobList = await req('GET', '/api/tasks', { token: b });
+  check('member does not see tasks they are not involved in', !bobList.data.tasks.some((t) => t.id === secret.data.id));
+  const bobOpen = await req('GET', `/api/tasks/${secret.data.id}`, { token: b });
+  check('member is blocked from opening an unrelated task', bobOpen.status === 403);
+  const carolList = await req('GET', '/api/tasks', { token: carolTok });
+  check('assignee sees their own task', carolList.data.tasks.some((t) => t.id === secret.data.id));
+  const adminList = await req('GET', '/api/tasks', { token: a });
+  check('admin supervises every task', adminList.data.tasks.some((t) => t.id === secret.data.id));
+  const adminOpen = await req('GET', `/api/tasks/${secret.data.id}`, { token: a });
+  check('admin can open any task', adminOpen.status === 200);
+  const forBob = await req('POST', '/api/tasks', { token: a, body: { title: 'For Bob', workflow_id: wf.data.id, assignee_id: bobId } });
+  const bobList2 = await req('GET', '/api/tasks', { token: b });
+  check('member sees tasks assigned to them', bobList2.data.tasks.some((t) => t.id === forBob.data.id));
+  check('member list is scoped to involvement only', bobList2.data.tasks.every((t) => t.creator?.id === bobId || t.assignee?.id === bobId || t.watcher_ids.includes(bobId)));
+
   console.log('Sockets');
   const generalId = chans.data.channels.find((c) => c.name === 'general').id;
   const sockA = io(BASE, { auth: { token: a } });

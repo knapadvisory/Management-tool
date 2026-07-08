@@ -71,9 +71,28 @@ function notifyWatchers(req, task, text, type = 'task_update') {
   }
 }
 
+// Super admins supervise every task; everyone else sees only tasks they
+// created, are assigned to, or watch.
+function canSeeTask(user, task) {
+  if (user.role === 'admin') return true;
+  if (task.creator_id === user.id || task.assignee_id === user.id) return true;
+  return !!db.prepare('SELECT 1 FROM task_watchers WHERE task_id = ? AND user_id = ?').get(task.id, user.id);
+}
+
+// Who should receive live updates about a task: the people involved in it
+// plus every active admin (so admins' boards stay in sync for supervision).
+function recipientsForTask(task) {
+  const ids = new Set(db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task.id).map((r) => r.user_id));
+  if (task.creator_id) ids.add(task.creator_id);
+  if (task.assignee_id) ids.add(task.assignee_id);
+  for (const { id } of db.prepare(`SELECT id FROM users WHERE role = 'admin' AND active = 1`).all()) ids.add(id);
+  return [...ids];
+}
+
 function emitChanged(req, taskId) {
   const task = taskWithMeta(db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId));
-  req.app.get('io')?.emit('task:changed', { task });
+  const io = req.app.get('io');
+  if (io) for (const uid of recipientsForTask(task)) io.to(`user:${uid}`).emit('task:changed', { task });
   return task;
 }
 
@@ -120,6 +139,7 @@ function spawnNextOccurrence(req, task) {
 function loadTask(req, res) {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
   if (!task) { res.status(404).json({ error: 'Task not found' }); return null; }
+  if (!canSeeTask(req.user, task)) { res.status(403).json({ error: 'You do not have access to this task' }); return null; }
   return task;
 }
 
@@ -136,6 +156,11 @@ router.get('/', (req, res) => {
   if (project_id) { where.push('t.project_id = ?'); params.push(project_id); }
   if (assignee_id) { where.push('t.assignee_id = ?'); params.push(assignee_id); }
   if (overdue) { where.push(`t.due_date IS NOT NULL AND t.due_date < date('now')`); }
+  // Non-admins see only tasks they created, are assigned to, or watch.
+  if (req.user.role !== 'admin') {
+    where.push(`(t.creator_id = ? OR t.assignee_id = ? OR EXISTS (SELECT 1 FROM task_watchers w WHERE w.task_id = t.id AND w.user_id = ?))`);
+    params.push(req.user.id, req.user.id, req.user.id);
+  }
   sql += ' WHERE ' + where.join(' AND ') + ' ORDER BY t.updated_at DESC';
   res.json({ tasks: db.prepare(sql).all(...params).map(taskWithMeta) });
 });
@@ -297,8 +322,10 @@ router.delete('/:id', (req, res) => {
   if (!task) return;
   // Tell watchers before the row (and its watcher rows) disappear.
   notifyWatchers(req, task, 'deleted this task', 'task_deleted');
+  const recipients = recipientsForTask(task);
   db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
-  req.app.get('io')?.emit('task:deleted', { task_id: task.id, workflow_id: task.workflow_id });
+  const io = req.app.get('io');
+  if (io) for (const uid of recipients) io.to(`user:${uid}`).emit('task:deleted', { task_id: task.id, workflow_id: task.workflow_id });
   res.json({ ok: true });
 });
 

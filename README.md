@@ -42,6 +42,7 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 **👑 Organisation & roles**
 - The **first person to register** the workspace becomes the **super admin**
 - An **Admin** panel (super-admin only) to run the team: create teammates directly, promote/demote between Admin and Member, reset passwords, and **deactivate** (revoke access — reversible, keeps all their data) or reactivate accounts
+- **Task privacy** — regular members see only the tasks they created, are assigned, or watch; **super admins see every task** for supervision
 - Admins have **full oversight** — every task and profile is visible to them for supervision
 - Share the **invite link** (plus the sign-up access code, if set) so teammates create their own login; deactivated users are logged out immediately and can't sign back in
 
