@@ -44,9 +44,39 @@ CREATE TABLE IF NOT EXISTS messages (
   channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id),
   content TEXT NOT NULL,
+  parent_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+  edited_at TEXT,
+  deleted_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, id);
+CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
+
+CREATE TABLE IF NOT EXISTS attachments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+  uploader_id INTEGER NOT NULL REFERENCES users(id),
+  stored_name TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
+
+CREATE TABLE IF NOT EXISTS message_reactions (
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  emoji TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (message_id, user_id, emoji)
+);
+
+CREATE TABLE IF NOT EXISTS mentions (
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (message_id, user_id)
+);
 
 CREATE TABLE IF NOT EXISTS workflows (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,6 +126,17 @@ CREATE TABLE IF NOT EXISTS task_activity (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `);
+
+// Add columns to tables created before these features existed.
+function ensureColumn(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+ensureColumn('messages', 'parent_id', 'INTEGER REFERENCES messages(id)');
+ensureColumn('messages', 'edited_at', 'TEXT');
+ensureColumn('messages', 'deleted_at', 'TEXT');
 
 // Seed the shared #general channel and a default workflow on first run.
 const seed = db.transaction(() => {

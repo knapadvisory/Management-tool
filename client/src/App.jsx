@@ -7,6 +7,7 @@ import ChatView from './components/ChatView.jsx';
 import TasksBoard from './components/TasksBoard.jsx';
 import WorkflowsView from './components/WorkflowsView.jsx';
 import CallManager from './components/CallManager.jsx';
+import SearchModal from './components/SearchModal.jsx';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -18,6 +19,7 @@ export default function App() {
   // view: { type: 'channel', channel } | { type: 'tasks' } | { type: 'workflows' }
   const [view, setView] = useState(null);
   const [toast, setToast] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const showToast = useCallback((text) => {
     setToast(text);
@@ -51,6 +53,8 @@ export default function App() {
     const socket = connectSocket();
     socket.on('presence', ({ online_user_ids }) => setOnlineIds(online_user_ids));
     socket.on('task:assigned', ({ task, by }) => showToast(`${by.name} assigned you: "${task.title}"`));
+    socket.on('mention', ({ from, preview }) => showToast(`${from.name} mentioned you: "${preview}"`));
+    socket.on('directory:changed', () => { refreshUsers(); refreshChannels(); });
 
     refreshUsers();
     refreshChannels().then((d) => {
@@ -110,15 +114,26 @@ export default function App() {
           setView({ type: 'channel', channel });
         }}
         onLogout={logout}
+        onOpenSearch={() => setSearchOpen(true)}
       />
       <main className="main">
         {view?.type === 'channel' && (
-          <ChatView key={view.channel.id} channel={view.channel} user={user} onlineIds={onlineIds} />
+          <ChatView key={view.channel.id} channel={view.channel} user={user} users={users} onlineIds={onlineIds} />
         )}
         {view?.type === 'tasks' && <TasksBoard user={user} users={users} />}
         {view?.type === 'workflows' && <WorkflowsView />}
       </main>
       <CallManager user={user} />
+      {searchOpen && (
+        <SearchModal
+          onClose={() => setSearchOpen(false)}
+          onSelect={(channelId) => {
+            const ch = channels.find((c) => c.id === channelId);
+            if (ch) setView({ type: 'channel', channel: ch });
+            setSearchOpen(false);
+          }}
+        />
+      )}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

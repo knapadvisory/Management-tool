@@ -169,6 +169,57 @@ async function main() {
   check('presence broadcast', events.presence);
   check('call invite signaled', events.call);
   check('assignee notified of new task', events.taskAssigned);
+
+  console.log('Chat features');
+  // Upload a file (REST multipart), then post a message that carries the
+  // attachment and an @mention, capturing the new message id from the ack.
+  const fd = new FormData();
+  fd.append('files', new Blob(['hello attachment'], { type: 'text/plain' }), 'note.txt');
+  const upRes = await fetch(BASE + '/api/uploads', {
+    method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: fd,
+  });
+  const upData = await upRes.json();
+  check('file upload returns attachment id', upRes.status === 201 && upData.attachments[0]?.id > 0);
+  const attId = upData.attachments[0]?.id;
+
+  let bobMentioned = false;
+  sockB.on('mention', () => { bobMentioned = true; });
+  const sent = await new Promise((resolve) =>
+    sockA.emit('message:send', {
+      channel_id: generalId, content: 'files for @Bob review', attachment_ids: [attId], mention_user_ids: [bobId],
+    }, resolve));
+  const msgId = sent.message?.id;
+  check('message carries attachment', sent.message?.attachments?.length === 1);
+  check('message records mention', sent.message?.mentions?.some((m) => m.id === bobId));
+  await new Promise((r) => setTimeout(r, 300));
+  check('mentioned user notified over socket', bobMentioned);
+
+  const fileDl = await fetch(`${BASE}/api/uploads/${attId}?token=${a}`);
+  check('attachment downloadable with token', fileDl.status === 200);
+  const fileNoAuth = await fetch(`${BASE}/api/uploads/${attId}`);
+  check('attachment blocked without token', fileNoAuth.status === 401);
+
+  const react = await req('POST', `/api/channels/${generalId}/messages/${msgId}/reactions`, { token: b, body: { emoji: '👍' } });
+  check('reaction added', react.data.reactions?.[0]?.count === 1 && react.data.reactions[0].user_ids.includes(bobId));
+  const unreact = await req('DELETE', `/api/channels/${generalId}/messages/${msgId}/reactions/${encodeURIComponent('👍')}`, { token: b });
+  check('reaction removed', (unreact.data.reactions?.length || 0) === 0);
+
+  const edit = await req('PATCH', `/api/channels/${generalId}/messages/${msgId}`, { token: a, body: { content: 'files for @Bob review (edited)' } });
+  check('message edited', !!edit.data.edited_at);
+  const badEdit = await req('PATCH', `/api/channels/${generalId}/messages/${msgId}`, { token: b, body: { content: 'nope' } });
+  check('cannot edit others message', badEdit.status === 403);
+
+  await new Promise((resolve) => sockA.emit('message:send', { channel_id: generalId, content: 'a threaded reply', parent_id: msgId }, resolve));
+  const thread = await req('GET', `/api/channels/${generalId}/messages/${msgId}/thread`, { token: b });
+  check('thread returns root + reply', thread.data.root?.id === msgId && thread.data.replies.length === 1);
+  check('root reply_count reflects reply', thread.data.root?.reply_count === 1);
+
+  const search = await req('GET', `/api/search?q=${encodeURIComponent('review')}`, { token: b });
+  check('search finds the message', search.data.results.some((r) => r.id === msgId));
+
+  const del = await req('DELETE', `/api/channels/${generalId}/messages/${msgId}`, { token: a });
+  check('message soft-deleted, content cleared', del.data.is_deleted && del.data.content === '');
+
   sockA.disconnect();
   sockB.disconnect();
 

@@ -11,6 +11,8 @@ import { register, login, signToken, requireAuth, publicUser } from './auth.js';
 import channelsRouter from './routes/channels.js';
 import tasksRouter from './routes/tasks.js';
 import workflowsRouter from './routes/workflows.js';
+import uploadsRouter from './routes/uploads.js';
+import searchRouter from './routes/search.js';
 import setupSocket from './socket.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +28,7 @@ app.use(express.json());
 app.post('/api/auth/register', (req, res) => {
   try {
     const user = register(req.body);
+    io.emit('directory:changed'); // let connected clients pick up the new teammate
     res.status(201).json({ token: signToken(user), user: publicUser(user) });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
@@ -53,6 +56,8 @@ app.get('/api/users', requireAuth, (req, res) => {
 app.use('/api/channels', requireAuth, channelsRouter);
 app.use('/api/tasks', requireAuth, tasksRouter);
 app.use('/api/workflows', requireAuth, workflowsRouter);
+app.use('/api/uploads', uploadsRouter); // POST is guarded inside; GET uses a query-param token
+app.use('/api/search', requireAuth, searchRouter);
 
 // Serve the built client in production.
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
