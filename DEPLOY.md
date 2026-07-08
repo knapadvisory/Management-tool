@@ -53,6 +53,36 @@ build a Docker image (Render, Fly.io, a VPS, …).
 Share that URL and the `SIGNUP_CODE` with your team — they register with
 the code and you're all in the same workspace.
 
+## Deploy on a Hostinger VPS
+
+TeamHub is a live Node.js server (real-time chat/calls + a database), so it
+needs a **Hostinger VPS** (a KVM VPS plan) — Hostinger's regular web/shared
+hosting can't run it. Your domain and DNS already being at Hostinger makes
+the domain step easy.
+
+1. **Get a VPS**: in hPanel, order a **KVM VPS** and choose the **Ubuntu**
+   (24.04) template. Note its **IP address**.
+2. **Point your domain at it**: hPanel → **Domains → DNS / Nameservers** for
+   `knapadvisory.com`, add an **A record**:
+   - **Type:** A · **Name:** `teamhub` · **Points to:** your VPS IP · **TTL:** default
+3. **Connect to the VPS** (hPanel has a **Browser terminal**, or use SSH):
+   ```bash
+   ssh root@YOUR_VPS_IP
+   ```
+4. **Get the code and run the one-shot installer**:
+   ```bash
+   apt-get update && apt-get install -y git
+   git clone https://github.com/knapadvisory/Management-tool.git
+   cd Management-tool
+   sudo bash deploy/vps-setup.sh
+   ```
+   It asks for your domain (`teamhub.knapadvisory.com`) and a sign-up access
+   code, installs Docker + Caddy, builds and runs the app, and turns on HTTPS
+   automatically. When it finishes, open **https://teamhub.knapadvisory.com**.
+
+To ship a new version later: `git pull && sudo bash deploy/vps-setup.sh`.
+Your data lives in the `teamhub-data` Docker volume and survives redeploys.
+
 ## Free alternative: Cloudflare named tunnel
 
 If your domain's DNS is on Cloudflare **and** you have a machine that can
