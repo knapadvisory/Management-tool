@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, getToken, setToken, clearToken } from './api.js';
 import { connectSocket, disconnectSocket, getSocket } from './socket.js';
+import { showDesktopNotification } from './desktopNotify.js';
 import Login from './components/Login.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import ChatView from './components/ChatView.jsx';
@@ -25,6 +26,9 @@ export default function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [taskToOpen, setTaskToOpen] = useState(null);
   const [signupCodeRequired, setSignupCodeRequired] = useState(false);
+  // Always-current pointer to selectNotification, so desktop-notification
+  // clicks navigate using the latest state (channels, etc.).
+  const selectNotifRef = useRef(null);
 
   const showToast = useCallback((text) => {
     setToast(text);
@@ -72,6 +76,12 @@ export default function App() {
       setNotifications((ns) => [notification, ...ns].slice(0, 50));
       setUnreadCount(unread_count);
       if (notification.type === 'task_reminder') showToast(`🔔 ${notification.text}`);
+      // Native desktop alert (only when the tab is in the background).
+      showDesktopNotification('TeamHub', {
+        body: notification.text,
+        tag: `notif-${notification.id}`,
+        onClick: () => selectNotifRef.current?.(notification),
+      });
     });
 
     refreshUsers();
@@ -83,6 +93,9 @@ export default function App() {
 
     return () => disconnectSocket();
   }, [user, refreshChannels, refreshUsers, refreshNotifications, showToast]);
+
+  // Keep the desktop-notification click handler pointed at the latest state.
+  useEffect(() => { selectNotifRef.current = selectNotification; });
 
   function handleAuth({ token, user }) {
     setToken(token);

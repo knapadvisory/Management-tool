@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
 import NotificationBell from './NotificationBell.jsx';
+import { notificationsSupported, notificationPermission, requestNotificationPermission } from '../desktopNotify.js';
 
 export default function Sidebar({
   user, channels, joinable, users, onlineIds, view,
@@ -11,6 +12,11 @@ export default function Sidebar({
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [error, setError] = useState(null);
+  const [notifPerm, setNotifPerm] = useState(notificationPermission());
+
+  async function enableDesktopAlerts() {
+    setNotifPerm(await requestNotificationPermission());
+  }
 
   const regularChannels = channels.filter((c) => !c.is_dm);
   const dms = channels.filter((c) => c.is_dm);
@@ -36,6 +42,9 @@ export default function Sidebar({
         <span className="logo">TeamHub</span>
         <div className="header-actions">
           <button className="icon-btn" title="Search messages" onClick={onOpenSearch}>🔍</button>
+          {notificationsSupported() && notifPerm === 'default' && (
+            <button className="icon-btn" title="Enable desktop notifications" onClick={enableDesktopAlerts}>🖥️</button>
+          )}
           <NotificationBell
             notifications={notifications}
             unreadCount={unreadCount}

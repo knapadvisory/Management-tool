@@ -50,6 +50,7 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 **🔔 Notifications**
 - A notification inbox (bell) with an unread badge, covering @mentions, task assignments, task chat, and activity on tasks you watch
 - Click a notification to jump straight to the channel or task; mark one or all as read
+- **Desktop notifications** — opt in from the sidebar (🖥️) to get native browser/desktop alerts when the tab is in the background (mentions, assignments, task activity, reminders) and for incoming calls; clicking an alert focuses TeamHub and opens the relevant item
 
 **⚙ Workflows**
 - Define custom workflows (e.g. *Client Onboarding: Intake → KYC → Proposal → Signed*)

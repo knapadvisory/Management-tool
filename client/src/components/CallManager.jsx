@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getSocket } from '../socket.js';
 import Avatar from './Avatar.jsx';
+import { showDesktopNotification } from '../desktopNotify.js';
 
 const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
@@ -79,6 +80,11 @@ export default function CallManager({ user }) {
         return;
       }
       setCall({ peer: from, call_type, direction: 'in', status: 'ringing' });
+      showDesktopNotification(`Incoming ${call_type} call`, {
+        body: `${from.name} is calling you`,
+        tag: 'incoming-call',
+        force: true, // a call is urgent — alert even if the tab is focused
+      });
     };
 
     // Callee accepted -> caller creates and sends the offer.
