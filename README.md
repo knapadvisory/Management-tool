@@ -34,6 +34,12 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 - Filters: project, tag, assigned-to-me, watching, and overdue
 - Due-date awareness: overdue and due-soon tasks are visually flagged
 
+**👑 Organisation & roles**
+- The **first person to register** the workspace becomes the **super admin**
+- An **Admin** panel (super-admin only) to run the team: create teammates directly, promote/demote between Admin and Member, reset passwords, and **deactivate** (revoke access — reversible, keeps all their data) or reactivate accounts
+- Admins have **full oversight** — every task and profile is visible to them for supervision
+- Share the **invite link** (plus the sign-up access code, if set) so teammates create their own login; deactivated users are logged out immediately and can't sign back in
+
 **🔔 Notifications**
 - A notification inbox (bell) with an unread badge, covering @mentions, task assignments, task chat, and activity on tasks you watch
 - Click a notification to jump straight to the channel or task; mark one or all as read

@@ -66,6 +66,8 @@ async function main() {
     body: { name: 'Bob', email: 'bob@smoke.test', password: 'secret123' },
   });
   check('register returns token', alice.status === 201 && !!alice.data.token);
+  check('first registrant is super admin', alice.data.user.role === 'admin');
+  check('later registrant is a member', bob.data.user.role === 'member');
   const dupe = await req('POST', '/api/auth/register', {
     body: { name: 'Alice2', email: 'alice@smoke.test', password: 'secret123' },
   });
@@ -215,6 +217,45 @@ async function main() {
   check('template deleted', tmplDel.status === 200);
   const afterTmplDel = await req('GET', `/api/tasks/${fromTmpl.data.id}`, { token: a });
   check('task survives template deletion', afterTmplDel.status === 200 && afterTmplDel.data.task.checklist_total === 5);
+
+  console.log('Admin & roles');
+  const memberBlocked = await req('GET', '/api/admin/users', { token: b });
+  check('member cannot reach admin routes', memberBlocked.status === 403);
+  const roster = await req('GET', '/api/admin/users', { token: a });
+  check('admin lists full roster', roster.status === 200 && roster.data.users.length >= 2);
+
+  const created = await req('POST', '/api/admin/users', {
+    token: a,
+    body: { name: 'Carol', email: 'carol@smoke.test', password: 'secret123', title: 'Analyst' },
+  });
+  check('admin creates a user directly', created.status === 201 && created.data.role === 'member');
+  const carolLogin = await req('POST', '/api/auth/login', { body: { email: 'carol@smoke.test', password: 'secret123' } });
+  check('admin-created user can log in', carolLogin.status === 200);
+  const carolId = created.data.id;
+
+  const promoted = await req('PATCH', `/api/admin/users/${carolId}`, { token: a, body: { role: 'admin' } });
+  check('admin promotes a member', promoted.data.role === 'admin');
+  const demoted = await req('PATCH', `/api/admin/users/${carolId}`, { token: a, body: { role: 'member' } });
+  check('admin demotes back to member', demoted.data.role === 'member');
+
+  const deactivated = await req('POST', `/api/admin/users/${carolId}/deactivate`, { token: a });
+  check('admin deactivates a user', deactivated.data.active === 0);
+  const deactivatedLogin = await req('POST', '/api/auth/login', { body: { email: 'carol@smoke.test', password: 'secret123' } });
+  check('deactivated user cannot log in', deactivatedLogin.status === 403);
+  const directory = await req('GET', '/api/users', { token: a });
+  check('deactivated user hidden from directory', !directory.data.users.some((u) => u.id === carolId));
+  const reactivated = await req('POST', `/api/admin/users/${carolId}/reactivate`, { token: a });
+  check('admin reactivates a user', reactivated.data.active === 1);
+
+  const selfDeactivate = await req('POST', `/api/admin/users/${alice.data.user.id}/deactivate`, { token: a });
+  check('admin cannot deactivate themselves', selfDeactivate.status === 400);
+  const demoteLastAdmin = await req('PATCH', `/api/admin/users/${alice.data.user.id}`, { token: a, body: { role: 'member' } });
+  check('cannot demote the only admin', demoteLastAdmin.status === 400);
+
+  const reset = await req('POST', `/api/admin/users/${carolId}/reset-password`, { token: a, body: { password: 'newpass123' } });
+  check('admin resets a password', reset.status === 200);
+  const carolReloggedIn = await req('POST', '/api/auth/login', { body: { email: 'carol@smoke.test', password: 'newpass123' } });
+  check('user logs in with reset password', carolReloggedIn.status === 200);
 
   console.log('Sockets');
   const generalId = chans.data.channels.find((c) => c.name === 'general').id;

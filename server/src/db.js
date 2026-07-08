@@ -221,6 +221,10 @@ ensureColumn('messages', 'edited_at', 'TEXT');
 ensureColumn('messages', 'deleted_at', 'TEXT');
 ensureColumn('attachments', 'task_id', 'INTEGER REFERENCES tasks(id)');
 ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
+// Org roles: 'admin' (super admin — full oversight + user management) or 'member'.
+// 'active' gates access; deactivating revokes login without destroying data.
+ensureColumn('users', 'role', "TEXT NOT NULL DEFAULT 'member'");
+ensureColumn('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
 
 // Indexes on migration-added columns must come after the columns exist,
 // otherwise upgrading an existing database fails on startup.
@@ -228,6 +232,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
   CREATE INDEX IF NOT EXISTS idx_attachments_task ON attachments(task_id);
 `);
+
+// Ensure the organisation always has a super admin. If none exists yet (fresh
+// install, or a database created before roles existed), promote the earliest
+// account — the person who first registered the workspace.
+if (!db.prepare(`SELECT 1 FROM users WHERE role = 'admin' AND active = 1`).get()) {
+  const first = db.prepare('SELECT id FROM users ORDER BY id LIMIT 1').get();
+  if (first) db.prepare(`UPDATE users SET role = 'admin' WHERE id = ?`).run(first.id);
+}
 
 // Seed the shared #general channel and a default workflow on first run.
 const seed = db.transaction(() => {

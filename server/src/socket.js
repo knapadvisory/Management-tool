@@ -12,6 +12,7 @@ export default function setupSocket(io) {
       const payload = verifyToken(socket.handshake.auth?.token);
       const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.id);
       if (!user) return next(new Error('Unknown user'));
+      if (!user.active) return next(new Error('Account deactivated'));
       socket.user = user;
       next();
     } catch {

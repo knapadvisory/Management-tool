@@ -7,8 +7,13 @@ const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3aed', '#
 
 export function publicUser(u) {
   if (!u) return null;
-  const { id, name, email, avatar_color, title } = u;
-  return { id, name, email, avatar_color, title };
+  const { id, name, email, avatar_color, title, role, active } = u;
+  return { id, name, email, avatar_color, title, role: role || 'member', active: active ?? 1 };
+}
+
+export function requireAdmin(req, res, next) {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  next();
 }
 
 export function signToken(user) {
@@ -27,6 +32,7 @@ export function requireAuth(req, res, next) {
     const payload = verifyToken(token);
     req.user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.id);
     if (!req.user) return res.status(401).json({ error: 'Unknown user' });
+    if (!req.user.active) return res.status(403).json({ error: 'Account deactivated' });
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
@@ -47,9 +53,13 @@ export function register({ name, email, password, code }) {
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.trim().toLowerCase());
   if (existing) throw Object.assign(new Error('An account with this email already exists'), { status: 409 });
 
+  // The first person to register the workspace becomes the super admin.
+  const isFirstUser = !db.prepare('SELECT 1 FROM users LIMIT 1').get();
+  const role = isFirstUser ? 'admin' : 'member';
+
   const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
-  const info = db.prepare('INSERT INTO users (name, email, password_hash, avatar_color) VALUES (?, ?, ?, ?)')
-    .run(name.trim(), email.trim().toLowerCase(), bcrypt.hashSync(password, 10), color);
+  const info = db.prepare('INSERT INTO users (name, email, password_hash, avatar_color, role) VALUES (?, ?, ?, ?, ?)')
+    .run(name.trim(), email.trim().toLowerCase(), bcrypt.hashSync(password, 10), color, role);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
 
   // Everyone joins #general automatically.
@@ -64,6 +74,9 @@ export function login({ email, password }) {
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get((email || '').trim().toLowerCase());
   if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {
     throw Object.assign(new Error('Invalid email or password'), { status: 401 });
+  }
+  if (!user.active) {
+    throw Object.assign(new Error('This account has been deactivated. Contact your administrator.'), { status: 403 });
   }
   return user;
 }

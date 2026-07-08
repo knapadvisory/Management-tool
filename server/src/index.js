@@ -7,8 +7,9 @@ import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 
 import db from './db.js';
-import { register, login, signToken, requireAuth, publicUser, signupCodeRequired } from './auth.js';
+import { register, login, signToken, requireAuth, requireAdmin, publicUser, signupCodeRequired } from './auth.js';
 import channelsRouter from './routes/channels.js';
+import adminRouter from './routes/admin.js';
 import tasksRouter from './routes/tasks.js';
 import workflowsRouter from './routes/workflows.js';
 import projectsRouter from './routes/projects.js';
@@ -56,11 +57,12 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
-// --- Directory ---
+// --- Directory (active teammates only) ---
 app.get('/api/users', requireAuth, (req, res) => {
-  res.json({ users: db.prepare('SELECT * FROM users ORDER BY name').all().map(publicUser) });
+  res.json({ users: db.prepare('SELECT * FROM users WHERE active = 1 ORDER BY name').all().map(publicUser) });
 });
 
+app.use('/api/admin', requireAuth, requireAdmin, adminRouter);
 app.use('/api/channels', requireAuth, channelsRouter);
 app.use('/api/tasks', requireAuth, tasksRouter);
 app.use('/api/workflows', requireAuth, workflowsRouter);

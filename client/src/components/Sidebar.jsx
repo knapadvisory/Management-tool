@@ -64,6 +64,14 @@ export default function Sidebar({
         >
           ⚙ Workflows
         </button>
+        {user.role === 'admin' && (
+          <button
+            className={`nav-item ${view?.type === 'admin' ? 'active' : ''}`}
+            onClick={() => onSelectView('admin')}
+          >
+            👑 Admin
+          </button>
+        )}
       </nav>
 
       <div className="sidebar-section">

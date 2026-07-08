@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar.jsx';
 import ChatView from './components/ChatView.jsx';
 import TasksBoard from './components/TasksBoard.jsx';
 import WorkflowsView from './components/WorkflowsView.jsx';
+import AdminPanel from './components/AdminPanel.jsx';
 import CallManager from './components/CallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
 
@@ -23,6 +24,7 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [taskToOpen, setTaskToOpen] = useState(null);
+  const [signupCodeRequired, setSignupCodeRequired] = useState(false);
 
   const showToast = useCallback((text) => {
     setToast(text);
@@ -47,8 +49,9 @@ export default function App() {
     setUnreadCount(data.unread_count);
   }, []);
 
-  // Restore session on load.
+  // Restore session on load, and read public config (for the invite panel).
   useEffect(() => {
+    api('/config').then((c) => setSignupCodeRequired(!!c.signup_code_required)).catch(() => {});
     if (!getToken()) return;
     api('/auth/me')
       .then((d) => setUser(d.user))
@@ -64,6 +67,7 @@ export default function App() {
     socket.on('task:assigned', ({ task, by }) => showToast(`${by.name} assigned you: "${task.title}"`));
     socket.on('mention', ({ from, preview }) => showToast(`${from.name} mentioned you: "${preview}"`));
     socket.on('directory:changed', () => { refreshUsers(); refreshChannels(); });
+    socket.on('account:deactivated', () => { showToast('Your access has been revoked by an administrator.'); logout(); });
     socket.on('notification:new', ({ notification, unread_count }) => {
       setNotifications((ns) => [notification, ...ns].slice(0, 50));
       setUnreadCount(unread_count);
@@ -165,6 +169,9 @@ export default function App() {
           <TasksBoard user={user} users={users} openTaskRequest={taskToOpen} onTaskOpened={() => setTaskToOpen(null)} />
         )}
         {view?.type === 'workflows' && <WorkflowsView />}
+        {view?.type === 'admin' && user.role === 'admin' && (
+          <AdminPanel user={user} signupCodeRequired={signupCodeRequired} />
+        )}
       </main>
       <CallManager user={user} />
       {searchOpen && (

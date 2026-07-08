@@ -77,7 +77,13 @@ async function main() {
     body: JSON.stringify({ email: 'existing@old.test', password: 'secret123' }),
   });
   check('existing user can still log in after upgrade', login.status === 200);
-  const { token } = await login.json();
+  const loginBody = await login.json();
+  const { token } = loginBody;
+  check('earliest existing user promoted to admin on upgrade', loginBody.user?.role === 'admin');
+
+  // The migrated admin should reach admin-only routes.
+  const roster = await fetch(BASE + '/api/admin/users', { headers: { Authorization: `Bearer ${token}` } });
+  check('migrated admin can reach admin routes', roster.status === 200);
 
   const tasks = await (await fetch(BASE + '/api/tasks?workflow_id=1', { headers: { Authorization: `Bearer ${token}` } })).json();
   const legacy = tasks.tasks?.find((t) => t.title === 'Legacy task');
