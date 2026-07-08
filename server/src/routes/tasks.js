@@ -81,7 +81,7 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   const { title, description = '', workflow_id, project_id = null, assignee_id = null,
-    priority = 'medium', due_date = null, tags = [] } = req.body;
+    priority = 'medium', due_date = null, tags = [], checklist = [] } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Task title is required' });
   if (!PRIORITIES.includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
   const wf = db.prepare('SELECT * FROM workflows WHERE id = ?').get(workflow_id);
@@ -101,6 +101,12 @@ router.post('/', (req, res) => {
     const clean = String(tag).trim().toLowerCase();
     if (clean) db.prepare('INSERT OR IGNORE INTO task_tags (task_id, tag) VALUES (?, ?)').run(taskId, clean);
   }
+  // Steps supplied at creation (e.g. copied from a template) become the checklist.
+  const insStep = db.prepare('INSERT INTO task_checklist (task_id, text, position) VALUES (?, ?, ?)');
+  (Array.isArray(checklist) ? checklist : []).forEach((s, i) => {
+    const text = String(typeof s === 'string' ? s : s?.text || '').trim();
+    if (text) insStep.run(taskId, text, i);
+  });
   logActivity(taskId, req.user.id, 'created this task');
   addWatcher(taskId, req.user.id);
   if (assignee_id) {

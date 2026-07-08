@@ -157,6 +157,31 @@ CREATE TABLE IF NOT EXISTS task_watchers (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   PRIMARY KEY (task_id, user_id)
 );
+
+-- Reusable task blueprints for repeatable client processes.
+CREATE TABLE IF NOT EXISTS task_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  default_priority TEXT NOT NULL DEFAULT 'medium',
+  default_workflow_id INTEGER REFERENCES workflows(id) ON DELETE SET NULL,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS task_template_steps (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  template_id INTEGER NOT NULL REFERENCES task_templates(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_template_steps ON task_template_steps(template_id, position);
+
+CREATE TABLE IF NOT EXISTS task_template_tags (
+  template_id INTEGER NOT NULL REFERENCES task_templates(id) ON DELETE CASCADE,
+  tag TEXT NOT NULL,
+  PRIMARY KEY (template_id, tag)
+);
 `);
 
 // Add columns to tables created before these features existed.

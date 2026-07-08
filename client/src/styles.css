@@ -259,6 +259,35 @@ input, select, textarea { font: inherit; }
 .task-attachment a { color: var(--accent); text-decoration: none; flex: 1; }
 .watchers-row { display: flex; align-items: center; gap: 6px; margin: 10px 0; }
 
+/* ---------- Templates & rich new-task modal ---------- */
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+.field input, .field select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text); font-weight: 400; }
+.field-row { display: flex; gap: 10px; }
+.field-row .field { flex: 1; }
+.editor-actions { display: flex; gap: 8px; margin-top: 6px; }
+.btn-block { width: 100%; }
+.tag-inline { border: 1px dashed var(--border) !important; border-radius: 10px !important; width: 80px; padding: 3px 8px !important; font-size: 12px !important; }
+
+.new-task-modal { width: 620px; }
+.template-picker select { background: #eef2ff; border-color: var(--accent); }
+
+.steps-editor { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+.step-row { display: flex; align-items: center; gap: 6px; }
+.step-num { color: var(--muted); font-size: 13px; width: 20px; flex-shrink: 0; }
+.step-row input { flex: 1; padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+.step-add { display: flex; gap: 6px; margin-top: 2px; }
+.step-add input { flex: 1; padding: 6px 9px; border: 1px dashed var(--border); border-radius: 6px; font-size: 14px; }
+
+.templates-modal { width: 760px; }
+.templates-body { display: flex; gap: 16px; min-height: 340px; }
+.templates-list { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--border); padding-right: 12px; }
+.template-item { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.template-item:hover { background: #f3f4f6; }
+.template-item.active { background: #eef2ff; }
+.template-item-main { flex: 1; display: flex; flex-direction: column; }
+.template-item-main .muted { font-size: 12px; }
+.templates-editor { flex: 1; min-width: 0; }
+
 /* ---------- Modal / task detail ---------- */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(15,17,26,.55); z-index: 50;

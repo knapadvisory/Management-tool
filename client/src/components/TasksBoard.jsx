@@ -6,6 +6,8 @@ import TaskCard from './TaskCard.jsx';
 import TaskListView from './TaskListView.jsx';
 import TaskCalendarView from './TaskCalendarView.jsx';
 import ProjectsModal from './ProjectsModal.jsx';
+import TemplatesModal from './TemplatesModal.jsx';
+import NewTaskModal from './NewTaskModal.jsx';
 
 const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 
@@ -13,6 +15,7 @@ export default function TasksBoard({ user, users }) {
   const [workflows, setWorkflows] = useState([]);
   const [workflowId, setWorkflowId] = useState(null);
   const [projects, setProjects] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [tags, setTags] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [view, setView] = useState('board'); // board | list | calendar
@@ -20,7 +23,7 @@ export default function TasksBoard({ user, users }) {
   const [openTaskId, setOpenTaskId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
-  const [draft, setDraft] = useState({ title: '', assignee_id: '', priority: 'medium', due_date: '', project_id: '' });
+  const [showTemplates, setShowTemplates] = useState(false);
   const [dragTaskId, setDragTaskId] = useState(null);
 
   const workflow = workflows.find((w) => w.id === workflowId);
@@ -41,6 +44,11 @@ export default function TasksBoard({ user, users }) {
     setTags(d.tags);
   }, []);
 
+  const loadTemplates = useCallback(async () => {
+    const d = await api('/templates');
+    setTemplates(d.templates);
+  }, []);
+
   useEffect(() => {
     api('/workflows').then((d) => {
       setWorkflows(d.workflows);
@@ -48,7 +56,8 @@ export default function TasksBoard({ user, users }) {
     });
     loadProjects();
     loadTags();
-  }, [loadProjects, loadTags]);
+    loadTemplates();
+  }, [loadProjects, loadTags, loadTemplates]);
 
   useEffect(() => { loadTasks(workflowId); }, [workflowId, loadTasks]);
 
@@ -66,33 +75,18 @@ export default function TasksBoard({ user, users }) {
     };
     const onDeleted = ({ task_id }) => setTasks((ts) => ts.filter((t) => t.id !== task_id));
     const onProjects = () => loadProjects();
+    const onTemplates = () => loadTemplates();
     socket.on('task:changed', onChanged);
     socket.on('task:deleted', onDeleted);
     socket.on('projects:changed', onProjects);
+    socket.on('templates:changed', onTemplates);
     return () => {
       socket.off('task:changed', onChanged);
       socket.off('task:deleted', onDeleted);
       socket.off('projects:changed', onProjects);
+      socket.off('templates:changed', onTemplates);
     };
-  }, [workflowId, loadProjects, loadTags]);
-
-  async function createTask(e) {
-    e.preventDefault();
-    if (!draft.title.trim()) return;
-    await api('/tasks', {
-      method: 'POST',
-      body: {
-        title: draft.title,
-        workflow_id: workflowId,
-        assignee_id: draft.assignee_id ? Number(draft.assignee_id) : null,
-        project_id: draft.project_id ? Number(draft.project_id) : null,
-        priority: draft.priority,
-        due_date: draft.due_date || null,
-      },
-    });
-    setDraft({ title: '', assignee_id: '', priority: 'medium', due_date: '', project_id: '' });
-    setCreating(false);
-  }
+  }, [workflowId, loadProjects, loadTags, loadTemplates]);
 
   async function moveTask(taskId, stageId) {
     await api(`/tasks/${taskId}`, { method: 'PATCH', body: { stage_id: stageId } });
@@ -145,27 +139,8 @@ export default function TasksBoard({ user, users }) {
         <label className="checkbox"><input type="checkbox" checked={filters.watching} onChange={(e) => setFilters((f) => ({ ...f, watching: e.target.checked }))} /> Watching</label>
         <label className="checkbox"><input type="checkbox" checked={filters.overdue} onChange={(e) => setFilters((f) => ({ ...f, overdue: e.target.checked }))} /> Overdue</label>
         <button className="btn btn-sm" onClick={() => setShowProjects(true)}>⚙ Projects</button>
+        <button className="btn btn-sm" onClick={() => setShowTemplates(true)}>⧉ Templates</button>
       </div>
-
-      {creating && (
-        <form className="new-task-form" onSubmit={createTask}>
-          <input autoFocus placeholder="Task title" value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} />
-          <select value={draft.assignee_id} onChange={(e) => setDraft((d) => ({ ...d, assignee_id: e.target.value }))}>
-            <option value="">Unassigned</option>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-          <select value={draft.project_id} onChange={(e) => setDraft((d) => ({ ...d, project_id: e.target.value }))}>
-            <option value="">No project</option>
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <select value={draft.priority} onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value }))}>
-            <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
-          </select>
-          <input type="date" value={draft.due_date} onChange={(e) => setDraft((d) => ({ ...d, due_date: e.target.value }))} />
-          <button className="btn btn-primary" disabled={!draft.title.trim()}>Create</button>
-          <button type="button" className="btn" onClick={() => setCreating(false)}>Cancel</button>
-        </form>
-      )}
 
       {view === 'board' && (
         <div className="board">
@@ -206,6 +181,25 @@ export default function TasksBoard({ user, users }) {
           projects={projects}
           onClose={() => setShowProjects(false)}
           onChanged={() => { loadProjects(); loadTasks(workflowId); }}
+        />
+      )}
+      {showTemplates && (
+        <TemplatesModal
+          templates={templates}
+          workflows={workflows}
+          onClose={() => setShowTemplates(false)}
+          onChanged={loadTemplates}
+        />
+      )}
+      {creating && (
+        <NewTaskModal
+          workflows={workflows}
+          projects={projects}
+          users={users}
+          templates={templates}
+          defaultWorkflowId={workflowId}
+          onClose={() => setCreating(false)}
+          onCreated={() => { setCreating(false); loadTasks(workflowId); loadTags(); }}
         />
       )}
     </div>
