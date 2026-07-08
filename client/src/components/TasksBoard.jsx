@@ -26,11 +26,12 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
   const [showTemplates, setShowTemplates] = useState(false);
   const [dragTaskId, setDragTaskId] = useState(null);
 
+  const allBoards = workflowId === 'all';
   const workflow = workflows.find((w) => w.id === workflowId);
 
   const loadTasks = useCallback(async (wfId) => {
     if (!wfId) return;
-    const d = await api(`/tasks?workflow_id=${wfId}`);
+    const d = await api(wfId === 'all' ? '/tasks' : `/tasks?workflow_id=${wfId}`);
     setTasks(d.tasks);
   }, []);
 
@@ -70,7 +71,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
     const socket = getSocket();
     if (!socket) return;
     const onChanged = ({ task }) => {
-      if (task.workflow_id !== workflowId) return;
+      if (workflowId !== 'all' && task.workflow_id !== workflowId) return;
       setTasks((ts) => {
         const idx = ts.findIndex((t) => t.id === task.id);
         if (idx === -1) return [task, ...ts];
@@ -110,15 +111,18 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
     return true;
   });
 
-  if (!workflow) return <div className="boot">Loading board…</div>;
+  if (!workflows.length) return <div className="boot">Loading board…</div>;
 
   return (
     <div className="board-page">
       <header className="board-header">
         <h2>Tasks</h2>
-        <select value={workflowId} onChange={(e) => setWorkflowId(Number(e.target.value))} title="Workflow">
-          {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-        </select>
+        <label className="board-select">Board:
+          <select value={workflowId} onChange={(e) => setWorkflowId(e.target.value === 'all' ? 'all' : Number(e.target.value))}>
+            <option value="all">All boards</option>
+            {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+        </label>
 
         <div className="view-switch">
           {['board', 'list', 'calendar'].map((v) => (
@@ -147,7 +151,14 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
         <button className="btn btn-sm" onClick={() => setShowTemplates(true)}>⧉ Templates</button>
       </div>
 
-      {view === 'board' && (
+      {view === 'board' && allBoards && (
+        <div className="all-boards-hint">
+          The Kanban board shows one workflow's columns at a time. Pick a specific board above to drag cards,
+          or use the <strong>List</strong> or <strong>Calendar</strong> view to see every task across all boards.
+        </div>
+      )}
+
+      {view === 'board' && !allBoards && workflow && (
         <div className="board">
           {workflow.stages.map((stage) => {
             const stageTasks = visibleTasks
@@ -202,7 +213,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
           projects={projects}
           users={users}
           templates={templates}
-          defaultWorkflowId={workflowId}
+          defaultWorkflowId={allBoards ? (workflows[0]?.id) : workflowId}
           onClose={() => setCreating(false)}
           onCreated={() => { setCreating(false); loadTasks(workflowId); loadTags(); }}
         />
