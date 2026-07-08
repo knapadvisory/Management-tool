@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 
 import db from './db.js';
-import { register, login, signToken, requireAuth, publicUser } from './auth.js';
+import { register, login, signToken, requireAuth, publicUser, signupCodeRequired } from './auth.js';
 import channelsRouter from './routes/channels.js';
 import tasksRouter from './routes/tasks.js';
 import workflowsRouter from './routes/workflows.js';
@@ -26,6 +26,11 @@ app.set('io', io);
 
 app.use(cors());
 app.use(express.json());
+
+// Public config the login screen reads before anyone is authenticated.
+app.get('/api/config', (req, res) => {
+  res.json({ signup_code_required: signupCodeRequired() });
+});
 
 // --- Auth ---
 app.post('/api/auth/register', (req, res) => {

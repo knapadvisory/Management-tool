@@ -91,7 +91,8 @@ The server serves the built client at http://localhost:3001 (single process, sin
 |---|---|---|
 | `PORT` | `3001` | HTTP + WebSocket port |
 | `JWT_SECRET` | dev value | Set to a long random string in production |
-| `DATA_DIR` | `server/data` | Where the SQLite database lives |
+| `DATA_DIR` | `server/data` | Where the SQLite database + uploads live (mount a persistent disk in production) |
+| `SIGNUP_CODE` | _(unset)_ | If set, registration requires this shared access code — so a public link can be shared only with the people you give it to. Leave unset for open registration. |
 
 > Note: browsers require HTTPS (or localhost) for microphone/camera access, so put the app behind TLS (e.g. a reverse proxy) before using calls in production. For teams on restrictive networks you may also need a TURN server in `client/src/components/CallManager.jsx`.
 
