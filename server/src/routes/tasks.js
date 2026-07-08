@@ -10,6 +10,7 @@ const getUser = (id) => (id ? db.prepare('SELECT * FROM users WHERE id = ?').get
 
 function taskWithMeta(task) {
   const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ?').get(task.stage_id);
+  const workflow = db.prepare('SELECT id, name FROM workflows WHERE id = ?').get(task.workflow_id);
   const project = task.project_id ? db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) : null;
   const commentCount = db.prepare('SELECT COUNT(*) AS n FROM task_comments WHERE task_id = ?').get(task.id).n;
   const tags = db.prepare('SELECT tag FROM task_tags WHERE task_id = ? ORDER BY tag').all(task.id).map((r) => r.tag);
@@ -21,6 +22,7 @@ function taskWithMeta(task) {
     assignee: publicUser(getUser(task.assignee_id)),
     creator: publicUser(getUser(task.creator_id)),
     stage,
+    workflow,
     project,
     comment_count: commentCount,
     tags,

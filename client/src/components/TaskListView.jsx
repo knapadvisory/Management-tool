@@ -14,6 +14,7 @@ export default function TaskListView({ tasks, onOpen }) {
       let av, bv;
       switch (key) {
         case 'title': av = a.title.toLowerCase(); bv = b.title.toLowerCase(); break;
+        case 'board': av = a.workflow?.name || ''; bv = b.workflow?.name || ''; break;
         case 'priority': av = PRIORITY_ORDER[a.priority]; bv = PRIORITY_ORDER[b.priority]; break;
         case 'stage': av = a.stage?.position ?? 0; bv = b.stage?.position ?? 0; break;
         case 'assignee': av = a.assignee?.name || '~'; bv = b.assignee?.name || '~'; break;
@@ -37,6 +38,7 @@ export default function TaskListView({ tasks, onOpen }) {
         <thead>
           <tr>
             {header('title', 'Task')}
+            {header('board', 'Board')}
             {header('stage', 'Stage')}
             {header('assignee', 'Assignee')}
             {header('priority', 'Priority')}
@@ -52,6 +54,7 @@ export default function TaskListView({ tasks, onOpen }) {
                 {t.project && <span className="project-dot inline" style={{ background: t.project.color }} />}
                 {t.tags?.map((tag) => <span key={tag} className="task-tag sm">{tag}</span>)}
               </td>
+              <td className="muted">{t.workflow?.name}</td>
               <td>{t.stage?.name}</td>
               <td>{t.assignee ? <span className="list-assignee"><Avatar user={t.assignee} size={20} /> {t.assignee.name}</span> : <span className="muted">—</span>}</td>
               <td><span className={`priority priority-${t.priority}`}>{t.priority}</span></td>
@@ -59,7 +62,7 @@ export default function TaskListView({ tasks, onOpen }) {
               <td>{t.checklist_total > 0 ? `${t.checklist_done}/${t.checklist_total}` : <span className="muted">—</span>}</td>
             </tr>
           ))}
-          {tasks.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 20 }}>No tasks match these filters.</td></tr>}
+          {tasks.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 20 }}>No tasks match these filters.</td></tr>}
         </tbody>
       </table>
     </div>

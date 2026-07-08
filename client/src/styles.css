@@ -180,6 +180,9 @@ input, select, textarea { font: inherit; }
 
 /* ---------- Task depth: filters, views, cards ---------- */
 .btn-sm { padding: 5px 10px; font-size: 13px; }
+.board-select { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.board-select select { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); font-weight: 400; color: var(--text); }
+.all-boards-hint { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--muted); font-size: 14px; padding: 40px 20px; max-width: 620px; margin: 0 auto; line-height: 1.6; }
 .view-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .view-switch button { background: #fff; border: none; padding: 7px 14px; font-size: 13px; border-right: 1px solid var(--border); }
 .view-switch button:last-child { border-right: none; }
@@ -374,10 +377,10 @@ input, select, textarea { font: inherit; }
   border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px; background: #f9fafb;
 }
 .workflow-form input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
-.stage-editor { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.stage-editor { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .stage-chip { display: inline-flex; align-items: center; gap: 4px; }
-.stage-chip input { width: 120px; padding: 6px 8px; }
-.stage-chip button { background: none; border: none; color: var(--muted); }
+.stage-chip input { width: 180px; padding: 10px 12px; font-size: 15px; border: 1px solid var(--border); border-radius: 8px; }
+.stage-chip button { background: none; border: none; color: var(--muted); font-size: 15px; }
 .workflow-list { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
 .workflow-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
 .workflow-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
