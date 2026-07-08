@@ -50,7 +50,6 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, id);
-CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
 
 CREATE TABLE IF NOT EXISTS attachments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,7 +63,6 @@ CREATE TABLE IF NOT EXISTS attachments (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
-CREATE INDEX IF NOT EXISTS idx_attachments_task ON attachments(task_id);
 
 CREATE TABLE IF NOT EXISTS message_reactions (
   message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
@@ -173,6 +171,13 @@ ensureColumn('messages', 'edited_at', 'TEXT');
 ensureColumn('messages', 'deleted_at', 'TEXT');
 ensureColumn('attachments', 'task_id', 'INTEGER REFERENCES tasks(id)');
 ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
+
+// Indexes on migration-added columns must come after the columns exist,
+// otherwise upgrading an existing database fails on startup.
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
+  CREATE INDEX IF NOT EXISTS idx_attachments_task ON attachments(task_id);
+`);
 
 // Seed the shared #general channel and a default workflow on first run.
 const seed = db.transaction(() => {
