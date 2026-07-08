@@ -20,6 +20,9 @@ export default function App() {
   const [view, setView] = useState(null);
   const [toast, setToast] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [taskToOpen, setTaskToOpen] = useState(null);
 
   const showToast = useCallback((text) => {
     setToast(text);
@@ -36,6 +39,12 @@ export default function App() {
   const refreshUsers = useCallback(async () => {
     const data = await api('/users');
     setUsers(data.users);
+  }, []);
+
+  const refreshNotifications = useCallback(async () => {
+    const data = await api('/notifications');
+    setNotifications(data.notifications);
+    setUnreadCount(data.unread_count);
   }, []);
 
   // Restore session on load.
@@ -55,15 +64,20 @@ export default function App() {
     socket.on('task:assigned', ({ task, by }) => showToast(`${by.name} assigned you: "${task.title}"`));
     socket.on('mention', ({ from, preview }) => showToast(`${from.name} mentioned you: "${preview}"`));
     socket.on('directory:changed', () => { refreshUsers(); refreshChannels(); });
+    socket.on('notification:new', ({ notification, unread_count }) => {
+      setNotifications((ns) => [notification, ...ns].slice(0, 50));
+      setUnreadCount(unread_count);
+    });
 
     refreshUsers();
+    refreshNotifications();
     refreshChannels().then((d) => {
       const general = d.channels.find((c) => c.name === 'general' && !c.is_dm) || d.channels[0];
       setView((v) => v || (general ? { type: 'channel', channel: general } : { type: 'tasks' }));
     });
 
     return () => disconnectSocket();
-  }, [user, refreshChannels, refreshUsers, showToast]);
+  }, [user, refreshChannels, refreshUsers, refreshNotifications, showToast]);
 
   function handleAuth({ token, user }) {
     setToken(token);
@@ -76,6 +90,29 @@ export default function App() {
     setUser(null);
     setView(null);
     setChannels([]);
+    setNotifications([]);
+    setUnreadCount(0);
+  }
+
+  async function selectNotification(n) {
+    if (!n.is_read) {
+      api(`/notifications/${n.id}/read`, { method: 'POST' }).catch(() => {});
+      setNotifications((ns) => ns.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
+      setUnreadCount((c) => Math.max(0, c - 1));
+    }
+    if (n.channel_id) {
+      const ch = channels.find((c) => c.id === n.channel_id);
+      if (ch) setView({ type: 'channel', channel: ch });
+    } else if (n.task_id) {
+      setView({ type: 'tasks' });
+      setTaskToOpen(n.task_id);
+    }
+  }
+
+  async function markAllRead() {
+    await api('/notifications/read-all', { method: 'POST' }).catch(() => {});
+    setNotifications((ns) => ns.map((x) => ({ ...x, is_read: true })));
+    setUnreadCount(0);
   }
 
   async function openDm(otherUser) {
@@ -115,12 +152,18 @@ export default function App() {
         }}
         onLogout={logout}
         onOpenSearch={() => setSearchOpen(true)}
+        notifications={notifications}
+        unreadCount={unreadCount}
+        onSelectNotification={selectNotification}
+        onMarkAllRead={markAllRead}
       />
       <main className="main">
         {view?.type === 'channel' && (
           <ChatView key={view.channel.id} channel={view.channel} user={user} users={users} onlineIds={onlineIds} />
         )}
-        {view?.type === 'tasks' && <TasksBoard user={user} users={users} />}
+        {view?.type === 'tasks' && (
+          <TasksBoard user={user} users={users} openTaskRequest={taskToOpen} onTaskOpened={() => setTaskToOpen(null)} />
+        )}
         {view?.type === 'workflows' && <WorkflowsView />}
       </main>
       <CallManager user={user} />

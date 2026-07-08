@@ -255,6 +255,31 @@ async function main() {
   check('call invite signaled', events.call);
   check('assignee notified of new task', events.taskAssigned);
 
+  console.log('Notifications & task chat');
+  // The earlier task assignment (to bob) should have created a notification.
+  const bobNotifs = await req('GET', '/api/notifications', { token: b });
+  check('assignment produced a notification', bobNotifs.data.notifications.some((n) => n.type === 'task_assigned'));
+  check('unread count reflects notifications', bobNotifs.data.unread_count >= 1);
+
+  // Task chat: alice and bob join task 1, alice sends -> bob receives + gets a notification.
+  let bobGotChat = false;
+  let bobChatNotif = false;
+  sockB.on('task:chat:new', ({ message }) => { if (message.content === 'chat ping') bobGotChat = true; });
+  sockB.on('notification:new', ({ notification }) => { if (notification.type === 'task_chat') bobChatNotif = true; });
+  sockA.emit('task:chat:join', task.data.id);
+  sockB.emit('task:chat:join', task.data.id);
+  await new Promise((r) => setTimeout(r, 200));
+  const chatSent = await new Promise((resolve) => sockA.emit('task:chat:send', { task_id: task.data.id, content: 'chat ping' }, resolve));
+  check('task chat message accepted', !!chatSent.message);
+  await new Promise((r) => setTimeout(r, 300));
+  check('task chat delivered to the other participant', bobGotChat);
+  check('task chat notified the watcher', bobChatNotif);
+  const chatHistory = await req('GET', `/api/tasks/${task.data.id}/chat`, { token: b });
+  check('task chat history persisted', chatHistory.data.messages.some((m) => m.content === 'chat ping'));
+
+  const markRead = await req('POST', '/api/notifications/read-all', { token: b });
+  check('mark-all-read clears unread count', markRead.data.unread_count === 0);
+
   console.log('Chat features');
   // Upload a file (REST multipart), then post a message that carries the
   // attachment and an @mention, capturing the new message id from the ack.

@@ -1,6 +1,7 @@
 import db from './db.js';
 import { verifyToken, publicUser } from './auth.js';
 import { serializeMessage, recordMentions, linkAttachments } from './messages.js';
+import { createNotification } from './notifications.js';
 
 // userId -> Set of socket ids (a user can have multiple tabs open)
 const onlineUsers = new Map();
@@ -72,9 +73,46 @@ export default function setupSocket(io) {
             from: publicUser(socket.user),
             preview: content.slice(0, 120),
           });
+          createNotification(io, {
+            user_id: uid, type: 'mention', actor_id: userId, channel_id,
+            text: `${socket.user.name} mentioned you: "${content.slice(0, 80)}"`,
+          });
         }
       }
       ack?.({ message: serializeMessage(messageId, userId) });
+    });
+
+    // --- Per-task real-time chat ---
+    socket.on('task:chat:join', (taskId) => {
+      if (db.prepare('SELECT 1 FROM tasks WHERE id = ?').get(taskId)) socket.join(`taskchat:${taskId}`);
+    });
+    socket.on('task:chat:leave', (taskId) => socket.leave(`taskchat:${taskId}`));
+    socket.on('task:chat:send', ({ task_id, content }, ack) => {
+      content = (content || '').trim();
+      if (!content) return ack?.({ error: 'Empty message' });
+      const task = db.prepare('SELECT id, title FROM tasks WHERE id = ?').get(task_id);
+      if (!task) return ack?.({ error: 'Task not found' });
+
+      const info = db.prepare('INSERT INTO task_messages (task_id, user_id, content) VALUES (?, ?, ?)')
+        .run(task_id, userId, content);
+      db.prepare('INSERT OR IGNORE INTO task_watchers (task_id, user_id) VALUES (?, ?)').run(task_id, userId);
+      const message = db.prepare(`
+        SELECT tm.*, u.name AS user_name, u.avatar_color FROM task_messages tm
+        JOIN users u ON u.id = tm.user_id WHERE tm.id = ?
+      `).get(info.lastInsertRowid);
+      io.to(`taskchat:${task_id}`).emit('task:chat:new', { message });
+
+      // Notify other watchers of the new chat message.
+      const watchers = db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task_id);
+      for (const { user_id } of watchers) {
+        if (user_id !== userId) {
+          createNotification(io, {
+            user_id, type: 'task_chat', actor_id: userId, task_id,
+            text: `${socket.user.name} in "${task.title}": ${content.slice(0, 80)}`,
+          });
+        }
+      }
+      ack?.({ message });
     });
 
     socket.on('typing', ({ channel_id }) => {

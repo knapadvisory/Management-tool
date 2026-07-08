@@ -182,6 +182,31 @@ CREATE TABLE IF NOT EXISTS task_template_tags (
   tag TEXT NOT NULL,
   PRIMARY KEY (template_id, tag)
 );
+
+-- Real-time chat scoped to a single task (distinct from async "Notes").
+CREATE TABLE IF NOT EXISTS task_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_task_messages ON task_messages(task_id, id);
+
+-- Persistent notification inbox (bell). channel_id / task_id point at
+-- wherever clicking the notification should navigate.
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  actor_id INTEGER REFERENCES users(id),
+  task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+  channel_id INTEGER REFERENCES channels(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  is_read INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, id);
 `);
 
 // Add columns to tables created before these features existed.

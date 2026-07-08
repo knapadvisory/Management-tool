@@ -13,6 +13,7 @@ import tasksRouter from './routes/tasks.js';
 import workflowsRouter from './routes/workflows.js';
 import projectsRouter from './routes/projects.js';
 import templatesRouter from './routes/templates.js';
+import notificationsRouter from './routes/notifications.js';
 import uploadsRouter from './routes/uploads.js';
 import searchRouter from './routes/search.js';
 import setupSocket from './socket.js';
@@ -60,6 +61,7 @@ app.use('/api/tasks', requireAuth, tasksRouter);
 app.use('/api/workflows', requireAuth, workflowsRouter);
 app.use('/api/projects', requireAuth, projectsRouter);
 app.use('/api/templates', requireAuth, templatesRouter);
+app.use('/api/notifications', requireAuth, notificationsRouter);
 app.use('/api/uploads', uploadsRouter); // POST is guarded inside; GET uses a query-param token
 app.use('/api/search', requireAuth, searchRouter);
 
