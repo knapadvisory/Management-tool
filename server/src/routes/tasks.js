@@ -7,6 +7,9 @@ import { nextDueDate } from '../reminders.js';
 const router = Router();
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 const RECURRENCES = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
+const STATUSES = ['in_progress', 'completed', 'hold', 'cancelled'];
+const STATUS_LABEL = { in_progress: 'In Progress', completed: 'Completed', hold: 'On Hold', cancelled: 'Cancelled' };
+const NEEDS_REASON = (s) => s === 'hold' || s === 'cancelled';
 
 const getUser = (id) => (id ? db.prepare('SELECT * FROM users WHERE id = ?').get(id) : null);
 
@@ -239,13 +242,21 @@ router.get('/:id', (req, res) => {
 router.patch('/:id', (req, res) => {
   const task = loadTask(req, res);
   if (!task) return;
-  const { title, description, stage_id, assignee_id, priority, due_date, project_id, recurrence } = req.body;
+  const { title, description, stage_id, assignee_id, priority, due_date, project_id, recurrence, status, status_reason } = req.body;
 
   if (priority !== undefined && !PRIORITIES.includes(priority)) {
     return res.status(400).json({ error: 'Invalid priority' });
   }
   if (recurrence !== undefined && !RECURRENCES.includes(recurrence)) {
     return res.status(400).json({ error: 'Invalid recurrence' });
+  }
+  if (status !== undefined && !STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+  // Putting a task on hold or cancelling it requires a reason.
+  const statusChanged = status !== undefined && status !== task.status;
+  if (statusChanged && NEEDS_REASON(status) && !(status_reason || '').trim()) {
+    return res.status(400).json({ error: `A reason is required to mark a task as ${STATUS_LABEL[status]}` });
   }
 
   let movedToDone = false;
@@ -284,6 +295,20 @@ router.patch('/:id', (req, res) => {
     logActivity(task.id, req.user.id, recurrence === 'none' ? 'turned off repeat' : `set it to repeat ${recurrence}`);
   }
 
+  // Status lifecycle change (with reason for hold/cancelled).
+  let completedNow = false;
+  let reasonWrite = 0;
+  let reasonValue = null;
+  if (statusChanged) {
+    const reason = NEEDS_REASON(status) ? (status_reason || '').trim() : '';
+    reasonWrite = 1;
+    reasonValue = reason;
+    const suffix = reason ? ` — ${reason}` : '';
+    logActivity(task.id, req.user.id, `set status to ${STATUS_LABEL[status]}${suffix}`);
+    notifyWatchers(req, task, `marked it ${STATUS_LABEL[status]}${suffix}`, 'task_status');
+    completedNow = status === 'completed';
+  }
+
   db.prepare(`
     UPDATE tasks SET
       title = COALESCE(?, title),
@@ -294,6 +319,8 @@ router.patch('/:id', (req, res) => {
       due_date = CASE WHEN ? THEN ? ELSE due_date END,
       project_id = CASE WHEN ? THEN ? ELSE project_id END,
       recurrence = COALESCE(?, recurrence),
+      status = COALESCE(?, status),
+      status_reason = CASE WHEN ? THEN ? ELSE status_reason END,
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -303,6 +330,8 @@ router.patch('/:id', (req, res) => {
     due_date !== undefined ? 1 : 0, due_date ?? null,
     project_id !== undefined ? 1 : 0, project_id ?? null,
     recurrence ?? null,
+    status ?? null,
+    reasonWrite, reasonValue,
     task.id
   );
 
@@ -312,12 +341,17 @@ router.patch('/:id', (req, res) => {
     io?.to(`user:${assignee_id}`).emit('task:assigned', { task: updated, by: publicUser(req.user) });
     createNotification(io, { user_id: assignee_id, type: 'task_assigned', actor_id: req.user.id, task_id: task.id, text: `${req.user.name} assigned you "${updated.title}"` });
   }
-  // Completing a recurring task generates its next occurrence automatically.
-  if (movedToDone) spawnNextOccurrence(req, db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id));
+  // Completing a recurring task — via a done stage or the Completed status —
+  // generates its next occurrence automatically (only once per request).
+  if (movedToDone || completedNow) spawnNextOccurrence(req, db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id));
   res.json(updated);
 });
 
 router.delete('/:id', (req, res) => {
+  // Only super admins may delete a task; everyone else changes its status.
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only an admin can delete a task. Change its status instead.' });
+  }
   const task = loadTask(req, res);
   if (!task) return;
   // Tell watchers before the row (and its watcher rows) disappear.

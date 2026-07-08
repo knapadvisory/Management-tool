@@ -22,6 +22,7 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 
 **☑ Tasks (Bitrix-style)**
 - Create tasks with description, priority (low → urgent), due date
+- **Status lifecycle** — every task is In Progress / Completed / On Hold / Cancelled; putting one on hold or cancelling it requires a reason (recorded in the activity log). Anyone involved can change status; **only an admin can delete a task**
 - Assign tasks to any team member — assignees get a real-time notification
 - **Templates** — prepare a repeatable process once (e.g. Company Registration) with its standard steps, default priority, tags and board; start a new task from it and tweak per client
 - **Projects** — group tasks under a client or initiative, each with its own color

@@ -1,5 +1,6 @@
 import React from 'react';
 import Avatar from './Avatar.jsx';
+import { statusMeta } from '../status.js';
 
 // Returns 'overdue' | 'due-soon' | '' for a YYYY-MM-DD date against today.
 export function dueStatus(due) {
@@ -38,6 +39,12 @@ export default function TaskCard({ task, onOpen, draggable, onDragStart, current
       )}
 
       <div className="task-meta">
+        {task.status && task.status !== 'in_progress' && (
+          <span className="status-badge sm" style={{ background: statusMeta(task.status).color }}
+            title={task.status_reason ? `${statusMeta(task.status).label}: ${task.status_reason}` : statusMeta(task.status).label}>
+            {statusMeta(task.status).label}
+          </span>
+        )}
         <span className={`priority priority-${task.priority}`}>{task.priority}</span>
         {task.due_date && <span className={`due ${due}`}>📅 {task.due_date}</span>}
         {task.recurrence && task.recurrence !== 'none' && <span title={`Repeats ${task.recurrence}`}>🔁</span>}

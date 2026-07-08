@@ -3,7 +3,7 @@ import Avatar from './Avatar.jsx';
 
 const ICON = {
   mention: '💬', task_assigned: '📌', task_chat: '💬', task_note: '📝', task_moved: '➡️', task_update: '🔔',
-  task_reminder: '⏰', task_recurred: '🔁', task_deleted: '🗑️',
+  task_reminder: '⏰', task_recurred: '🔁', task_deleted: '🗑️', task_status: '🚦',
 };
 
 function timeAgo(iso) {

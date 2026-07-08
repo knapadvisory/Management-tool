@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Avatar from './Avatar.jsx';
 import { dueStatus } from './TaskCard.jsx';
+import { statusMeta } from '../status.js';
 
 const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 
@@ -17,6 +18,7 @@ export default function TaskListView({ tasks, onOpen }) {
         case 'board': av = a.workflow?.name || ''; bv = b.workflow?.name || ''; break;
         case 'priority': av = PRIORITY_ORDER[a.priority]; bv = PRIORITY_ORDER[b.priority]; break;
         case 'stage': av = a.stage?.position ?? 0; bv = b.stage?.position ?? 0; break;
+        case 'status': av = a.status || ''; bv = b.status || ''; break;
         case 'assignee': av = a.assignee?.name || '~'; bv = b.assignee?.name || '~'; break;
         case 'due': av = a.due_date || '9999'; bv = b.due_date || '9999'; break;
         default: av = a.updated_at; bv = b.updated_at;
@@ -40,6 +42,7 @@ export default function TaskListView({ tasks, onOpen }) {
             {header('title', 'Task')}
             {header('board', 'Board')}
             {header('stage', 'Stage')}
+            {header('status', 'Status')}
             {header('assignee', 'Assignee')}
             {header('priority', 'Priority')}
             {header('due', 'Due')}
@@ -56,13 +59,17 @@ export default function TaskListView({ tasks, onOpen }) {
               </td>
               <td className="muted">{t.workflow?.name}</td>
               <td>{t.stage?.name}</td>
+              <td>
+                <span className="status-badge sm" style={{ background: statusMeta(t.status).color }}
+                  title={t.status_reason || ''}>{statusMeta(t.status).label}</span>
+              </td>
               <td>{t.assignee ? <span className="list-assignee"><Avatar user={t.assignee} size={20} /> {t.assignee.name}</span> : <span className="muted">—</span>}</td>
               <td><span className={`priority priority-${t.priority}`}>{t.priority}</span></td>
               <td>{t.due_date ? <span className={`due ${dueStatus(t.due_date)}`}>{t.due_date}</span> : <span className="muted">—</span>}</td>
               <td>{t.checklist_total > 0 ? `${t.checklist_done}/${t.checklist_total}` : <span className="muted">—</span>}</td>
             </tr>
           ))}
-          {tasks.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 20 }}>No tasks match these filters.</td></tr>}
+          {tasks.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 20 }}>No tasks match these filters.</td></tr>}
         </tbody>
       </table>
     </div>

@@ -318,6 +318,36 @@ async function main() {
   check('member sees tasks assigned to them', bobList2.data.tasks.some((t) => t.id === forBob.data.id));
   check('member list is scoped to involvement only', bobList2.data.tasks.every((t) => t.creator?.id === bobId || t.assignee?.id === bobId || t.watcher_ids.includes(bobId)));
 
+  console.log('Task status & deletion');
+  const st = await req('POST', '/api/tasks', { token: a, body: { title: 'Status task', workflow_id: wf.data.id, assignee_id: bobId } });
+  check('new task defaults to In Progress', st.data.status === 'in_progress');
+  const stId = st.data.id;
+  const toCompleted = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'completed' } });
+  check('member can change status to Completed', toCompleted.status === 200 && toCompleted.data.status === 'completed');
+  const holdNoReason = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'hold' } });
+  check('Hold without a reason is rejected', holdNoReason.status === 400);
+  const holdReason = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'hold', status_reason: 'Waiting on client documents' } });
+  check('Hold with a reason is accepted', holdReason.status === 200 && holdReason.data.status === 'hold' && holdReason.data.status_reason.includes('client documents'));
+  const cancelNoReason = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'cancelled' } });
+  check('Cancel without a reason is rejected', cancelNoReason.status === 400);
+  const badStatus = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'archived' } });
+  check('invalid status rejected', badStatus.status === 400);
+  const backToProgress = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'in_progress' } });
+  check('reason cleared when leaving Hold/Cancelled', backToProgress.data.status === 'in_progress' && backToProgress.data.status_reason === '');
+
+  const memberDelete = await req('DELETE', `/api/tasks/${stId}`, { token: b });
+  check('member cannot delete a task', memberDelete.status === 403);
+  const stStill = await req('GET', `/api/tasks/${stId}`, { token: a });
+  check('task survives a member delete attempt', stStill.status === 200);
+  const adminDelete = await req('DELETE', `/api/tasks/${stId}`, { token: a });
+  check('admin can delete a task', adminDelete.status === 200);
+
+  const recS = await req('POST', '/api/tasks', { token: a, body: { title: 'Recurring via status', workflow_id: wf.data.id, due_date: '2026-07-10', recurrence: 'daily' } });
+  const beforeS = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
+  await req('PATCH', `/api/tasks/${recS.data.id}`, { token: a, body: { status: 'completed' } });
+  const afterS = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
+  check('completing via status spawns the next occurrence', afterS === beforeS + 1);
+
   console.log('Sockets');
   const generalId = chans.data.channels.find((c) => c.name === 'general').id;
   const sockA = io(BASE, { auth: { token: a } });

@@ -236,6 +236,11 @@ ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
 // Repeat rule: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'. When a
 // recurring task is completed, the next occurrence is generated automatically.
 ensureColumn('tasks', 'recurrence', "TEXT NOT NULL DEFAULT 'none'");
+// Lifecycle status (independent of the workflow stage / Kanban column):
+// 'in_progress' | 'completed' | 'hold' | 'cancelled'. Hold/cancelled carry a
+// mandatory reason in status_reason.
+ensureColumn('tasks', 'status', "TEXT NOT NULL DEFAULT 'in_progress'");
+ensureColumn('tasks', 'status_reason', "TEXT NOT NULL DEFAULT ''");
 // Org roles: 'admin' (super admin — full oversight + user management) or 'member'.
 // 'active' gates access; deactivating revokes login without destroying data.
 ensureColumn('users', 'role', "TEXT NOT NULL DEFAULT 'member'");

@@ -8,6 +8,7 @@ import TaskCalendarView from './TaskCalendarView.jsx';
 import ProjectsModal from './ProjectsModal.jsx';
 import TemplatesModal from './TemplatesModal.jsx';
 import NewTaskModal from './NewTaskModal.jsx';
+import { TASK_STATUSES } from '../status.js';
 
 const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 const localYMD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -20,7 +21,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
   const [tags, setTags] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [view, setView] = useState('board'); // board | list | calendar
-  const [filters, setFilters] = useState({ project_id: '', tag: '', mine: false, due: '', watching: false });
+  const [filters, setFilters] = useState({ project_id: '', tag: '', mine: false, due: '', watching: false, status: '' });
   const [openTaskId, setOpenTaskId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
@@ -114,6 +115,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
     if (filters.project_id && t.project?.id !== Number(filters.project_id)) return false;
     if (filters.tag && !t.tags?.includes(filters.tag)) return false;
     if (filters.watching && !t.watcher_ids?.includes(user.id)) return false;
+    if (filters.status && (t.status || 'in_progress') !== filters.status) return false;
     switch (filters.due) {
       case 'overdue': if (!t.due_date || t.due_date >= todayYMD) return false; break;
       case 'today': if (t.due_date !== todayYMD) return false; break;
@@ -157,6 +159,10 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
         <select value={filters.tag} onChange={(e) => setFilters((f) => ({ ...f, tag: e.target.value }))}>
           <option value="">All tags</option>
           {tags.map((t) => <option key={t} value={t}>#{t}</option>)}
+        </select>
+        <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))} title="Filter by status">
+          <option value="">All statuses</option>
+          {TASK_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
         <select value={filters.due} onChange={(e) => setFilters((f) => ({ ...f, due: e.target.value }))} title="Filter by due date">
           <option value="">Any date</option>

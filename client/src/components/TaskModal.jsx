@@ -4,6 +4,7 @@ import { formatBytes } from '../format.js';
 import Avatar from './Avatar.jsx';
 import TaskChat from './TaskChat.jsx';
 import RemindersEditor from './RemindersEditor.jsx';
+import StatusControl from './StatusControl.jsx';
 
 export default function TaskModal({ taskId, user, users, workflows = [], projects = [], onClose }) {
   const [tab, setTab] = useState('chat');
@@ -133,6 +134,8 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
           </button>
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
+
+        <StatusControl task={task} onUpdate={update} />
 
         <div className="task-fields">
           <label>Stage
@@ -276,7 +279,9 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
 
         <div className="modal-footer">
           <span className="muted">Created by {task.creator?.name}</span>
-          <button className="btn btn-danger" onClick={remove}>Delete task</button>
+          {user.role === 'admin'
+            ? <button className="btn btn-danger" onClick={remove}>Delete task</button>
+            : <span className="muted">Only an admin can delete a task</span>}
         </div>
       </div>
     </div>
