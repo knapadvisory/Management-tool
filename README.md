@@ -85,6 +85,8 @@ JWT_SECRET=some-long-random-string npm start
 
 The server serves the built client at http://localhost:3001 (single process, single port).
 
+**Deploy to a custom domain:** see [DEPLOY.md](DEPLOY.md) — the repo ships a `Dockerfile` for one-click deploys on Railway (or any Docker host), with your own domain and automatic HTTPS.
+
 **Environment variables**
 
 | Variable | Default | Purpose |
