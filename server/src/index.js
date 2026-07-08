@@ -11,6 +11,7 @@ import { register, login, signToken, requireAuth, publicUser } from './auth.js';
 import channelsRouter from './routes/channels.js';
 import tasksRouter from './routes/tasks.js';
 import workflowsRouter from './routes/workflows.js';
+import projectsRouter from './routes/projects.js';
 import uploadsRouter from './routes/uploads.js';
 import searchRouter from './routes/search.js';
 import setupSocket from './socket.js';
@@ -56,6 +57,7 @@ app.get('/api/users', requireAuth, (req, res) => {
 app.use('/api/channels', requireAuth, channelsRouter);
 app.use('/api/tasks', requireAuth, tasksRouter);
 app.use('/api/workflows', requireAuth, workflowsRouter);
+app.use('/api/projects', requireAuth, projectsRouter);
 app.use('/api/uploads', uploadsRouter); // POST is guarded inside; GET uses a query-param token
 app.use('/api/search', requireAuth, searchRouter);
 

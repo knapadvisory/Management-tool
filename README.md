@@ -23,9 +23,15 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 **☑ Tasks (Bitrix-style)**
 - Create tasks with description, priority (low → urgent), due date
 - Assign tasks to any team member — assignees get a real-time notification
-- Kanban board grouped by workflow stage, with drag & drop between stages
+- **Projects** — group tasks under a client or initiative, each with its own color
+- **Checklists / subtasks** with a live progress bar
+- **Tags** for cross-cutting labels, with a tag filter
+- **Watchers** — follow any task and get notified on comments and stage moves
+- **File attachments** on tasks
+- **Three views**: Kanban board (drag & drop), sortable List, and Calendar
+- Filters: project, tag, assigned-to-me, watching, and overdue
+- Due-date awareness: overdue and due-soon tasks are visually flagged
 - Comments and an automatic activity log on every task
-- "Assigned to me" filter
 
 **⚙ Workflows**
 - Define custom workflows (e.g. *Client Onboarding: Intake → KYC → Proposal → Signed*)

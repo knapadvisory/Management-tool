@@ -67,6 +67,8 @@ router.get('/:id', (req, res) => {
     const member = msg && db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?')
       .get(msg.channel_id, userId);
     if (!member) return res.status(403).json({ error: 'Not allowed' });
+  } else if (att.task_id) {
+    // Tasks are shared across the team, so any authenticated member may view.
   } else if (att.uploader_id !== userId) {
     return res.status(403).json({ error: 'Not allowed' });
   }

@@ -131,6 +131,59 @@ async function main() {
   const delStage = await req('DELETE', `/api/workflows/${wf.data.id}/stages/${wf.data.stages[1].id}`, { token: a });
   check('stage with tasks cannot be deleted', delStage.status === 400);
 
+  console.log('Task depth');
+  const project = await req('POST', '/api/projects', { token: a, body: { name: 'Acme', color: '#2eb67d' } });
+  check('project created', project.status === 201);
+  const projId = project.data.id;
+  const deepTask = await req('POST', '/api/tasks', {
+    token: a,
+    body: { title: 'Deep task', workflow_id: wf.data.id, project_id: projId, assignee_id: bobId, priority: 'high', due_date: '2020-01-01', tags: ['urgent', 'client'] },
+  });
+  check('task created with project + tags', deepTask.data.project?.id === projId && deepTask.data.tags.includes('urgent'));
+  check('creator and assignee auto-watch', deepTask.data.watcher_ids.includes(1) && deepTask.data.watcher_ids.includes(bobId));
+  const dtId = deepTask.data.id;
+
+  await req('POST', `/api/tasks/${dtId}/checklist`, { token: a, body: { text: 'Step one' } });
+  const cl = await req('POST', `/api/tasks/${dtId}/checklist`, { token: a, body: { text: 'Step two' } });
+  check('checklist items added', cl.data.length === 2);
+  const toggled = await req('PATCH', `/api/tasks/${dtId}/checklist/${cl.data[0].id}`, { token: a, body: { is_done: true } });
+  check('checklist item toggled', toggled.data.find((i) => i.id === cl.data[0].id).is_done === 1);
+  const dtDetail = await req('GET', `/api/tasks/${dtId}`, { token: a });
+  check('task reports checklist progress 1/2', dtDetail.data.task.checklist_done === 1 && dtDetail.data.task.checklist_total === 2);
+
+  const addTag = await req('POST', `/api/tasks/${dtId}/tags`, { token: a, body: { tag: 'Q3' } });
+  check('tag added (lowercased)', addTag.data.tags.includes('q3'));
+  const rmTag = await req('DELETE', `/api/tasks/${dtId}/tags/urgent`, { token: a });
+  check('tag removed', !rmTag.data.tags.includes('urgent'));
+  const tagsMeta = await req('GET', '/api/tasks/meta/tags', { token: a });
+  check('distinct tags listed', tagsMeta.data.tags.includes('client'));
+
+  const unwatch = await req('DELETE', `/api/tasks/${dtId}/watch`, { token: b });
+  check('watcher removed', !unwatch.data.watcher_ids.includes(bobId));
+  const rewatch = await req('POST', `/api/tasks/${dtId}/watch`, { token: b });
+  check('watcher re-added', rewatch.data.watcher_ids.includes(bobId));
+
+  const tfd = new FormData();
+  tfd.append('files', new Blob(['spec doc'], { type: 'text/plain' }), 'spec.txt');
+  const tup = await (await fetch(BASE + '/api/uploads', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: tfd })).json();
+  const linked = await req('POST', `/api/tasks/${dtId}/attachments`, { token: a, body: { attachment_ids: [tup.attachments[0].id] } });
+  check('attachment linked to task', linked.data.length === 1);
+  const taskFileDl = await fetch(`${BASE}/api/uploads/${tup.attachments[0].id}?token=${b}`);
+  check('teammate can download task attachment', taskFileDl.status === 200);
+
+  const byProj = await req('GET', `/api/tasks?project_id=${projId}`, { token: a });
+  check('filter by project', byProj.data.tasks.every((t) => t.project?.id === projId) && byProj.data.tasks.length === 1);
+  const byTag = await req('GET', '/api/tasks?tag=client', { token: a });
+  check('filter by tag', byTag.data.tasks.some((t) => t.id === dtId));
+  const overdueList = await req('GET', '/api/tasks?overdue=1', { token: a });
+  check('filter overdue', overdueList.data.tasks.some((t) => t.id === dtId));
+  const watchingList = await req('GET', '/api/tasks?watching=1', { token: b });
+  check('filter watching', watchingList.data.tasks.some((t) => t.id === dtId));
+
+  await req('DELETE', `/api/projects/${projId}`, { token: a });
+  const afterProjDel = await req('GET', `/api/tasks/${dtId}`, { token: a });
+  check('task detaches when project deleted', afterProjDel.data.task.project === null);
+
   console.log('Sockets');
   const generalId = chans.data.channels.find((c) => c.name === 'general').id;
   const sockA = io(BASE, { auth: { token: a } });
