@@ -184,6 +184,38 @@ async function main() {
   const afterProjDel = await req('GET', `/api/tasks/${dtId}`, { token: a });
   check('task detaches when project deleted', afterProjDel.data.task.project === null);
 
+  console.log('Task templates');
+  const tmpl = await req('POST', '/api/templates', {
+    token: a,
+    body: {
+      name: 'Company Registration', default_priority: 'high', default_workflow_id: wf.data.id,
+      tags: ['registration', 'client'], steps: ['Collect KYC', 'Name reservation', 'File incorporation', 'PAN & TAN'],
+    },
+  });
+  check('template created with steps + tags', tmpl.status === 201 && tmpl.data.steps.length === 4 && tmpl.data.tags.includes('registration'));
+  check('template records default board', tmpl.data.default_workflow?.id === wf.data.id);
+  const tmplId = tmpl.data.id;
+
+  const tmplUpdate = await req('PATCH', `/api/templates/${tmplId}`, { token: a, body: { steps: ['Collect KYC', 'Name reservation', 'File incorporation', 'PAN & TAN', 'GST registration'] } });
+  check('template steps replaced on update', tmplUpdate.data.steps.length === 5 && tmplUpdate.data.steps[4].text === 'GST registration');
+
+  const fromTmpl = await req('POST', '/api/tasks', {
+    token: a,
+    body: {
+      title: 'Company Registration – Acme', workflow_id: wf.data.id, priority: 'high',
+      tags: tmplUpdate.data.tags, checklist: tmplUpdate.data.steps.map((s) => s.text),
+    },
+  });
+  check('task created from template has tags', fromTmpl.data.tags.includes('client'));
+  check('task created from template has checklist', fromTmpl.data.checklist_total === 5);
+  const fromDetail = await req('GET', `/api/tasks/${fromTmpl.data.id}`, { token: a });
+  check('template steps copied into task checklist', fromDetail.data.checklist.map((s) => s.text).includes('GST registration'));
+
+  const tmplDel = await req('DELETE', `/api/templates/${tmplId}`, { token: a });
+  check('template deleted', tmplDel.status === 200);
+  const afterTmplDel = await req('GET', `/api/tasks/${fromTmpl.data.id}`, { token: a });
+  check('task survives template deletion', afterTmplDel.status === 200 && afterTmplDel.data.task.checklist_total === 5);
+
   console.log('Sockets');
   const generalId = chans.data.channels.find((c) => c.name === 'general').id;
   const sockA = io(BASE, { auth: { token: a } });

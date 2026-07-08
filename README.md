@@ -23,6 +23,7 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 **☑ Tasks (Bitrix-style)**
 - Create tasks with description, priority (low → urgent), due date
 - Assign tasks to any team member — assignees get a real-time notification
+- **Templates** — prepare a repeatable process once (e.g. Company Registration) with its standard steps, default priority, tags and board; start a new task from it and tweak per client
 - **Projects** — group tasks under a client or initiative, each with its own color
 - **Checklists / subtasks** with a live progress bar
 - **Tags** for cross-cutting labels, with a tag filter
