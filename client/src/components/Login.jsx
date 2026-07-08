@@ -1,11 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../api.js';
 
 export default function Login({ onAuth }) {
   const [mode, setMode] = useState('login');
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', code: '' });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [codeRequired, setCodeRequired] = useState(false);
+
+  useEffect(() => {
+    api('/config').then((c) => setCodeRequired(!!c.signup_code_required)).catch(() => {});
+  }, []);
 
   async function submit(e) {
     e.preventDefault();
@@ -33,6 +38,9 @@ export default function Login({ onAuth }) {
         )}
         <input type="email" placeholder="Email" value={form.email} onChange={set('email')} required />
         <input type="password" placeholder="Password" value={form.password} onChange={set('password')} required minLength={6} />
+        {mode === 'register' && codeRequired && (
+          <input placeholder="Access code (from your admin)" value={form.code} onChange={set('code')} required />
+        )}
         {error && <div className="form-error">{error}</div>}
         <button className="btn btn-primary" disabled={busy}>
           {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}

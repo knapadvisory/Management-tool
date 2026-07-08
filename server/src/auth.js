@@ -33,7 +33,14 @@ export function requireAuth(req, res, next) {
   }
 }
 
-export function register({ name, email, password }) {
+// When SIGNUP_CODE is set, registration requires that shared code — so a
+// public link can be shared safely with only the people who have it.
+export const signupCodeRequired = () => !!(process.env.SIGNUP_CODE || '').trim();
+
+export function register({ name, email, password, code }) {
+  if (signupCodeRequired() && (code || '').trim() !== process.env.SIGNUP_CODE.trim()) {
+    throw Object.assign(new Error('Invalid or missing access code'), { status: 403 });
+  }
   if (!name?.trim() || !email?.trim() || !password || password.length < 6) {
     throw Object.assign(new Error('Name, email and a password of 6+ characters are required'), { status: 400 });
   }
