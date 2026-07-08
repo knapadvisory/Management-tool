@@ -19,9 +19,10 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
   const [busy, setBusy] = useState(false);
 
   // Applying a template pre-fills the form; everything stays editable.
+  // Deselecting (back to blank) clears what the template added.
   function applyTemplate(id) {
     setTemplateId(id);
-    if (!id) return;
+    if (!id) { setSteps([]); setTags([]); return; }
     const t = templates.find((x) => x.id === Number(id));
     if (!t) return;
     setForm((f) => ({

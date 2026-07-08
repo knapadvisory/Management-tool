@@ -67,6 +67,11 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
     if (openTaskRequest) { setOpenTaskId(openTaskRequest); onTaskOpened?.(); }
   }, [openTaskRequest, onTaskOpened]);
 
+  // The Kanban board needs one workflow's columns, so "All tasks" uses List/Calendar.
+  useEffect(() => {
+    if (allBoards && view === 'board') setView('list');
+  }, [allBoards, view]);
+
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
@@ -119,13 +124,13 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
         <h2>Tasks</h2>
         <label className="board-select">Board:
           <select value={workflowId} onChange={(e) => setWorkflowId(e.target.value === 'all' ? 'all' : Number(e.target.value))}>
-            <option value="all">All boards</option>
+            <option value="all">All tasks</option>
             {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         </label>
 
         <div className="view-switch">
-          {['board', 'list', 'calendar'].map((v) => (
+          {(allBoards ? ['list', 'calendar'] : ['board', 'list', 'calendar']).map((v) => (
             <button key={v} className={view === v ? 'active' : ''} onClick={() => setView(v)}>
               {v[0].toUpperCase() + v.slice(1)}
             </button>
@@ -150,13 +155,6 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
         <button className="btn btn-sm" onClick={() => setShowProjects(true)}>⚙ Projects</button>
         <button className="btn btn-sm" onClick={() => setShowTemplates(true)}>⧉ Templates</button>
       </div>
-
-      {view === 'board' && allBoards && (
-        <div className="all-boards-hint">
-          The Kanban board shows one workflow's columns at a time. Pick a specific board above to drag cards,
-          or use the <strong>List</strong> or <strong>Calendar</strong> view to see every task across all boards.
-        </div>
-      )}
 
       {view === 'board' && !allBoards && workflow && (
         <div className="board">
