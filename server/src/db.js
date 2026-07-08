@@ -55,6 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
 CREATE TABLE IF NOT EXISTS attachments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+  task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
   uploader_id INTEGER NOT NULL REFERENCES users(id),
   stored_name TEXT NOT NULL,
   original_name TEXT NOT NULL,
@@ -63,6 +64,7 @@ CREATE TABLE IF NOT EXISTS attachments (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_task ON attachments(task_id);
 
 CREATE TABLE IF NOT EXISTS message_reactions (
   message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
@@ -125,6 +127,38 @@ CREATE TABLE IF NOT EXISTS task_activity (
   action TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  color TEXT NOT NULL DEFAULT '#4f46e5',
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS task_tags (
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  tag TEXT NOT NULL,
+  PRIMARY KEY (task_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_task_tags_tag ON task_tags(tag);
+
+CREATE TABLE IF NOT EXISTS task_checklist (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  is_done INTEGER NOT NULL DEFAULT 0,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_checklist_task ON task_checklist(task_id, position);
+
+CREATE TABLE IF NOT EXISTS task_watchers (
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (task_id, user_id)
+);
 `);
 
 // Add columns to tables created before these features existed.
@@ -137,6 +171,8 @@ function ensureColumn(table, column, definition) {
 ensureColumn('messages', 'parent_id', 'INTEGER REFERENCES messages(id)');
 ensureColumn('messages', 'edited_at', 'TEXT');
 ensureColumn('messages', 'deleted_at', 'TEXT');
+ensureColumn('attachments', 'task_id', 'INTEGER REFERENCES tasks(id)');
+ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
 
 // Seed the shared #general channel and a default workflow on first run.
 const seed = db.transaction(() => {
