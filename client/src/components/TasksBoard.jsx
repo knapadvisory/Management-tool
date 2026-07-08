@@ -11,7 +11,7 @@ import NewTaskModal from './NewTaskModal.jsx';
 
 const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 
-export default function TasksBoard({ user, users }) {
+export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened }) {
   const [workflows, setWorkflows] = useState([]);
   const [workflowId, setWorkflowId] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -60,6 +60,11 @@ export default function TasksBoard({ user, users }) {
   }, [loadProjects, loadTags, loadTemplates]);
 
   useEffect(() => { loadTasks(workflowId); }, [workflowId, loadTasks]);
+
+  // Open a specific task when navigated from a notification.
+  useEffect(() => {
+    if (openTaskRequest) { setOpenTaskId(openTaskRequest); onTaskOpened?.(); }
+  }, [openTaskRequest, onTaskOpened]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -171,7 +176,7 @@ export default function TasksBoard({ user, users }) {
           taskId={openTaskId}
           user={user}
           users={users}
-          workflow={workflow}
+          workflows={workflows}
           projects={projects}
           onClose={() => setOpenTaskId(null)}
         />

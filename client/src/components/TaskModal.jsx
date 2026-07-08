@@ -2,8 +2,10 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, uploadFiles, fileUrl } from '../api.js';
 import { formatBytes } from '../format.js';
 import Avatar from './Avatar.jsx';
+import TaskChat from './TaskChat.jsx';
 
-export default function TaskModal({ taskId, user, users, workflow, projects = [], onClose }) {
+export default function TaskModal({ taskId, user, users, workflows = [], projects = [], onClose }) {
+  const [tab, setTab] = useState('chat');
   const [task, setTask] = useState(null);
   const [comments, setComments] = useState([]);
   const [activity, setActivity] = useState([]);
@@ -96,6 +98,7 @@ export default function TaskModal({ taskId, user, users, workflow, projects = []
   }
 
   if (!task) return null;
+  const workflow = workflows.find((w) => w.id === task.workflow_id) || workflows[0];
   const watching = watchers.some((w) => w.id === user.id);
   const doneCount = checklist.filter((i) => i.is_done).length;
   const progress = checklist.length ? Math.round((doneCount / checklist.length) * 100) : 0;
@@ -118,7 +121,7 @@ export default function TaskModal({ taskId, user, users, workflow, projects = []
         <div className="task-fields">
           <label>Stage
             <select value={task.stage_id} onChange={(e) => update({ stage_id: Number(e.target.value) })}>
-              {workflow.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {(workflow?.stages || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
           <label>Assignee
@@ -202,9 +205,17 @@ export default function TaskModal({ taskId, user, users, workflow, projects = []
           {watchers.length === 0 && <span className="muted">none</span>}
         </div>
 
-        <div className="task-columns">
-          <section>
-            <h4>Comments</h4>
+        <div className="task-tabs">
+          <button className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')}>💬 Chat</button>
+          <button className={tab === 'notes' ? 'active' : ''} onClick={() => setTab('notes')}>📝 Notes{comments.length > 0 ? ` (${comments.length})` : ''}</button>
+          <button className={tab === 'activity' ? 'active' : ''} onClick={() => setTab('activity')}>🕑 Activity</button>
+        </div>
+
+        {tab === 'chat' && <TaskChat taskId={taskId} user={user} />}
+
+        {tab === 'notes' && (
+          <section className="notes-section">
+            <p className="muted notes-hint">Notes are a lasting record for this task. For back-and-forth, use Chat.</p>
             <div className="comment-list">
               {comments.map((c) => (
                 <div key={c.id} className="comment">
@@ -212,20 +223,23 @@ export default function TaskModal({ taskId, user, users, workflow, projects = []
                   <div><strong>{c.user_name}</strong><div>{c.content}</div></div>
                 </div>
               ))}
-              {comments.length === 0 && <div className="empty-hint">No comments yet.</div>}
+              {comments.length === 0 && <div className="empty-hint">No notes yet.</div>}
             </div>
             <form onSubmit={addComment} className="comment-form">
-              <input placeholder="Write a comment…" value={comment} onChange={(e) => setComment(e.target.value)} />
-              <button className="btn btn-primary" disabled={!comment.trim()}>Post</button>
+              <input placeholder="Add a note…" value={comment} onChange={(e) => setComment(e.target.value)} />
+              <button className="btn btn-primary" disabled={!comment.trim()}>Add note</button>
             </form>
           </section>
+        )}
+
+        {tab === 'activity' && (
           <section>
-            <h4>Activity</h4>
             <ul className="activity-list">
               {activity.map((a) => <li key={a.id}><strong>{a.user_name}</strong> {a.action}</li>)}
+              {activity.length === 0 && <div className="empty-hint">No activity yet.</div>}
             </ul>
           </section>
-        </div>
+        )}
 
         <div className="modal-footer">
           <span className="muted">Created by {task.creator?.name}</span>

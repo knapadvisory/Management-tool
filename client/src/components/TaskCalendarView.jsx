@@ -41,8 +41,10 @@ export default function TaskCalendarView({ tasks, onOpen }) {
         <button className="btn" onClick={() => shift(1)}>›</button>
         <button className="btn" onClick={() => { const d = new Date(); setCursor({ y: d.getFullYear(), m: d.getMonth() }); }}>Today</button>
       </div>
-      <div className="cal-grid">
+      <div className="cal-weekdays">
         {WEEKDAYS.map((w) => <div key={w} className="cal-weekday">{w}</div>)}
+      </div>
+      <div className="cal-grid" style={{ gridTemplateRows: `repeat(${cells.length / 7}, minmax(0, 1fr))` }}>
         {cells.map((date, i) => {
           if (!date) return <div key={i} className="cal-cell empty" />;
           const key = ymd(date);

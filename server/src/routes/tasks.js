@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
+import { createNotification } from '../notifications.js';
 
 const router = Router();
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -38,14 +39,19 @@ function addWatcher(taskId, userId) {
   if (userId) db.prepare('INSERT OR IGNORE INTO task_watchers (task_id, user_id) VALUES (?, ?)').run(taskId, userId);
 }
 
-// Notify everyone watching a task (except whoever triggered the change).
-function notifyWatchers(req, task, text) {
+// Notify everyone watching a task (except whoever triggered the change):
+// a transient toast plus a persistent inbox entry.
+function notifyWatchers(req, task, text, type = 'task_update') {
   const io = req.app.get('io');
   if (!io) return;
   const watchers = db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task.id);
   for (const { user_id } of watchers) {
     if (user_id !== req.user.id) {
       io.to(`user:${user_id}`).emit('task:notify', { task_id: task.id, title: task.title, text, by: publicUser(req.user) });
+      createNotification(io, {
+        user_id, type, actor_id: req.user.id, task_id: task.id,
+        text: `${req.user.name} ${text} on "${task.title}"`,
+      });
     }
   }
 }
@@ -116,7 +122,9 @@ router.post('/', (req, res) => {
 
   const task = emitChanged(req, taskId);
   if (assignee_id && assignee_id !== req.user.id) {
-    req.app.get('io')?.to(`user:${assignee_id}`).emit('task:assigned', { task, by: publicUser(req.user) });
+    const io = req.app.get('io');
+    io?.to(`user:${assignee_id}`).emit('task:assigned', { task, by: publicUser(req.user) });
+    createNotification(io, { user_id: assignee_id, type: 'task_assigned', actor_id: req.user.id, task_id: taskId, text: `${req.user.name} assigned you "${task.title}"` });
   }
   res.status(201).json(task);
 });
@@ -152,7 +160,7 @@ router.patch('/:id', (req, res) => {
     const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ? AND workflow_id = ?').get(stage_id, task.workflow_id);
     if (!stage) return res.status(400).json({ error: 'Stage does not belong to this workflow' });
     logActivity(task.id, req.user.id, `moved it to "${stage.name}"`);
-    notifyWatchers(req, task, `moved to "${stage.name}"`);
+    notifyWatchers(req, task, `moved to "${stage.name}"`, 'task_moved');
   }
   if (assignee_id !== undefined && assignee_id !== task.assignee_id) {
     if (assignee_id !== null && !getUser(assignee_id)) return res.status(400).json({ error: 'Assignee not found' });
@@ -186,7 +194,9 @@ router.patch('/:id', (req, res) => {
 
   const updated = emitChanged(req, task.id);
   if (assignee_id && assignee_id !== task.assignee_id && assignee_id !== req.user.id) {
-    req.app.get('io')?.to(`user:${assignee_id}`).emit('task:assigned', { task: updated, by: publicUser(req.user) });
+    const io = req.app.get('io');
+    io?.to(`user:${assignee_id}`).emit('task:assigned', { task: updated, by: publicUser(req.user) });
+    createNotification(io, { user_id: assignee_id, type: 'task_assigned', actor_id: req.user.id, task_id: task.id, text: `${req.user.name} assigned you "${updated.title}"` });
   }
   res.json(updated);
 });
@@ -209,13 +219,25 @@ router.post('/:id/comments', (req, res) => {
   const info = db.prepare('INSERT INTO task_comments (task_id, user_id, content) VALUES (?, ?, ?)')
     .run(task.id, req.user.id, content.trim());
   addWatcher(task.id, req.user.id);
-  notifyWatchers(req, task, 'commented');
+  notifyWatchers(req, task, 'added a note', 'task_note');
   emitChanged(req, task.id);
   const comment = db.prepare(`
     SELECT tc.*, u.name AS user_name, u.avatar_color FROM task_comments tc
     JOIN users u ON u.id = tc.user_id WHERE tc.id = ?
   `).get(info.lastInsertRowid);
   res.status(201).json(comment);
+});
+
+// --- Task chat (real-time; messages sent over sockets) ---
+
+router.get('/:id/chat', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  const messages = db.prepare(`
+    SELECT tm.*, u.name AS user_name, u.avatar_color FROM task_messages tm
+    JOIN users u ON u.id = tm.user_id WHERE tm.task_id = ? ORDER BY tm.id
+  `).all(task.id);
+  res.json({ messages });
 });
 
 // --- Checklist ---

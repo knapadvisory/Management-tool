@@ -27,12 +27,16 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 - **Projects** — group tasks under a client or initiative, each with its own color
 - **Checklists / subtasks** with a live progress bar
 - **Tags** for cross-cutting labels, with a tag filter
-- **Watchers** — follow any task and get notified on comments and stage moves
+- **Watchers** — follow any task and get notified on chat, notes and stage moves
 - **File attachments** on tasks
+- **Per-task chat** for real-time back-and-forth, plus lasting **Notes** and an automatic activity log
 - **Three views**: Kanban board (drag & drop), sortable List, and Calendar
 - Filters: project, tag, assigned-to-me, watching, and overdue
 - Due-date awareness: overdue and due-soon tasks are visually flagged
-- Comments and an automatic activity log on every task
+
+**🔔 Notifications**
+- A notification inbox (bell) with an unread badge, covering @mentions, task assignments, task chat, and activity on tasks you watch
+- Click a notification to jump straight to the channel or task; mark one or all as read
 
 **⚙ Workflows**
 - Define custom workflows (e.g. *Client Onboarding: Intake → KYC → Proposal → Signed*)

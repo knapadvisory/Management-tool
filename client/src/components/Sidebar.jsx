@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
+import NotificationBell from './NotificationBell.jsx';
 
 export default function Sidebar({
   user, channels, joinable, users, onlineIds, view,
   onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onOpenSearch,
+  notifications = [], unreadCount = 0, onSelectNotification, onMarkAllRead,
 }) {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
@@ -34,6 +36,12 @@ export default function Sidebar({
         <span className="logo">TeamHub</span>
         <div className="header-actions">
           <button className="icon-btn" title="Search messages" onClick={onOpenSearch}>🔍</button>
+          <NotificationBell
+            notifications={notifications}
+            unreadCount={unreadCount}
+            onSelect={onSelectNotification}
+            onMarkAllRead={onMarkAllRead}
+          />
           <button className="icon-btn" title="Sign out" onClick={onLogout}>⏻</button>
         </div>
       </div>
