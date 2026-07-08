@@ -3,6 +3,7 @@ import { api, uploadFiles, fileUrl } from '../api.js';
 import { formatBytes } from '../format.js';
 import Avatar from './Avatar.jsx';
 import TaskChat from './TaskChat.jsx';
+import RemindersEditor from './RemindersEditor.jsx';
 
 export default function TaskModal({ taskId, user, users, workflows = [], projects = [], onClose }) {
   const [tab, setTab] = useState('chat');
@@ -12,6 +13,7 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   const [checklist, setChecklist] = useState([]);
   const [watchers, setWatchers] = useState([]);
   const [attachments, setAttachments] = useState([]);
+  const [reminders, setReminders] = useState([]);
   const [comment, setComment] = useState('');
   const [description, setDescription] = useState('');
   const [newItem, setNewItem] = useState('');
@@ -27,6 +29,7 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
     setChecklist(d.checklist);
     setWatchers(d.watchers);
     setAttachments(d.attachments);
+    setReminders(d.reminders || []);
     setDescription(d.task.description || '');
   }, [taskId]);
 
@@ -91,6 +94,13 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
     setAttachments(await api(`/tasks/${taskId}/attachments/${att.id}`, { method: 'DELETE' }));
   }
 
+  async function addReminder(iso) {
+    setReminders(await api(`/tasks/${taskId}/reminders`, { method: 'POST', body: { remind_at: iso } }));
+  }
+  async function removeReminder(rem) {
+    setReminders(await api(`/tasks/${taskId}/reminders/${rem.id}`, { method: 'DELETE' }));
+  }
+
   async function remove() {
     if (!confirm('Delete this task?')) return;
     await api(`/tasks/${taskId}`, { method: 'DELETE' });
@@ -143,6 +153,15 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
           </label>
           <label>Due date
             <input type="date" value={task.due_date || ''} onChange={(e) => update({ due_date: e.target.value || null })} />
+          </label>
+          <label>Repeat
+            <select value={task.recurrence || 'none'} onChange={(e) => update({ recurrence: e.target.value })}>
+              <option value="none">Does not repeat</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
           </label>
         </div>
 
@@ -197,6 +216,14 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
             </div>
           ))}
           {attachments.length === 0 && <div className="empty-hint">No files attached.</div>}
+        </div>
+
+        <div className="reminders-section">
+          <div className="checklist-head">
+            <h4>Reminders</h4>
+            {task.recurrence && task.recurrence !== 'none' && <span className="repeat-badge">🔁 repeats {task.recurrence}</span>}
+          </div>
+          <RemindersEditor items={reminders} dueDate={task.due_date} onAdd={addReminder} onRemove={removeReminder} />
         </div>
 
         <div className="watchers-row">

@@ -40,6 +40,8 @@ export default function TaskCard({ task, onOpen, draggable, onDragStart, current
       <div className="task-meta">
         <span className={`priority priority-${task.priority}`}>{task.priority}</span>
         {task.due_date && <span className={`due ${due}`}>📅 {task.due_date}</span>}
+        {task.recurrence && task.recurrence !== 'none' && <span title={`Repeats ${task.recurrence}`}>🔁</span>}
+        {task.reminder_count > 0 && <span title={`${task.reminder_count} reminder(s)`}>🔔 {task.reminder_count}</span>}
         {task.checklist_total > 0 && (
           <span className={`checklist-badge ${task.checklist_done === task.checklist_total ? 'complete' : ''}`}>
             ☑ {task.checklist_done}/{task.checklist_total}

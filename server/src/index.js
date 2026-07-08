@@ -18,6 +18,7 @@ import notificationsRouter from './routes/notifications.js';
 import uploadsRouter from './routes/uploads.js';
 import searchRouter from './routes/search.js';
 import setupSocket from './socket.js';
+import { startReminderScheduler } from './reminders.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -80,6 +81,7 @@ if (fs.existsSync(clientDist)) {
 }
 
 setupSocket(io);
+startReminderScheduler(io);
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`Server listening on http://localhost:${PORT}`));

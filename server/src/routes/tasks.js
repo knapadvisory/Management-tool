@@ -2,11 +2,22 @@ import { Router } from 'express';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
 import { createNotification } from '../notifications.js';
+import { nextDueDate } from '../reminders.js';
 
 const router = Router();
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+const RECURRENCES = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
 const getUser = (id) => (id ? db.prepare('SELECT * FROM users WHERE id = ?').get(id) : null);
+
+// Accept an ISO datetime (the client sends UTC) and store it as a SQLite
+// "YYYY-MM-DD HH:MM:SS" UTC string, comparable to datetime('now'). null if unparseable.
+function normalizeRemindAt(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+}
 
 function taskWithMeta(task) {
   const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ?').get(task.stage_id);
@@ -17,6 +28,7 @@ function taskWithMeta(task) {
   const cl = db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(is_done), 0) AS done FROM task_checklist WHERE task_id = ?').get(task.id);
   const watcherIds = db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task.id).map((r) => r.user_id);
   const attachmentCount = db.prepare('SELECT COUNT(*) AS n FROM attachments WHERE task_id = ?').get(task.id).n;
+  const reminderCount = db.prepare('SELECT COUNT(*) AS n FROM task_reminders WHERE task_id = ? AND sent = 0').get(task.id).n;
   return {
     ...task,
     assignee: publicUser(getUser(task.assignee_id)),
@@ -30,6 +42,7 @@ function taskWithMeta(task) {
     checklist_done: cl.done,
     watcher_ids: watcherIds,
     attachment_count: attachmentCount,
+    reminder_count: reminderCount,
   };
 }
 
@@ -64,6 +77,46 @@ function emitChanged(req, taskId) {
   return task;
 }
 
+// When a recurring task is completed, clone it into the first stage with the
+// due date advanced by its repeat rule. Tags, checklist (reset) and reminders
+// (shifted by the same interval) carry over. Returns the new task or null.
+function spawnNextOccurrence(req, task) {
+  const newDue = nextDueDate(task.due_date, task.recurrence);
+  if (!newDue) return null;
+  const firstStage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(task.workflow_id);
+  if (!firstStage) return null;
+
+  const info = db.prepare(`
+    INSERT INTO tasks (title, description, workflow_id, project_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(task.title, task.description, task.workflow_id, task.project_id, firstStage.id,
+    task.assignee_id, task.creator_id, task.priority, newDue, task.recurrence);
+  const newId = info.lastInsertRowid;
+
+  for (const { tag } of db.prepare('SELECT tag FROM task_tags WHERE task_id = ?').all(task.id)) {
+    db.prepare('INSERT OR IGNORE INTO task_tags (task_id, tag) VALUES (?, ?)').run(newId, tag);
+  }
+  const steps = db.prepare('SELECT text, position FROM task_checklist WHERE task_id = ? ORDER BY position, id').all(task.id);
+  const insStep = db.prepare('INSERT INTO task_checklist (task_id, text, position, is_done) VALUES (?, ?, ?, 0)');
+  steps.forEach((s) => insStep.run(newId, s.text, s.position));
+  for (const uid of db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task.id).map((r) => r.user_id)) {
+    addWatcher(newId, uid);
+  }
+  // Shift each future reminder forward by the same number of days as the due date moved.
+  const shiftDays = Math.round((new Date(newDue + 'T00:00:00Z') - new Date(task.due_date + 'T00:00:00Z')) / 86400000);
+  for (const rem of db.prepare('SELECT remind_at FROM task_reminders WHERE task_id = ?').all(task.id)) {
+    const at = new Date(rem.remind_at.replace(' ', 'T') + 'Z');
+    if (Number.isNaN(at.getTime())) continue;
+    at.setUTCDate(at.getUTCDate() + shiftDays);
+    db.prepare('INSERT INTO task_reminders (task_id, remind_at, created_by) VALUES (?, ?, ?)')
+      .run(newId, at.toISOString().slice(0, 19).replace('T', ' '), req.user.id);
+  }
+  logActivity(newId, req.user.id, `created automatically (repeats ${task.recurrence}) — due ${newDue}`);
+  emitChanged(req, newId);
+  notifyWatchers(req, db.prepare('SELECT * FROM tasks WHERE id = ?').get(newId), `is up next (repeats ${task.recurrence}, due ${newDue})`, 'task_recurred');
+  return newId;
+}
+
 function loadTask(req, res) {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
   if (!task) { res.status(404).json({ error: 'Task not found' }); return null; }
@@ -89,9 +142,10 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   const { title, description = '', workflow_id, project_id = null, assignee_id = null,
-    priority = 'medium', due_date = null, tags = [], checklist = [] } = req.body;
+    priority = 'medium', due_date = null, tags = [], checklist = [], recurrence = 'none', reminders = [] } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Task title is required' });
   if (!PRIORITIES.includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
+  if (!RECURRENCES.includes(recurrence)) return res.status(400).json({ error: 'Invalid recurrence' });
   const wf = db.prepare('SELECT * FROM workflows WHERE id = ?').get(workflow_id);
   if (!wf) return res.status(400).json({ error: 'Workflow not found' });
   if (assignee_id && !getUser(assignee_id)) return res.status(400).json({ error: 'Assignee not found' });
@@ -100,10 +154,16 @@ router.post('/', (req, res) => {
   }
   const firstStage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
   const info = db.prepare(`
-    INSERT INTO tasks (title, description, workflow_id, project_id, stage_id, assignee_id, creator_id, priority, due_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(title.trim(), description, wf.id, project_id, firstStage.id, assignee_id, req.user.id, priority, due_date);
+    INSERT INTO tasks (title, description, workflow_id, project_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(title.trim(), description, wf.id, project_id, firstStage.id, assignee_id, req.user.id, priority, due_date, recurrence);
   const taskId = info.lastInsertRowid;
+
+  const insReminder = db.prepare('INSERT INTO task_reminders (task_id, remind_at, created_by) VALUES (?, ?, ?)');
+  (Array.isArray(reminders) ? reminders : []).forEach((r) => {
+    const at = normalizeRemindAt(r);
+    if (at) insReminder.run(taskId, at, req.user.id);
+  });
 
   for (const tag of tags) {
     const clean = String(tag).trim().toLowerCase();
@@ -147,22 +207,30 @@ router.get('/:id', (req, res) => {
     SELECT u.* FROM task_watchers tw JOIN users u ON u.id = tw.user_id WHERE tw.task_id = ?
   `).all(task.id).map(publicUser);
   const attachments = db.prepare('SELECT id, original_name, mime_type, size FROM attachments WHERE task_id = ? ORDER BY id').all(task.id);
-  res.json({ task: taskWithMeta(task), comments, activity, checklist, watchers, attachments });
+  const reminders = db.prepare('SELECT id, remind_at, sent FROM task_reminders WHERE task_id = ? ORDER BY remind_at').all(task.id);
+  res.json({ task: taskWithMeta(task), comments, activity, checklist, watchers, attachments, reminders });
 });
 
 router.patch('/:id', (req, res) => {
   const task = loadTask(req, res);
   if (!task) return;
-  const { title, description, stage_id, assignee_id, priority, due_date, project_id } = req.body;
+  const { title, description, stage_id, assignee_id, priority, due_date, project_id, recurrence } = req.body;
 
   if (priority !== undefined && !PRIORITIES.includes(priority)) {
     return res.status(400).json({ error: 'Invalid priority' });
   }
+  if (recurrence !== undefined && !RECURRENCES.includes(recurrence)) {
+    return res.status(400).json({ error: 'Invalid recurrence' });
+  }
+
+  let movedToDone = false;
   if (stage_id !== undefined && stage_id !== task.stage_id) {
     const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ? AND workflow_id = ?').get(stage_id, task.workflow_id);
     if (!stage) return res.status(400).json({ error: 'Stage does not belong to this workflow' });
+    const oldStage = db.prepare('SELECT * FROM workflow_stages WHERE id = ?').get(task.stage_id);
     logActivity(task.id, req.user.id, `moved it to "${stage.name}"`);
     notifyWatchers(req, task, `moved to "${stage.name}"`, 'task_moved');
+    movedToDone = !!stage.is_done && !oldStage?.is_done;
   }
   if (assignee_id !== undefined && assignee_id !== task.assignee_id) {
     if (assignee_id !== null && !getUser(assignee_id)) return res.status(400).json({ error: 'Assignee not found' });
@@ -174,6 +242,23 @@ router.patch('/:id', (req, res) => {
     return res.status(400).json({ error: 'Project not found' });
   }
 
+  // Notify watchers of other meaningful edits (title, priority, due date, repeat).
+  if (title !== undefined && title.trim() && title.trim() !== task.title) {
+    logActivity(task.id, req.user.id, `renamed it to "${title.trim()}"`);
+    notifyWatchers(req, task, 'renamed the task', 'task_update');
+  }
+  if (priority !== undefined && priority !== task.priority) {
+    logActivity(task.id, req.user.id, `changed priority to ${priority}`);
+    notifyWatchers(req, task, `changed priority to ${priority}`, 'task_update');
+  }
+  if (due_date !== undefined && (due_date || null) !== (task.due_date || null)) {
+    logActivity(task.id, req.user.id, due_date ? `set the due date to ${due_date}` : 'cleared the due date');
+    notifyWatchers(req, task, due_date ? `set the due date to ${due_date}` : 'cleared the due date', 'task_update');
+  }
+  if (recurrence !== undefined && recurrence !== task.recurrence) {
+    logActivity(task.id, req.user.id, recurrence === 'none' ? 'turned off repeat' : `set it to repeat ${recurrence}`);
+  }
+
   db.prepare(`
     UPDATE tasks SET
       title = COALESCE(?, title),
@@ -183,6 +268,7 @@ router.patch('/:id', (req, res) => {
       priority = COALESCE(?, priority),
       due_date = CASE WHEN ? THEN ? ELSE due_date END,
       project_id = CASE WHEN ? THEN ? ELSE project_id END,
+      recurrence = COALESCE(?, recurrence),
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -191,6 +277,7 @@ router.patch('/:id', (req, res) => {
     priority ?? null,
     due_date !== undefined ? 1 : 0, due_date ?? null,
     project_id !== undefined ? 1 : 0, project_id ?? null,
+    recurrence ?? null,
     task.id
   );
 
@@ -200,12 +287,16 @@ router.patch('/:id', (req, res) => {
     io?.to(`user:${assignee_id}`).emit('task:assigned', { task: updated, by: publicUser(req.user) });
     createNotification(io, { user_id: assignee_id, type: 'task_assigned', actor_id: req.user.id, task_id: task.id, text: `${req.user.name} assigned you "${updated.title}"` });
   }
+  // Completing a recurring task generates its next occurrence automatically.
+  if (movedToDone) spawnNextOccurrence(req, db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id));
   res.json(updated);
 });
 
 router.delete('/:id', (req, res) => {
   const task = loadTask(req, res);
   if (!task) return;
+  // Tell watchers before the row (and its watcher rows) disappear.
+  notifyWatchers(req, task, 'deleted this task', 'task_deleted');
   db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
   req.app.get('io')?.emit('task:deleted', { task_id: task.id, workflow_id: task.workflow_id });
   res.json({ ok: true });
@@ -240,6 +331,25 @@ router.get('/:id/chat', (req, res) => {
     JOIN users u ON u.id = tm.user_id WHERE tm.task_id = ? ORDER BY tm.id
   `).all(task.id);
   res.json({ messages });
+});
+
+// --- Reminders ---
+
+router.post('/:id/reminders', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  const at = normalizeRemindAt(req.body.remind_at);
+  if (!at) return res.status(400).json({ error: 'A valid reminder time is required' });
+  db.prepare('INSERT INTO task_reminders (task_id, remind_at, created_by) VALUES (?, ?, ?)').run(task.id, at, req.user.id);
+  addWatcher(task.id, req.user.id);
+  emitChanged(req, task.id);
+  res.status(201).json(db.prepare('SELECT id, remind_at, sent FROM task_reminders WHERE task_id = ? ORDER BY remind_at').all(task.id));
+});
+
+router.delete('/:id/reminders/:reminderId', (req, res) => {
+  db.prepare('DELETE FROM task_reminders WHERE id = ? AND task_id = ?').run(req.params.reminderId, req.params.id);
+  emitChanged(req, req.params.id);
+  res.json(db.prepare('SELECT id, remind_at, sent FROM task_reminders WHERE task_id = ? ORDER BY remind_at').all(req.params.id));
 });
 
 // --- Checklist ---

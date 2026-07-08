@@ -218,6 +218,47 @@ async function main() {
   const afterTmplDel = await req('GET', `/api/tasks/${fromTmpl.data.id}`, { token: a });
   check('task survives template deletion', afterTmplDel.status === 200 && afterTmplDel.data.task.checklist_total === 5);
 
+  console.log('Recurrence & reminders');
+  const recTask = await req('POST', '/api/tasks', {
+    token: a,
+    body: { title: 'Weekly compliance', workflow_id: wf.data.id, priority: 'medium', due_date: '2026-07-10', recurrence: 'weekly', tags: ['compliance'], checklist: ['Gather docs'], reminders: ['2026-07-09T09:00:00.000Z'] },
+  });
+  check('task created with recurrence', recTask.status === 201 && recTask.data.recurrence === 'weekly');
+  const recId = recTask.data.id;
+  const badRec = await req('POST', '/api/tasks', { token: a, body: { title: 'x', workflow_id: wf.data.id, recurrence: 'hourly' } });
+  check('invalid recurrence rejected', badRec.status === 400);
+
+  const recDetail = await req('GET', `/api/tasks/${recId}`, { token: a });
+  check('reminder created with the task', recDetail.data.reminders.length === 1);
+  check('unsent reminder count surfaced on task', recDetail.data.task.reminder_count === 1);
+
+  const remAdd = await req('POST', `/api/tasks/${recId}/reminders`, { token: a, body: { remind_at: '2026-07-08T09:00:00.000Z' } });
+  check('reminder added via endpoint', Array.isArray(remAdd.data) && remAdd.data.length === 2);
+  const badRem = await req('POST', `/api/tasks/${recId}/reminders`, { token: a, body: { remind_at: 'not-a-date' } });
+  check('invalid reminder time rejected', badRem.status === 400);
+  const remDel = await req('DELETE', `/api/tasks/${recId}/reminders/${remAdd.data[0].id}`, { token: a });
+  check('reminder removed', remDel.data.length === 1);
+
+  const beforeList = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
+  const countBefore = beforeList.data.tasks.length;
+  const doneStageId = wf.data.stages[2].id; // 'Signed' is a done stage
+  await req('PATCH', `/api/tasks/${recId}`, { token: a, body: { stage_id: doneStageId } });
+  const afterList = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
+  check('completing a recurring task spawns the next occurrence', afterList.data.tasks.length === countBefore + 1);
+  const nextOcc = afterList.data.tasks.find((t) => t.title === 'Weekly compliance' && t.id !== recId);
+  check('next occurrence due one week later', !!nextOcc && nextOcc.due_date === '2026-07-17');
+  check('next occurrence keeps recurrence + tags', !!nextOcc && nextOcc.recurrence === 'weekly' && nextOcc.tags.includes('compliance'));
+  const nextDetail = nextOcc ? await req('GET', `/api/tasks/${nextOcc.id}`, { token: a }) : { data: {} };
+  check('next occurrence copies checklist (reset)', nextDetail.data.checklist?.length === 1 && nextDetail.data.checklist[0].is_done === 0);
+  check('next occurrence shifts the reminder forward a week', nextDetail.data.reminders?.some((r) => r.remind_at.startsWith('2026-07-16')));
+
+  // A one-off task moved to done must NOT spawn anything.
+  const oneOff = await req('POST', '/api/tasks', { token: a, body: { title: 'One-off', workflow_id: wf.data.id, due_date: '2026-07-10' } });
+  const beforeOne = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
+  await req('PATCH', `/api/tasks/${oneOff.data.id}`, { token: a, body: { stage_id: doneStageId } });
+  const afterOne = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
+  check('non-recurring task does not spawn a copy', afterOne === beforeOne);
+
   console.log('Admin & roles');
   const memberBlocked = await req('GET', '/api/admin/users', { token: b });
   check('member cannot reach admin routes', memberBlocked.status === 403);

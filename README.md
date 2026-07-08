@@ -30,9 +30,14 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 - **Watchers** — follow any task and get notified on chat, notes and stage moves
 - **File attachments** on tasks
 - **Per-task chat** for real-time back-and-forth, plus lasting **Notes** and an automatic activity log
+- **Recurring tasks** — set a task to repeat daily / weekly / monthly / yearly; completing it auto-creates the next occurrence (tags, checklist and reminders carried over) — ideal for monthly filings and periodic reviews
+- **Reminders** — one or more time-based reminders per task, delivered to the assignee and watchers through the notification bell (with a pop-up); handy presets relative to the due date
+- **Quick add (natural language)** — type `File GST return tomorrow !high #compliance` and the due date, priority and tags are parsed out for you
 - **Three views**: Kanban board (drag & drop), sortable List, and Calendar
-- Filters: project, tag, assigned-to-me, watching, and overdue
+- **Smart date views**: filter to Today, Next 7 days, Upcoming, Overdue, or No due date
+- Filters: project, tag, assigned-to-me, and watching
 - Due-date awareness: overdue and due-soon tasks are visually flagged
+- Watchers are notified on every meaningful change — assignment, stage moves, edits (title/priority/due date), notes, chat, and deletion
 
 **👑 Organisation & roles**
 - The **first person to register** the workspace becomes the **super admin**

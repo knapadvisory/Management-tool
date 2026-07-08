@@ -71,6 +71,7 @@ export default function App() {
     socket.on('notification:new', ({ notification, unread_count }) => {
       setNotifications((ns) => [notification, ...ns].slice(0, 50));
       setUnreadCount(unread_count);
+      if (notification.type === 'task_reminder') showToast(`🔔 ${notification.text}`);
     });
 
     refreshUsers();

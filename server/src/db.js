@@ -183,6 +183,18 @@ CREATE TABLE IF NOT EXISTS task_template_tags (
   PRIMARY KEY (template_id, tag)
 );
 
+-- Time-based reminders for a task. A background scheduler fires each one
+-- once (sent=1) as a notification to the assignee + watchers.
+CREATE TABLE IF NOT EXISTS task_reminders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  remind_at TEXT NOT NULL,
+  sent INTEGER NOT NULL DEFAULT 0,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_reminders_due ON task_reminders(sent, remind_at);
+
 -- Real-time chat scoped to a single task (distinct from async "Notes").
 CREATE TABLE IF NOT EXISTS task_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -221,6 +233,9 @@ ensureColumn('messages', 'edited_at', 'TEXT');
 ensureColumn('messages', 'deleted_at', 'TEXT');
 ensureColumn('attachments', 'task_id', 'INTEGER REFERENCES tasks(id)');
 ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
+// Repeat rule: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'. When a
+// recurring task is completed, the next occurrence is generated automatically.
+ensureColumn('tasks', 'recurrence', "TEXT NOT NULL DEFAULT 'none'");
 // Org roles: 'admin' (super admin — full oversight + user management) or 'member'.
 // 'active' gates access; deactivating revokes login without destroying data.
 ensureColumn('users', 'role', "TEXT NOT NULL DEFAULT 'member'");

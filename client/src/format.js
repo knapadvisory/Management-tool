@@ -30,6 +30,15 @@ export function renderMarkdown(content, mentions = []) {
   return clean;
 }
 
+// Render a reminder timestamp for display. The server stores reminders as
+// UTC "YYYY-MM-DD HH:MM:SS"; ISO strings are handled too.
+export function formatDateTime(value) {
+  if (!value) return '';
+  const d = new Date(/[TZ]/.test(value) ? value : value.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 export function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
