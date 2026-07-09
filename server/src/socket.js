@@ -99,6 +99,18 @@ export default function setupSocket(io) {
             });
           }
         }
+      } else if (chan && !chan.is_dm && !parent_id) {
+        // Group-chat (channel/collab) messages surface under "Chat messages".
+        const chName = db.prepare('SELECT name FROM channels WHERE id = ?').get(channel_id)?.name || 'a channel';
+        const members = db.prepare('SELECT user_id FROM channel_members WHERE channel_id = ? AND user_id != ?').all(channel_id, userId);
+        for (const { user_id } of members) {
+          if (!notified.includes(user_id)) {
+            createNotification(io, {
+              user_id, type: 'channel_msg', actor_id: userId, channel_id,
+              text: `${socket.user.name} in ${chan.is_collab ? '' : '#'}${chName}: ${content ? content.slice(0, 80) : '📎 shared a file'}`,
+            });
+          }
+        }
       }
       ack?.({ message: serializeMessage(messageId, userId) });
     });

@@ -539,6 +539,19 @@ async function main() {
   const afterDel = await req('GET', '/api/files?q=spec', { token: a });
   check('deleted file no longer listed', !afterDel.data.files.some((f) => f.id === specFile.id));
 
+  // The deleted file is archived: hidden from everyone, kept for the admin.
+  const arch = await req('GET', '/api/admin/files/archived', { token: a });
+  check('deleted file appears in the admin archive', arch.data.files.some((f) => f.id === specFile.id && f.deleted_by_name));
+  const bobArch = await req('GET', '/api/admin/files/archived', { token: b });
+  check('non-admin cannot open the archive', bobArch.status === 403);
+  await req('POST', `/api/admin/files/${specFile.id}/restore`, { token: a });
+  const afterRestore = await req('GET', '/api/files?q=spec', { token: a });
+  check('admin can restore an archived file', afterRestore.data.files.some((f) => f.id === specFile.id));
+  const purge = await req('DELETE', `/api/admin/files/${specFile.id}`, { token: a });
+  check('admin can permanently delete a file', purge.status === 200);
+  const afterPurge = await req('GET', '/api/files?q=spec', { token: a });
+  check('permanently deleted file is gone', !afterPurge.data.files.some((f) => f.id === specFile.id));
+
   sockA.disconnect();
   sockB.disconnect();
 

@@ -66,7 +66,7 @@ export default function FilesView({ user }) {
   });
 
   const selectedFiles = sorted.filter((f) => selected.has(f.id));
-  const canDelete = (f) => f.uploader_id === user.id || user.role === 'admin';
+  const canDelete = (f) => f.uploader_id === user.id; // you can only delete files you shared
 
   function toggle(id) {
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -80,8 +80,8 @@ export default function FilesView({ user }) {
 
   async function deleteSelected() {
     const targets = selectedFiles.filter(canDelete);
-    if (!targets.length) { alert('You can only delete files you shared (admins can delete any).'); return; }
-    if (!confirm(`Delete ${targets.length} file${targets.length === 1 ? '' : 's'}? They'll be removed from wherever they were shared.`)) return;
+    if (!targets.length) { alert('You can only delete files you shared.'); return; }
+    if (!confirm(`Delete ${targets.length} file${targets.length === 1 ? '' : 's'}? They'll be removed from your chats and Files.`)) return;
     for (const f of targets) { try { await api(`/files/${f.id}`, { method: 'DELETE' }); } catch { /* skip */ } }
     load(query);
   }

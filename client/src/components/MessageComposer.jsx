@@ -199,7 +199,7 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
         </div>
       )}
       <form className="composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
-        <div className="composer-format">
+        <div className="composer-format" onMouseDown={(e) => e.preventDefault()}>
           <button type="button" title="Bold" onClick={() => wrapSelection('**')}><b>B</b></button>
           <button type="button" title="Italic" onClick={() => wrapSelection('_')}><i>I</i></button>
           <button type="button" title="Strikethrough" onClick={() => wrapSelection('~~')}><s>S</s></button>
@@ -247,8 +247,8 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
               onChange={(e) => { setFiles((fs) => [...fs, ...Array.from(e.target.files)]); e.target.value = ''; }}
             />
           </label>
-          <button type="button" ref={emojiBtnRef} className="composer-tool" title="Emoji" onClick={openEmoji}>😊</button>
-          <button type="button" className="composer-tool" title="Mention someone" onClick={startMention}>@</button>
+          <button type="button" ref={emojiBtnRef} className="composer-tool" title="Emoji" onMouseDown={(e) => e.preventDefault()} onClick={openEmoji}>😊</button>
+          <button type="button" className="composer-tool" title="Mention someone" onMouseDown={(e) => e.preventDefault()} onClick={startMention}>@</button>
           <div className="composer-spacer" />
           <button className="composer-send" title="Send (Enter)" disabled={uploading || (!text.trim() && !files.length)}>
             {uploading ? '…' : '➤'}

@@ -15,7 +15,7 @@ export function serializeMessage(id, currentUserId = null) {
 
   const deleted = !!m.deleted_at;
   const attachments = deleted ? [] : db.prepare(`
-    SELECT id, original_name, mime_type, size FROM attachments WHERE message_id = ? ORDER BY id
+    SELECT id, original_name, mime_type, size FROM attachments WHERE message_id = ? AND archived_at IS NULL ORDER BY id
   `).all(m.id);
 
   const reactionRows = db.prepare(`

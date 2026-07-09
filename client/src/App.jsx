@@ -89,12 +89,15 @@ export default function App() {
       setNotifications((ns) => [notification, ...ns].slice(0, 50));
       setUnreadCount(unread_count);
       if (notification.type === 'task_reminder') showToast(`🔔 ${notification.text}`);
-      // Native desktop alert (only when the tab is in the background).
-      showDesktopNotification('TeamHub', {
-        body: notification.text,
-        tag: `notif-${notification.id}`,
-        onClick: () => selectNotifRef.current?.(notification),
-      });
+      // Native desktop alert (only when the tab is in the background). Group-chat
+      // messages are too frequent to pop — they still land in the Activity feed.
+      if (notification.type !== 'channel_msg') {
+        showDesktopNotification('TeamHub', {
+          body: notification.text,
+          tag: `notif-${notification.id}`,
+          onClick: () => selectNotifRef.current?.(notification),
+        });
+      }
     });
 
     refreshUsers();

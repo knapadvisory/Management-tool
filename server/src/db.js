@@ -232,6 +232,10 @@ ensureColumn('messages', 'parent_id', 'INTEGER REFERENCES messages(id)');
 ensureColumn('messages', 'edited_at', 'TEXT');
 ensureColumn('messages', 'deleted_at', 'TEXT');
 ensureColumn('attachments', 'task_id', 'INTEGER REFERENCES tasks(id)');
+// Soft-delete (archive): a file the uploader deletes is hidden everywhere but
+// kept for the admin's archive. archived_by records who removed it.
+ensureColumn('attachments', 'archived_at', 'TEXT');
+ensureColumn('attachments', 'archived_by', 'INTEGER REFERENCES users(id)');
 ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
 // Repeat rule: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'. When a
 // recurring task is completed, the next occurrence is generated automatically.

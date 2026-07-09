@@ -1,7 +1,14 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
+import { serializeMessage } from '../messages.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadDir = path.join(process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data'), 'uploads');
 
 const router = Router();
 const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3aed', '#f97316', '#0ea5e9', '#db2777'];
@@ -91,6 +98,44 @@ router.post('/users/:id/reset-password', (req, res) => {
   const { password } = req.body;
   if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), target.id);
+  res.json({ ok: true });
+});
+
+// --- File archive (deleted files) — admin oversight ---
+
+// Every file a teammate has deleted, still recoverable.
+router.get('/files/archived', (req, res) => {
+  const rows = db.prepare(`
+    SELECT a.id, a.original_name, a.mime_type, a.size, a.archived_at,
+           up.name AS uploader_name, up.avatar_color AS uploader_color,
+           del.name AS deleted_by_name
+    FROM attachments a
+    JOIN users up ON up.id = a.uploader_id
+    LEFT JOIN users del ON del.id = a.archived_by
+    WHERE a.archived_at IS NOT NULL
+    ORDER BY a.archived_at DESC
+  `).all();
+  res.json({ files: rows });
+});
+
+// Restore an archived file back into chat / Files.
+router.post('/files/:id/restore', (req, res) => {
+  const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(req.params.id);
+  if (!att) return res.status(404).json({ error: 'File not found' });
+  db.prepare('UPDATE attachments SET archived_at = NULL, archived_by = NULL WHERE id = ?').run(att.id);
+  if (att.message_id) {
+    const msg = db.prepare('SELECT channel_id FROM messages WHERE id = ?').get(att.message_id);
+    if (msg) req.app.get('io')?.to(`channel:${msg.channel_id}`).emit('message:updated', { message: serializeMessage(att.message_id, null) });
+  }
+  res.json({ ok: true });
+});
+
+// Permanently remove an archived file (from disk too).
+router.delete('/files/:id', (req, res) => {
+  const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(req.params.id);
+  if (!att) return res.status(404).json({ error: 'File not found' });
+  db.prepare('DELETE FROM attachments WHERE id = ?').run(att.id);
+  try { fs.unlinkSync(path.join(uploadDir, att.stored_name)); } catch { /* already gone */ }
   res.json({ ok: true });
 });
 

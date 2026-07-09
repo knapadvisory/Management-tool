@@ -957,3 +957,14 @@ input, select, textarea { font: inherit; }
 .attach-card-sub { font-size: 11px; }
 .attach-card-x { border: none; background: none; color: var(--muted); flex: none; border-radius: 6px; padding: 2px 6px; }
 .attach-card-x:hover { background: #f0f1f4; color: var(--danger); }
+
+/* --- Admin archive --- */
+.admin-archive { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
+.admin-archive-toggle { background: none; border: none; font-size: 15px; font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
+.admin-archive-toggle span { color: var(--muted); font-size: 12px; }
+.admin-archive-note { margin: 4px 0 10px; max-width: 620px; }
+.admin-archive-list { display: flex; flex-direction: column; gap: 6px; }
+.archive-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.archive-main { flex: 1; min-width: 0; }
+.archive-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.archive-sub { font-size: 12px; margin-top: 2px; }

@@ -25,7 +25,7 @@ router.get('/', (req, res) => {
     JOIN users u ON u.id = a.uploader_id
     JOIN messages m ON m.id = a.message_id
     JOIN channels c ON c.id = m.channel_id
-    WHERE a.message_id IS NOT NULL
+    WHERE a.message_id IS NOT NULL AND a.archived_at IS NULL
       AND EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ?)
   `).all(req.user.id).map((f) => ({
     id: f.id, original_name: f.original_name, mime_type: f.mime_type, size: f.size, created_at: f.created_at,
@@ -42,7 +42,7 @@ router.get('/', (req, res) => {
     FROM attachments a
     JOIN users u ON u.id = a.uploader_id
     JOIN tasks t ON t.id = a.task_id
-    WHERE a.task_id IS NOT NULL
+    WHERE a.task_id IS NOT NULL AND a.archived_at IS NULL
   `).all()
     .filter((f) => isAdmin || f.creator_id === req.user.id || f.assignee_id === req.user.id || canSeeTask.get(f.task_id, req.user.id))
     .map((f) => ({
@@ -60,16 +60,18 @@ router.get('/', (req, res) => {
   res.json({ files });
 });
 
-// Delete a shared file. Only the person who uploaded it, or an admin, may.
+// Delete a shared file — you can only remove your own (like WhatsApp).
+// This archives it: it disappears from chat and Files for everyone, but the
+// admin can still see (and restore) it in the admin archive.
 router.delete('/:id', (req, res) => {
   const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(req.params.id);
   if (!att) return res.status(404).json({ error: 'File not found' });
-  if (att.uploader_id !== req.user.id && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Only the person who shared a file (or an admin) can delete it' });
+  if (att.uploader_id !== req.user.id) {
+    return res.status(403).json({ error: 'You can only delete files you shared' });
   }
-  db.prepare('DELETE FROM attachments WHERE id = ?').run(att.id);
-  try { fs.unlinkSync(path.join(uploadDir, att.stored_name)); } catch { /* already gone */ }
-  // Let chat views drop the attachment if it belonged to a message.
+  if (att.archived_at) return res.json({ ok: true });
+  db.prepare(`UPDATE attachments SET archived_at = datetime('now'), archived_by = ? WHERE id = ?`).run(req.user.id, att.id);
+  // Drop it from the chat view if it belonged to a message.
   if (att.message_id) {
     const msg = db.prepare('SELECT channel_id FROM messages WHERE id = ?').get(att.message_id);
     if (msg) req.app.get('io')?.to(`channel:${msg.channel_id}`).emit('message:updated', {

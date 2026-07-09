@@ -5,7 +5,7 @@ import ChatView from './ChatView.jsx';
 import TaskModal from './TaskModal.jsx';
 
 const ICON = {
-  dm: '✉️', mention: '💬', task_assigned: '📌', task_chat: '💬', task_note: '📝', task_moved: '➡️', task_update: '🔔',
+  dm: '✉️', channel_msg: '#️⃣', mention: '💬', task_assigned: '📌', task_chat: '💬', task_note: '📝', task_moved: '➡️', task_update: '🔔',
   task_reminder: '⏰', task_recurred: '🔁', task_deleted: '🗑️', task_status: '🚦',
 };
 
@@ -21,7 +21,8 @@ function timeAgo(iso) {
 const FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'unread', label: 'Unread' },
-  { key: 'messages', label: 'Messages' },
+  { key: 'chats', label: 'Chat messages' },
+  { key: 'dms', label: 'DMs' },
   { key: 'mentions', label: 'Mentions' },
   { key: 'tasks', label: 'Tasks' },
 ];
@@ -44,7 +45,8 @@ export default function ActivityView({
 
   const shown = notifications.filter((n) => {
     if (filter === 'unread') return !n.is_read;
-    if (filter === 'messages') return n.type === 'dm' || n.type === 'mention' || n.type === 'task_chat';
+    if (filter === 'chats') return n.type === 'channel_msg' || n.type === 'mention';
+    if (filter === 'dms') return n.type === 'dm';
     if (filter === 'mentions') return n.type === 'mention';
     if (filter === 'tasks') return n.type.startsWith('task');
     return true;
