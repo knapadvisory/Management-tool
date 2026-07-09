@@ -235,6 +235,7 @@ export default function App() {
           />
         )}
         {view?.type === 'files' && <FilesView user={user} />}
+        {view?.type === 'drive' && <FilesView user={user} mode="drive" />}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'admin' && user.role === 'admin' && (
           <AdminPanel user={user} signupCodeRequired={signupCodeRequired} />

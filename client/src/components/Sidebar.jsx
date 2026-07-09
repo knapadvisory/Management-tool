@@ -86,6 +86,12 @@ export default function Sidebar({
           <span className="nav-logo">🗂️</span> Files
         </button>
         <button
+          className={`nav-item ${view?.type === 'drive' ? 'active' : ''}`}
+          onClick={() => onSelectView('drive')}
+        >
+          <span className="nav-logo">💾</span> Drive
+        </button>
+        <button
           className={`nav-item ${view?.type === 'tasks' ? 'active' : ''}`}
           onClick={() => onSelectView('tasks')}
         >

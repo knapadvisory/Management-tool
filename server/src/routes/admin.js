@@ -127,6 +127,7 @@ router.post('/files/:id/restore', (req, res) => {
     const msg = db.prepare('SELECT channel_id FROM messages WHERE id = ?').get(att.message_id);
     if (msg) req.app.get('io')?.to(`channel:${msg.channel_id}`).emit('message:updated', { message: serializeMessage(att.message_id, null) });
   }
+  if (att.is_drive) req.app.get('io')?.emit('drive:changed');
   res.json({ ok: true });
 });
 

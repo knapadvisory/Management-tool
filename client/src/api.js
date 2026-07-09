@@ -17,6 +17,20 @@ export async function uploadFiles(files) {
   return data.attachments;
 }
 
+// Upload files straight into the shared team Drive.
+export async function uploadToDrive(files) {
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+  const res = await fetch('/api/drive', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: fd,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Upload failed');
+  return data.files;
+}
+
 // Authenticated file URL usable directly in <img src> / <a href>.
 export function fileUrl(id) {
   return `/api/uploads/${id}?token=${encodeURIComponent(getToken())}`;

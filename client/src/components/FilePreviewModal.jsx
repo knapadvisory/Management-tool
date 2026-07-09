@@ -3,6 +3,17 @@ import DOMPurify from 'dompurify';
 import { fileUrl } from '../api.js';
 import { formatBytes } from '../format.js';
 
+// Normalise whatever read-excel-file hands back into [{ name, rows }].
+// Its browser build returns [{ sheet, data }] (one entry per worksheet);
+// other builds return a flat array of rows for the first sheet.
+function normalizeSheets(raw) {
+  const toStr = (rows) => (rows || []).map((r) => r.map((c) => (c == null ? '' : String(c))));
+  if (Array.isArray(raw) && raw.length && raw[0] && Array.isArray(raw[0].data)) {
+    return raw.map((s, i) => ({ name: s.sheet || `Sheet ${i + 1}`, rows: toStr(s.data) }));
+  }
+  return [{ name: 'Sheet 1', rows: toStr(Array.isArray(raw) ? raw : []) }];
+}
+
 // In-app preview for common file types. Images / PDFs render natively; text,
 // CSV, Excel (.xlsx) and Word (.docx) are rendered in-browser (the heavier
 // parsers load on demand). Anything else offers a download.
@@ -18,23 +29,25 @@ export default function FilePreviewModal({ file, onClose }) {
   const isDoc = ['docx'].includes(ext);
 
   const [state, setState] = useState({ kind: 'loading' });
+  const [activeSheet, setActiveSheet] = useState(0);
 
   useEffect(() => {
     if (isImage || isPdf) { setState({ kind: 'native' }); return; }
     let alive = true;
     setState({ kind: 'loading' });
+    setActiveSheet(0);
 
     (async () => {
       try {
         if (isCsv || isText) {
           const text = await (await fetch(url)).text();
-          if (isCsv) { if (alive) setState({ kind: 'sheet', rows: parseCsv(text) }); }
+          if (isCsv) { if (alive) setState({ kind: 'sheet', sheets: [{ name: 'Sheet 1', rows: parseCsv(text) }] }); }
           else if (alive) setState({ kind: 'text', text: text.slice(0, 300000) });
         } else if (isSheet) {
           const readXlsxFile = (await import('read-excel-file/browser')).default;
           const blob = await (await fetch(url)).blob();
-          const rows = await readXlsxFile(blob);
-          if (alive) setState({ kind: 'sheet', rows: rows.map((r) => r.map((c) => (c == null ? '' : String(c)))) });
+          const raw = await readXlsxFile(blob);
+          if (alive) setState({ kind: 'sheet', sheets: normalizeSheets(raw) });
         } else if (isDoc) {
           const mod = await import('mammoth/mammoth.browser');
           const mammoth = mod.default || mod;
@@ -51,6 +64,9 @@ export default function FilePreviewModal({ file, onClose }) {
 
     return () => { alive = false; };
   }, [url, isImage, isPdf, isText, isCsv, isSheet, isDoc]);
+
+  const sheets = state.kind === 'sheet' ? state.sheets : [];
+  const rows = sheets[activeSheet]?.rows || [];
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -74,13 +90,13 @@ export default function FilePreviewModal({ file, onClose }) {
             <div className="preview-sheet-wrap">
               <table className="preview-sheet">
                 <tbody>
-                  {state.rows.map((row, i) => (
+                  {rows.map((row, i) => (
                     <tr key={i}>
                       <td className="preview-sheet-rownum">{i + 1}</td>
                       {row.map((cell, j) => (i === 0 ? <th key={j}>{cell}</th> : <td key={j}>{cell}</td>))}
                     </tr>
                   ))}
-                  {state.rows.length === 0 && <tr><td className="muted">Empty sheet.</td></tr>}
+                  {rows.length === 0 && <tr><td className="muted">Empty sheet.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -93,6 +109,15 @@ export default function FilePreviewModal({ file, onClose }) {
             </div>
           )}
         </div>
+        {state.kind === 'sheet' && sheets.length > 1 && (
+          <div className="preview-sheet-tabs">
+            {sheets.map((s, i) => (
+              <button key={i} className={`preview-sheet-tab ${i === activeSheet ? 'active' : ''}`} onClick={() => setActiveSheet(i)}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

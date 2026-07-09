@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { api, fileUrl } from '../api.js';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { api, fileUrl, uploadToDrive } from '../api.js';
+import { getSocket } from '../socket.js';
 import { formatBytes, formatDateTime } from '../format.js';
 import Avatar from './Avatar.jsx';
 import FilePreviewModal from './FilePreviewModal.jsx';
@@ -32,9 +33,14 @@ function downloadFile(f) {
   a.remove();
 }
 
-// A file-manager style Files tab: sortable Name / Owner / Shared / Size
-// columns, row selection with a contextual action bar, Details/Grid views.
-export default function FilesView({ user }) {
+// A file-manager style tab: sortable Name / Owner / Shared / Size columns, row
+// selection with a contextual action bar, Details/Grid views and in-app
+// preview. Powers both the Files aggregate and the shared team Drive; the Drive
+// adds uploading (button + drag-and-drop) and a live socket refresh.
+export default function FilesView({ user, mode = 'files' }) {
+  const isDrive = mode === 'drive';
+  const endpoint = isDrive ? '/drive' : '/files';
+
   const [files, setFiles] = useState([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -43,17 +49,50 @@ export default function FilesView({ user }) {
   const [view, setView] = useState('details'); // 'details' | 'grid'
   const [sort, setSort] = useState({ key: 'date', dir: -1 });
   const [selected, setSelected] = useState(() => new Set());
+  const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef(null);
+  const dragDepth = useRef(0);
 
   const load = useCallback(async (q) => {
     setLoading(true);
     try {
-      const d = await api(`/files${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+      const d = await api(`${endpoint}${q ? `?q=${encodeURIComponent(q)}` : ''}`);
       setFiles(d.files);
       setSelected(new Set());
     } catch { /* ignore */ } finally { setLoading(false); }
-  }, []);
+  }, [endpoint]);
 
   useEffect(() => { const t = setTimeout(() => load(query), 200); return () => clearTimeout(t); }, [query, load]);
+
+  // Keep the Drive fresh when teammates upload or remove files.
+  useEffect(() => {
+    if (!isDrive) return;
+    const s = getSocket();
+    if (!s) return;
+    const refresh = () => load(query);
+    s.on('drive:changed', refresh);
+    return () => s.off('drive:changed', refresh);
+  }, [isDrive, load, query]);
+
+  async function uploadDriveFiles(list) {
+    const arr = Array.from(list || []);
+    if (!arr.length) return;
+    setUploading(true);
+    try { await uploadToDrive(arr); await load(query); }
+    catch (err) { alert(err.message); }
+    finally { setUploading(false); }
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    if (isDrive && e.dataTransfer?.files?.length) uploadDriveFiles(e.dataTransfer.files);
+  }
+  function onDragOver(e) { if (isDrive) e.preventDefault(); }
+  function onDragEnter(e) { if (!isDrive) return; e.preventDefault(); dragDepth.current += 1; setDragging(true); }
+  function onDragLeave(e) { if (!isDrive) return; e.preventDefault(); dragDepth.current -= 1; if (dragDepth.current <= 0) setDragging(false); }
 
   const sorted = [...files].sort((a, b) => {
     const { key, dir } = sort;
@@ -80,21 +119,29 @@ export default function FilesView({ user }) {
 
   async function deleteSelected() {
     const targets = selectedFiles.filter(canDelete);
-    if (!targets.length) { alert('You can only delete files you shared.'); return; }
-    if (!confirm(`Delete ${targets.length} file${targets.length === 1 ? '' : 's'}? They'll be removed from your chats and Files.`)) return;
-    for (const f of targets) { try { await api(`/files/${f.id}`, { method: 'DELETE' }); } catch { /* skip */ } }
+    if (!targets.length) { alert(`You can only delete files you ${isDrive ? 'uploaded' : 'shared'}.`); return; }
+    const where = isDrive ? 'the Drive' : 'your chats and Files';
+    if (!confirm(`Delete ${targets.length} file${targets.length === 1 ? '' : 's'}? They'll be removed from ${where}.`)) return;
+    for (const f of targets) { try { await api(`${endpoint}/${f.id}`, { method: 'DELETE' }); } catch { /* skip */ } }
     load(query);
   }
 
   const arrow = (key) => (sort.key === key ? (sort.dir === 1 ? ' ▲' : ' ▼') : '');
   const one = selectedFiles.length === 1 ? selectedFiles[0] : null;
 
+  const emptyMsg = query
+    ? `No files match “${query}”.`
+    : isDrive ? 'The Drive is empty. Upload a file to share it with the team.' : 'No files have been shared yet.';
+
   return (
-    <div className="files-page">
+    <div
+      className={`files-page ${dragging ? 'drag-over' : ''}`}
+      onDrop={onDrop} onDragOver={onDragOver} onDragEnter={onDragEnter} onDragLeave={onDragLeave}
+    >
       <header className="files-head">
-        <h2>Files</h2>
+        <h2>{isDrive ? 'Drive' : 'Files'}</h2>
         <div className="files-controls">
-          <input className="files-search" placeholder="Search files, people or places…" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input className="files-search" placeholder={isDrive ? 'Search the Drive…' : 'Search files, people or places…'} value={query} onChange={(e) => setQuery(e.target.value)} />
           <label className="files-sort">
             <select value={sort.key} onChange={(e) => setSortKey(e.target.value)}>
               {SORTS.map((s) => <option key={s.key} value={s.key}>By {s.label.toLowerCase()}</option>)}
@@ -105,8 +152,18 @@ export default function FilesView({ user }) {
             <button className={view === 'details' ? 'active' : ''} title="Details" onClick={() => setView('details')}>☰</button>
             <button className={view === 'grid' ? 'active' : ''} title="Icons" onClick={() => setView('grid')}>▦</button>
           </div>
+          {isDrive && (
+            <>
+              <button className="btn btn-primary files-upload-btn" disabled={uploading} onClick={() => inputRef.current?.click()}>
+                {uploading ? 'Uploading…' : '⬆ Upload'}
+              </button>
+              <input ref={inputRef} type="file" multiple hidden onChange={(e) => { uploadDriveFiles(e.target.files); e.target.value = ''; }} />
+            </>
+          )}
         </div>
       </header>
+
+      {isDrive && <p className="files-drive-hint muted">A shared team Drive — everyone can see and download these files. You can only delete files you uploaded.</p>}
 
       {selected.size > 0 && (
         <div className="files-actionbar">
@@ -123,7 +180,7 @@ export default function FilesView({ user }) {
       {loading && files.length === 0 ? (
         <p className="muted" style={{ padding: 20 }}>Loading…</p>
       ) : sorted.length === 0 ? (
-        <div className="empty-hint" style={{ padding: 20 }}>{query ? `No files match “${query}”.` : 'No files have been shared yet.'}</div>
+        <div className="empty-hint" style={{ padding: 20 }}>{emptyMsg}</div>
       ) : view === 'details' ? (
         <div className="files-table-wrap">
           <table className="files-table">
@@ -169,6 +226,10 @@ export default function FilesView({ user }) {
       )}
 
       <div className="files-foot muted">SELECTED: {selected.size} / {sorted.length}</div>
+
+      {isDrive && dragging && (
+        <div className="files-drop-overlay"><div className="files-drop-inner">⬆<br />Drop files to upload to the Drive</div></div>
+      )}
 
       {preview && <FilePreviewModal file={preview} onClose={() => setPreview(null)} />}
       {details && <FileDetails file={details} onClose={() => setDetails(null)} onOpen={() => { setPreview(details); setDetails(null); }} />}

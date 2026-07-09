@@ -1001,3 +1001,17 @@ input, select, textarea { font: inherit; }
 .preview-doc td, .preview-doc th { border: 1px solid #e2e4ea; padding: 4px 8px; }
 .preview-doc h1, .preview-doc h2, .preview-doc h3 { margin: 12px 0 6px; }
 .preview-doc p { margin: 0 0 8px; }
+
+/* Sheet (worksheet) tabs along the bottom of the Excel preview. */
+.preview-sheet-tabs { display: flex; gap: 4px; padding: 6px 10px; border-top: 1px solid var(--border); background: #f8f9fc; overflow-x: auto; }
+.preview-sheet-tab { border: 1px solid transparent; background: none; padding: 4px 12px; border-radius: 6px; font-size: 13px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.preview-sheet-tab:hover { background: #eef0f6; }
+.preview-sheet-tab.active { background: #fff; border-color: #d8dbe6; color: var(--text); font-weight: 600; }
+
+/* Drive: upload button, hint and drag-to-upload overlay. */
+.files-upload-btn { white-space: nowrap; }
+.files-drive-hint { padding: 0 4px 10px; font-size: 13px; }
+.files-page.drag-over { outline: 2px dashed var(--accent); outline-offset: -8px; border-radius: 12px; }
+.files-drop-overlay { position: absolute; inset: 0; background: rgba(79, 70, 229, .08); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 5; }
+.files-drop-inner { background: #fff; border: 2px dashed var(--accent); border-radius: 14px; padding: 28px 44px; text-align: center; font-size: 20px; font-weight: 600; color: var(--accent); }
+.files-page { position: relative; }

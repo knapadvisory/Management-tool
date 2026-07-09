@@ -236,6 +236,9 @@ ensureColumn('attachments', 'task_id', 'INTEGER REFERENCES tasks(id)');
 // kept for the admin's archive. archived_by records who removed it.
 ensureColumn('attachments', 'archived_at', 'TEXT');
 ensureColumn('attachments', 'archived_by', 'INTEGER REFERENCES users(id)');
+// Team Drive: a file uploaded straight to the shared Drive (not tied to a
+// message or task) is flagged here so everyone on the team can see it.
+ensureColumn('attachments', 'is_drive', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
 // Repeat rule: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'. When a
 // recurring task is completed, the next occurrence is generated automatically.
@@ -263,6 +266,7 @@ ensureColumn('channel_members', 'role', "TEXT NOT NULL DEFAULT 'member'");
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
   CREATE INDEX IF NOT EXISTS idx_attachments_task ON attachments(task_id);
+  CREATE INDEX IF NOT EXISTS idx_attachments_drive ON attachments(is_drive);
 `);
 
 // Ensure the organisation always has a super admin. If none exists yet (fresh

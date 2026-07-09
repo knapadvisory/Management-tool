@@ -552,6 +552,29 @@ async function main() {
   const afterPurge = await req('GET', '/api/files?q=spec', { token: a });
   check('permanently deleted file is gone', !afterPurge.data.files.some((f) => f.id === specFile.id));
 
+  console.log('Drive');
+  const dfd = new FormData();
+  dfd.append('files', new Blob(['team drive contents'], { type: 'text/plain' }), 'drive-note.txt');
+  const driveUp = await (await fetch(BASE + '/api/drive', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: dfd })).json();
+  const driveFile = driveUp.files?.[0];
+  check('drive upload returns the file with Drive context', !!driveFile && driveFile.context === 'Drive');
+  // Any teammate (Bob) can see and download a Drive file.
+  const bobDrive = await req('GET', '/api/drive', { token: b });
+  check('drive is visible to every teammate', bobDrive.data.files.some((f) => f.id === driveFile.id));
+  const bobDriveDl = await fetch(`${BASE}/api/uploads/${driveFile.id}?token=${b}`);
+  check('teammate can download a drive file', bobDriveDl.status === 200);
+  const driveSearch = await req('GET', '/api/drive?q=drive-note', { token: b });
+  check('drive search filters by name', driveSearch.data.files.some((f) => f.id === driveFile.id));
+  // WhatsApp-style deletion: only the uploader can remove it.
+  const bobDelDrive = await req('DELETE', `/api/drive/${driveFile.id}`, { token: b });
+  check('non-owner cannot delete a drive file', bobDelDrive.status === 403);
+  const aliceDelDrive = await req('DELETE', `/api/drive/${driveFile.id}`, { token: a });
+  check('owner can delete their drive file', aliceDelDrive.status === 200);
+  const afterDriveDel = await req('GET', '/api/drive', { token: a });
+  check('deleted drive file no longer listed', !afterDriveDel.data.files.some((f) => f.id === driveFile.id));
+  const driveArch = await req('GET', '/api/admin/files/archived', { token: a });
+  check('deleted drive file appears in the admin archive', driveArch.data.files.some((f) => f.id === driveFile.id));
+
   sockA.disconnect();
   sockB.disconnect();
 

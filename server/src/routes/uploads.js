@@ -69,6 +69,8 @@ router.get('/:id', (req, res) => {
     if (!member) return res.status(403).json({ error: 'Not allowed' });
   } else if (att.task_id) {
     // Tasks are shared across the team, so any authenticated member may view.
+  } else if (att.is_drive) {
+    // The shared Drive is team-wide; any authenticated member may view.
   } else if (att.uploader_id !== userId) {
     return res.status(403).json({ error: 'Not allowed' });
   }
