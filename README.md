@@ -5,6 +5,7 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 ## Features
 
 **💬 Messaging (Slack-style)**
+- A **Messenger** view (Bitrix-style) — a single screen listing every conversation (channels + direct messages) with last-message previews and timestamps on the left, and the open chat on the right; start a new chat with any teammate from the same list
 - Public channels (everyone starts in `#general`) — create and join channels from the sidebar
 - 1:1 direct messages with any teammate
 - Real-time delivery, typing indicators, and online/offline presence dots

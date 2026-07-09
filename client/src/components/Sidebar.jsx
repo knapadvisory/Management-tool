@@ -62,6 +62,12 @@ export default function Sidebar({
 
       <nav className="sidebar-nav">
         <button
+          className={`nav-item ${view?.type === 'messenger' ? 'active' : ''}`}
+          onClick={() => onSelectView('messenger')}
+        >
+          💬 Messenger
+        </button>
+        <button
           className={`nav-item ${view?.type === 'tasks' ? 'active' : ''}`}
           onClick={() => onSelectView('tasks')}
         >

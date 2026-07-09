@@ -635,3 +635,33 @@ input, select, textarea { font: inherit; }
 .status-reason-edit { display: flex; flex-direction: column; gap: 6px; }
 .status-reason-edit textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; resize: vertical; font-family: inherit; }
 .status-reason-actions { display: flex; gap: 6px; }
+
+/* --- Messenger (unified conversations view) --- */
+.messenger { flex: 1; min-height: 0; display: flex; }
+.msgr-list {
+  width: 340px; flex: none; border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto; background: #fff;
+}
+.msgr-search { padding: 12px; position: sticky; top: 0; background: #fff; z-index: 1; border-bottom: 1px solid #f2f3f5; }
+.msgr-search input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
+.msgr-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  border: none; background: none; width: 100%; text-align: left; cursor: pointer; border-bottom: 1px solid #f4f5f7;
+}
+.msgr-row:hover { background: #f8f9fc; }
+.msgr-row.active { background: #eef2ff; }
+.msgr-hash {
+  width: 40px; height: 40px; border-radius: 50%; background: #e5e7eb; color: #6b7280;
+  display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; flex: none;
+}
+.msgr-row-body { flex: 1; min-width: 0; }
+.msgr-row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.msgr-name { font-weight: 600; font-size: 14px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msgr-time { font-size: 11px; color: var(--muted); flex: none; }
+.msgr-preview { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.msgr-section { padding: 12px 12px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+.msgr-pane { flex: 1; display: flex; min-width: 0; }
+.msgr-pane .chat-layout { flex: 1; width: 100%; }
+.msgr-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; color: var(--muted); padding: 24px; }
+.msgr-empty-art { font-size: 56px; opacity: .8; }
+.msgr-empty-title { font-size: 18px; font-weight: 600; color: var(--text); }

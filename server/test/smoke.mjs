@@ -462,6 +462,11 @@ async function main() {
   const del = await req('DELETE', `/api/channels/${generalId}/messages/${msgId}`, { token: a });
   check('message soft-deleted, content cleared', del.data.is_deleted && del.data.content === '');
 
+  // Conversation-list metadata for the Messenger view.
+  const chans2 = await req('GET', '/api/channels', { token: a });
+  const generalCh = chans2.data.channels.find((c) => c.name === 'general');
+  check('channel carries a last-message preview', !!generalCh?.last_message && typeof generalCh.last_message.content === 'string' && !!generalCh.last_activity);
+
   sockA.disconnect();
   sockB.disconnect();
 

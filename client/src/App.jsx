@@ -8,6 +8,7 @@ import ChatView from './components/ChatView.jsx';
 import TasksBoard from './components/TasksBoard.jsx';
 import WorkflowsView from './components/WorkflowsView.jsx';
 import AdminPanel from './components/AdminPanel.jsx';
+import Messenger from './components/Messenger.jsx';
 import CallManager from './components/CallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
 
@@ -140,6 +141,15 @@ export default function App() {
     setView({ type: 'channel', channel });
   }
 
+  // Open/find a DM and return the channel without changing the top-level view
+  // (used by the Messenger's in-pane conversation switching).
+  async function ensureDm(otherUser) {
+    const channel = await api(`/channels/dm/${otherUser.id}`, { method: 'POST' });
+    getSocket()?.emit('channel:subscribe', channel.id);
+    await refreshChannels();
+    return channel;
+  }
+
   async function joinChannel(channel) {
     const joined = await api(`/channels/${channel.id}/join`, { method: 'POST' });
     getSocket()?.emit('channel:subscribe', joined.id);
@@ -181,6 +191,9 @@ export default function App() {
         )}
         {view?.type === 'tasks' && (
           <TasksBoard user={user} users={users} openTaskRequest={taskToOpen} onTaskOpened={() => setTaskToOpen(null)} />
+        )}
+        {view?.type === 'messenger' && (
+          <Messenger user={user} users={users} channels={channels} onlineIds={onlineIds} onEnsureDm={ensureDm} />
         )}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'admin' && user.role === 'admin' && (

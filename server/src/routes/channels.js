@@ -17,6 +17,17 @@ function channelWithMeta(channel, userId) {
   } else {
     out.display_name = channel.name;
   }
+  // Latest top-level message, for conversation-list previews and ordering.
+  const last = db.prepare(`
+    SELECT m.content, m.created_at, m.deleted_at, u.name AS user_name
+    FROM messages m JOIN users u ON u.id = m.user_id
+    WHERE m.channel_id = ? AND m.parent_id IS NULL
+    ORDER BY m.id DESC LIMIT 1
+  `).get(channel.id);
+  out.last_message = last
+    ? { content: last.deleted_at ? '(message deleted)' : last.content, created_at: last.created_at, user_name: last.user_name }
+    : null;
+  out.last_activity = last ? last.created_at : channel.created_at;
   return out;
 }
 
