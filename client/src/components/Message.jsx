@@ -5,8 +5,7 @@ import Avatar from './Avatar.jsx';
 import ForwardModal from './ForwardModal.jsx';
 import TaskFromMessageModal from './TaskFromMessageModal.jsx';
 import FilePreviewModal from './FilePreviewModal.jsx';
-
-const QUICK_EMOJIS = ['👍', '❤️', '😄', '🎉', '✅', '👀', '🙏'];
+import EmojiPicker from './EmojiPicker.jsx';
 
 function formatTime(iso) {
   const d = new Date(iso.replace(' ', 'T') + 'Z');
@@ -42,8 +41,26 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
   const [forwardOpen, setForwardOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
   const [previewAtt, setPreviewAtt] = useState(null);
+  const [pickerPos, setPickerPos] = useState({ top: 0, left: 0 });
   const moreBtnRef = useRef(null);
+  const reactBtnRef = useRef(null);
   const isMine = message.user_id === currentUser.id;
+
+  function openPicker() {
+    const r = reactBtnRef.current?.getBoundingClientRect();
+    if (r) {
+      const W = 312, H = 380;
+      const left = Math.min(window.innerWidth - W - 8, Math.max(8, r.left));
+      const top = Math.min(window.innerHeight - H - 8, r.bottom + 4);
+      setPickerPos({ top: Math.max(8, top), left });
+    }
+    setShowPicker((s) => !s);
+  }
+  function pickReaction(emoji) {
+    const mine = (message.reactions.find((r) => r.emoji === emoji)?.user_ids || []).includes(currentUser.id);
+    toggleReaction(emoji, mine);
+    setShowPicker(false);
+  }
   const hasFiles = (message.attachments || []).length > 0;
 
   function openMenu() {
@@ -170,14 +187,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
       {!editing && (
         <div className="msg-actions">
           <div className="react-wrap">
-            <button className="msg-action" title="Add reaction" onClick={() => setShowPicker((s) => !s)}>😊</button>
-            {showPicker && (
-              <div className="emoji-picker" onMouseLeave={() => setShowPicker(false)}>
-                {QUICK_EMOJIS.map((e) => (
-                  <button key={e} onClick={() => toggleReaction(e, (message.reactions.find((r) => r.emoji === e)?.user_ids || []).includes(currentUser.id))}>{e}</button>
-                ))}
-              </div>
-            )}
+            <button ref={reactBtnRef} className="msg-action" title="Add reaction" onClick={openPicker}>😊</button>
           </div>
           <div className="menu-wrap">
             <button ref={moreBtnRef} className="msg-action" title="More" onClick={openMenu}>⋯</button>
@@ -203,6 +213,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
       {forwardOpen && <ForwardModal message={message} onClose={() => setForwardOpen(false)} />}
       {taskOpen && <TaskFromMessageModal message={message} onClose={() => setTaskOpen(false)} />}
       {previewAtt && <FilePreviewModal file={previewAtt} onClose={() => setPreviewAtt(null)} />}
+      {showPicker && <EmojiPicker position={pickerPos} onPick={pickReaction} onClose={() => setShowPicker(false)} />}
     </div>
   );
 }

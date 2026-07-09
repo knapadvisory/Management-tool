@@ -2,6 +2,7 @@ import React, { useState, useRef, useLayoutEffect, forwardRef, useImperativeHand
 import { uploadFiles } from '../api.js';
 import { getSocket } from '../socket.js';
 import { formatBytes } from '../format.js';
+import EmojiPicker from './EmojiPicker.jsx';
 
 /**
  * Message input shared by the main channel view and the thread panel.
@@ -15,8 +16,31 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
   const [uploading, setUploading] = useState(false);
   const [mentioned, setMentioned] = useState({}); // name -> id
   const [suggest, setSuggest] = useState(null); // { query }
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [emojiPos, setEmojiPos] = useState({ top: 0, left: 0 });
   const inputRef = useRef(null);
   const pendingCaret = useRef(null);
+  const emojiBtnRef = useRef(null);
+
+  function openEmoji() {
+    const r = emojiBtnRef.current?.getBoundingClientRect();
+    if (r) {
+      const W = 312, H = 380;
+      const left = Math.min(window.innerWidth - W - 8, Math.max(8, r.left));
+      const above = r.top - H - 6;
+      setEmojiPos({ top: above > 8 ? above : r.bottom + 6, left });
+    }
+    setEmojiOpen((o) => !o);
+  }
+  function insertEmoji(emoji) {
+    const el = inputRef.current;
+    const caret = el ? el.selectionStart : text.length;
+    const before = text.slice(0, caret);
+    const after = text.slice(caret);
+    pendingCaret.current = (before + emoji).length;
+    setText(before + emoji + after);
+    setEmojiOpen(false);
+  }
 
   // Let the parent (ChatView) hand us files dropped anywhere on the chat.
   useImperativeHandle(ref, () => ({
@@ -156,12 +180,14 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
               onChange={(e) => { setFiles((fs) => [...fs, ...Array.from(e.target.files)]); e.target.value = ''; }}
             />
           </label>
+          <button type="button" ref={emojiBtnRef} className="composer-tool" title="Emoji" onClick={openEmoji}>😊</button>
           <div className="composer-spacer" />
           <button className="composer-send" title="Send (Enter)" disabled={uploading || (!text.trim() && !files.length)}>
             {uploading ? '…' : '➤'}
           </button>
         </div>
       </form>
+      {emojiOpen && <EmojiPicker position={emojiPos} onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
     </div>
   );
 });
