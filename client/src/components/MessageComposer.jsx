@@ -130,15 +130,6 @@ export default function MessageComposer({ channel, members, parentId = null, pla
         </div>
       )}
       <form className="composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
-        <label className="attach-btn" title="Attach files">
-          📎
-          <input
-            type="file"
-            multiple
-            hidden
-            onChange={(e) => { setFiles((fs) => [...fs, ...Array.from(e.target.files)]); e.target.value = ''; }}
-          />
-        </label>
         <textarea
           ref={inputRef}
           rows={1}
@@ -148,9 +139,21 @@ export default function MessageComposer({ channel, members, parentId = null, pla
           onChange={onChange}
           onKeyDown={onKeyDown}
         />
-        <button className="btn btn-primary" disabled={uploading || (!text.trim() && !files.length)}>
-          {uploading ? '…' : 'Send'}
-        </button>
+        <div className="composer-bar">
+          <label className="composer-tool" title="Attach files">
+            📎
+            <input
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => { setFiles((fs) => [...fs, ...Array.from(e.target.files)]); e.target.value = ''; }}
+            />
+          </label>
+          <div className="composer-spacer" />
+          <button className="composer-send" title="Send (Enter)" disabled={uploading || (!text.trim() && !files.length)}>
+            {uploading ? '…' : '➤'}
+          </button>
+        </div>
       </form>
     </div>
   );

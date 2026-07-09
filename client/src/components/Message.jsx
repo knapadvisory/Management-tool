@@ -75,8 +75,10 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
 
   return (
     <div className={`message ${grouped ? 'grouped' : ''}`}>
-      {grouped ? <span className="msg-gutter" /> : (
-        <Avatar user={{ name: message.user_name, avatar_color: message.avatar_color }} size={34} />
+      {grouped ? (
+        <span className="msg-gutter"><span className="gutter-time">{formatTime(message.created_at)}</span></span>
+      ) : (
+        <Avatar user={{ name: message.user_name, avatar_color: message.avatar_color }} size={36} />
       )}
       <div className="message-body">
         {!grouped && (
