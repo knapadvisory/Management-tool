@@ -5,6 +5,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import db from '../db.js';
+import { createNotification } from '../notifications.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
@@ -22,6 +23,15 @@ const upload = multer({ storage, limits: { fileSize: 25 * 1024 * 1024, files: 10
 
 const router = Router();
 
+// People a Drive file is tagged with.
+function sharedWith(attId) {
+  return db.prepare(`
+    SELECT u.id, u.name, u.avatar_color
+    FROM drive_file_shares s JOIN users u ON u.id = s.user_id
+    WHERE s.attachment_id = ? ORDER BY u.name COLLATE NOCASE
+  `).all(attId);
+}
+
 function serializeDriveFile(f) {
   return {
     id: f.id,
@@ -33,8 +43,45 @@ function serializeDriveFile(f) {
     uploader_name: f.uploader_name,
     uploader_color: f.uploader_color,
     drive_folder_id: f.drive_folder_id,
+    shared_with: sharedWith(f.id),
     context: 'Drive',
   };
+}
+
+// Parse a "shared_with" input (form field or JSON) into a list of valid,
+// distinct user ids.
+function parseUserIds(raw) {
+  let ids = [];
+  if (Array.isArray(raw)) ids = raw;
+  else if (typeof raw === 'string' && raw.trim()) {
+    try { const j = JSON.parse(raw); if (Array.isArray(j)) ids = j; else ids = raw.split(','); }
+    catch { ids = raw.split(','); }
+  }
+  const seen = new Set();
+  const out = [];
+  for (const v of ids) {
+    const n = Number(v);
+    if (Number.isInteger(n) && !seen.has(n) && db.prepare('SELECT 1 FROM users WHERE id = ? AND active = 1').get(n)) {
+      seen.add(n); out.push(n);
+    }
+  }
+  return out;
+}
+
+// Tag a set of users on a file and notify the newly-added ones.
+function applyShares(io, att, userIds, actor) {
+  const existing = new Set(db.prepare('SELECT user_id FROM drive_file_shares WHERE attachment_id = ?').all(att.id).map((r) => r.user_id));
+  db.prepare('DELETE FROM drive_file_shares WHERE attachment_id = ?').run(att.id);
+  const ins = db.prepare('INSERT OR IGNORE INTO drive_file_shares (attachment_id, user_id) VALUES (?, ?)');
+  for (const uid of userIds) {
+    ins.run(att.id, uid);
+    if (!existing.has(uid)) {
+      createNotification(io, {
+        user_id: uid, type: 'drive_share', actor_id: actor.id,
+        text: `${actor.name} shared a file with you in the Drive: ${att.original_name}`,
+      });
+    }
+  }
 }
 
 // Parse a ?folder= param into a folder id (or null for the Drive root).
@@ -162,21 +209,37 @@ router.post('/', upload.array('files', 10), (req, res) => {
   if (folderId != null) {
     if (!Number.isInteger(folderId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ?').get(folderId)) folderId = null;
   }
+  const shareIds = parseUserIds(req.body?.shared_with);
+  const io = req.app.get('io');
   const insert = db.prepare(`
     INSERT INTO attachments (uploader_id, stored_name, original_name, mime_type, size, is_drive, drive_folder_id)
     VALUES (?, ?, ?, ?, ?, 1, ?)
   `);
   const created = (req.files || []).map((f) => {
     const info = insert.run(req.user.id, f.filename, f.originalname, f.mimetype, f.size, folderId);
-    return db.prepare(`
+    const row = db.prepare(`
       SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, a.uploader_id, a.drive_folder_id,
              u.name AS uploader_name, u.avatar_color AS uploader_color
       FROM attachments a JOIN users u ON u.id = a.uploader_id WHERE a.id = ?
     `).get(info.lastInsertRowid);
+    if (shareIds.length) applyShares(io, row, shareIds, req.user);
+    return row;
   }).map(serializeDriveFile);
 
-  req.app.get('io')?.emit('drive:changed');
+  io?.emit('drive:changed');
   res.status(201).json({ files: created });
+});
+
+// Update who a Drive file is tagged / shared with (uploader or admin).
+router.patch('/:id/shares', (req, res) => {
+  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND is_drive = 1').get(req.params.id);
+  if (!att) return res.status(404).json({ error: 'File not found' });
+  if (att.uploader_id !== req.user.id && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'You can only tag files you uploaded' });
+  }
+  applyShares(req.app.get('io'), att, parseUserIds(req.body?.user_ids), req.user);
+  req.app.get('io')?.emit('drive:changed');
+  res.json({ ok: true, shared_with: sharedWith(att.id) });
 });
 
 // Move a Drive file into another folder (uploader or admin).

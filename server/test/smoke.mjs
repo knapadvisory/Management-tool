@@ -607,6 +607,22 @@ async function main() {
   check('empty folder can be deleted', delSub.status === 200);
   await req('DELETE', `/api/drive/${nda.id}`, { token: a }); // tidy up
 
+  // Tag people on a Drive file: it records who it's shared with and notifies them.
+  const tagFd = new FormData();
+  tagFd.append('files', new Blob(['for bob'], { type: 'text/plain' }), 'for-bob.txt');
+  tagFd.append('shared_with', JSON.stringify([bobId]));
+  const taggedUp = await (await fetch(BASE + '/api/drive', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: tagFd })).json();
+  const tagged = taggedUp.files?.[0];
+  check('uploaded file records who it is shared with', tagged?.shared_with?.some((p) => p.id === bobId));
+  const bobDriveNotifs = await req('GET', '/api/notifications', { token: b });
+  check('tagged teammate gets a drive_share notification', bobDriveNotifs.data.notifications.some((n) => n.type === 'drive_share'));
+  // Re-tagging: only the uploader/admin can, and it replaces the tag set.
+  const bobRetag = await req('PATCH', `/api/drive/${tagged.id}/shares`, { token: b, body: { user_ids: [] } });
+  check('non-owner cannot edit a file’s tags', bobRetag.status === 403);
+  const retag = await req('PATCH', `/api/drive/${tagged.id}/shares`, { token: a, body: { user_ids: [] } });
+  check('owner can clear a file’s tags', retag.status === 200 && retag.data.shared_with.length === 0);
+  await req('DELETE', `/api/drive/${tagged.id}`, { token: a }); // tidy up
+
   // WhatsApp-style deletion: only the uploader can remove it.
   const bobDelDrive = await req('DELETE', `/api/drive/${driveFile.id}`, { token: b });
   check('non-owner cannot delete a drive file', bobDelDrive.status === 403);

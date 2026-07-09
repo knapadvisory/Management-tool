@@ -74,6 +74,14 @@ CREATE TABLE IF NOT EXISTS drive_folders (
 );
 CREATE INDEX IF NOT EXISTS idx_drive_folders_parent ON drive_folders(parent_id);
 
+-- People a Drive file is tagged / "shared with" (informational — the Drive is
+-- team-wide; this records who a file is meant for).
+CREATE TABLE IF NOT EXISTS drive_file_shares (
+  attachment_id INTEGER NOT NULL REFERENCES attachments(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (attachment_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS message_reactions (
   message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

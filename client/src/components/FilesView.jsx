@@ -37,9 +37,10 @@ function downloadFile(f) {
 // selection with a contextual action bar, Details/Grid views and in-app
 // preview. Powers both the Files aggregate and the shared team Drive; the Drive
 // adds folders, uploading (button + drag-and-drop) and a live socket refresh.
-export default function FilesView({ user, mode = 'files' }) {
+export default function FilesView({ user, users = [], mode = 'files' }) {
   const isDrive = mode === 'drive';
   const endpoint = isDrive ? '/drive' : '/files';
+  const team = users.filter((u) => u.id !== user.id);
 
   const [files, setFiles] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -50,6 +51,8 @@ export default function FilesView({ user, mode = 'files' }) {
   const [preview, setPreview] = useState(null);
   const [details, setDetails] = useState(null);
   const [moving, setMoving] = useState(null); // files pending a "move to folder"
+  const [sharing, setSharing] = useState(null); // files pending a "share with" edit
+  const [pending, setPending] = useState(null); // files chosen, awaiting the upload dialog
   const [view, setView] = useState('details'); // 'details' | 'grid'
   const [sort, setSort] = useState({ key: 'date', dir: -1 });
   const [selected, setSelected] = useState(() => new Set());
@@ -86,11 +89,17 @@ export default function FilesView({ user, mode = 'files' }) {
 
   const searching = isDrive && !!query.trim();
 
-  async function uploadDriveFiles(list) {
+  // Choosing/dropping files opens the upload dialog (name + tag people) rather
+  // than uploading straight away.
+  function chooseFiles(list) {
     const arr = Array.from(list || []);
-    if (!arr.length) return;
+    if (arr.length) setPending(arr);
+  }
+
+  async function confirmUpload(arr, sharedWith) {
+    setPending(null);
     setUploading(true);
-    try { await uploadToDrive(arr, folderId); await load(query, folderId); }
+    try { await uploadToDrive(arr, folderId, sharedWith); await load(query, folderId); }
     catch (err) { alert(err.message); }
     finally { setUploading(false); }
   }
@@ -117,7 +126,7 @@ export default function FilesView({ user, mode = 'files' }) {
     e.preventDefault();
     dragDepth.current = 0;
     setDragging(false);
-    if (isDrive && e.dataTransfer?.files?.length) uploadDriveFiles(e.dataTransfer.files);
+    if (isDrive && e.dataTransfer?.files?.length) chooseFiles(e.dataTransfer.files);
   }
   function onDragOver(e) { if (isDrive) e.preventDefault(); }
   function onDragEnter(e) { if (!isDrive) return; e.preventDefault(); dragDepth.current += 1; setDragging(true); }
@@ -192,7 +201,7 @@ export default function FilesView({ user, mode = 'files' }) {
               <button className="btn btn-primary files-upload-btn" disabled={uploading} onClick={() => inputRef.current?.click()}>
                 {uploading ? 'Uploading…' : '⬆ Upload'}
               </button>
-              <input ref={inputRef} type="file" multiple hidden onChange={(e) => { uploadDriveFiles(e.target.files); e.target.value = ''; }} />
+              <input ref={inputRef} type="file" multiple hidden onChange={(e) => { chooseFiles(e.target.files); e.target.value = ''; }} />
             </>
           )}
         </div>
@@ -219,6 +228,7 @@ export default function FilesView({ user, mode = 'files' }) {
           <button className="fa-btn" disabled={!one} onClick={() => one && setDetails(one)}>ℹ Details</button>
           <button className="fa-btn" onClick={() => selectedFiles.forEach(downloadFile)}>⬇ Download</button>
           {isDrive && <button className="fa-btn" disabled={!movableSelected.length} onClick={() => setMoving(movableSelected)}>📂 Move</button>}
+          {isDrive && <button className="fa-btn" disabled={!movableSelected.length} onClick={() => setSharing(movableSelected)}>🏷 Tag people</button>}
           <button className="fa-btn danger" onClick={deleteSelected}>🗑 Delete</button>
           <button className="fa-btn ghost" onClick={() => setSelected(new Set())}>Clear</button>
         </div>
@@ -238,6 +248,7 @@ export default function FilesView({ user, mode = 'files' }) {
                 <th className="fx-check"><input type="checkbox" checked={sorted.length > 0 && selected.size === sorted.length} onChange={toggleAll} /></th>
                 <th className="fx-name" onClick={() => setSortKey('name')}>Name{arrow('name')}</th>
                 <th className="fx-owner" onClick={() => setSortKey('owner')}>Owner{arrow('owner')}</th>
+                {isDrive && <th className="fx-shared">Shared with</th>}
                 <th className="fx-date" onClick={() => setSortKey('date')}>Shared on{arrow('date')}</th>
                 <th className="fx-size" onClick={() => setSortKey('size')}>Size{arrow('size')}</th>
               </tr>
@@ -257,6 +268,7 @@ export default function FilesView({ user, mode = 'files' }) {
                     )}
                   </td>
                   <td className="fx-owner"><span className="muted">{f.created_by_name}</span></td>
+                  {isDrive && <td className="fx-shared muted">—</td>}
                   <td className="fx-date muted">{formatDateTime(f.created_at)}</td>
                   <td className="fx-size muted">{f.files + f.subs === 0 ? 'Empty' : `${f.subs ? `${f.subs} folder${f.subs === 1 ? '' : 's'}` : ''}${f.subs && f.files ? ', ' : ''}${f.files ? `${f.files} file${f.files === 1 ? '' : 's'}` : ''}`}</td>
                 </tr>
@@ -270,6 +282,19 @@ export default function FilesView({ user, mode = 'files' }) {
                     {!isDrive && <span className="fx-context muted">{f.context}</span>}
                   </td>
                   <td className="fx-owner"><Avatar user={{ name: f.uploader_name, avatar_color: f.uploader_color }} size={20} /> <span>{f.uploader_name}</span></td>
+                  {isDrive && (
+                    <td className="fx-shared">
+                      {f.shared_with?.length ? (
+                        <span className="shared-avatars">
+                          {f.shared_with.slice(0, 3).map((p) => (
+                            <span key={p.id} className="shared-avatar" title={p.name}><Avatar user={p} size={20} /></span>
+                          ))}
+                          {f.shared_with.length > 3 && <span className="shared-more">+{f.shared_with.length - 3}</span>}
+                          {f.shared_with.length === 1 && <span className="shared-name">{f.shared_with[0].name}</span>}
+                        </span>
+                      ) : <span className="muted">—</span>}
+                    </td>
+                  )}
                   <td className="fx-date muted">{formatDateTime(f.created_at)}</td>
                   <td className="fx-size muted">{formatBytes(f.size)}</td>
                 </tr>
@@ -322,6 +347,91 @@ export default function FilesView({ user, mode = 'files' }) {
           onMoved={() => { setMoving(null); load(query, folderId); }}
         />
       )}
+      {pending && (
+        <UploadDialog
+          files={pending} team={team} uploading={uploading}
+          onCancel={() => setPending(null)}
+          onConfirm={(ids) => confirmUpload(pending, ids)}
+        />
+      )}
+      {sharing && (
+        <ShareModal
+          files={sharing} team={team}
+          onClose={() => setSharing(null)}
+          onSaved={() => { setSharing(null); load(query, folderId); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// A searchable checkbox list of teammates, used to tag people on a file.
+function PeoplePicker({ team, selected, onToggle }) {
+  const [q, setQ] = useState('');
+  const shown = team.filter((u) => u.name.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div className="people-picker">
+      <input className="people-picker-search" placeholder="Search teammates…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="people-picker-list">
+        {shown.length === 0 && <p className="muted" style={{ padding: 8 }}>No teammates found.</p>}
+        {shown.map((u) => (
+          <label key={u.id} className={`people-picker-row ${selected.has(u.id) ? 'sel' : ''}`}>
+            <input type="checkbox" checked={selected.has(u.id)} onChange={() => onToggle(u.id)} />
+            <Avatar user={u} size={22} />
+            <span>{u.name}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Confirm an upload: review the files and optionally tag teammates.
+function UploadDialog({ files, team, uploading, onCancel, onConfirm }) {
+  const [selected, setSelected] = useState(() => new Set());
+  const toggle = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+        <div className="modal-header"><strong>Upload {files.length} file{files.length === 1 ? '' : 's'} to the Drive</strong><button className="icon-btn" onClick={onCancel}>✕</button></div>
+        <div className="upload-dialog-files">
+          {files.map((f, i) => <div key={i} className="upload-dialog-file"><span>{iconFor(f.type, f.name)}</span><span className="upload-dialog-fname" title={f.name}>{f.name}</span><span className="muted">{formatBytes(f.size)}</span></div>)}
+        </div>
+        <label className="muted upload-dialog-label">Tag people this file is for <span className="upload-dialog-optional">(optional)</span></label>
+        <PeoplePicker team={team} selected={selected} onToggle={toggle} />
+        <div className="editor-actions">
+          <button className="btn" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-primary" disabled={uploading} onClick={() => onConfirm([...selected])}>{uploading ? 'Uploading…' : `Upload${selected.size ? ` & tag ${selected.size}` : ''}`}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Edit who a set of already-uploaded files is tagged with. When exactly one
+// file is selected its current tags are pre-checked.
+function ShareModal({ files, team, onClose, onSaved }) {
+  const [selected, setSelected] = useState(() => new Set(files.length === 1 ? (files[0].shared_with || []).map((p) => p.id) : []));
+  const [busy, setBusy] = useState(false);
+  const toggle = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  async function save() {
+    setBusy(true);
+    const user_ids = [...selected];
+    for (const f of files) { try { await api(`/drive/${f.id}/shares`, { method: 'PATCH', body: { user_ids } }); } catch { /* skip */ } }
+    setBusy(false);
+    onSaved();
+  }
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+        <div className="modal-header"><strong>Tag people on {files.length} file{files.length === 1 ? '' : 's'}</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
+        {files.length > 1 && <p className="muted" style={{ padding: '0 4px 8px' }}>The chosen tags replace any existing tags on all selected files.</p>}
+        <PeoplePicker team={team} selected={selected} onToggle={toggle} />
+        <div className="editor-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save tags'}</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -369,6 +479,7 @@ function FileDetails({ file, onClose, onOpen }) {
     ['Type', file.mime_type || '—'],
     ['Size', formatBytes(file.size)],
     ['Shared by', file.uploader_name],
+    ...(file.shared_with?.length ? [['Shared with', file.shared_with.map((p) => p.name).join(', ')]] : []),
     ['Location', file.context],
     ['Shared on', formatDateTime(file.created_at)],
   ];

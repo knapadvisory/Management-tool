@@ -1029,6 +1029,27 @@ input, select, textarea { font: inherit; }
 .folder-card .file-card-icon { color: #f0b429; }
 .folder-card-actions { position: absolute; top: 6px; right: 6px; display: none; gap: 2px; }
 .folder-card:hover .folder-card-actions { display: inline-flex; }
+
+/* "Shared with" tags column. */
+.fx-shared { white-space: nowrap; }
+.shared-avatars { display: inline-flex; align-items: center; gap: 4px; }
+.shared-avatar + .shared-avatar { margin-left: -8px; }
+.shared-name { margin-left: 2px; font-size: 13px; }
+.shared-more { font-size: 12px; color: var(--muted); margin-left: 2px; }
+
+/* People picker (upload tagging + tag editing). */
+.people-picker { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 4px 0 10px; }
+.people-picker-search { width: 100%; border: none; border-bottom: 1px solid var(--border); padding: 8px 10px; font-size: 14px; outline: none; }
+.people-picker-list { max-height: 220px; overflow-y: auto; }
+.people-picker-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; font-size: 14px; }
+.people-picker-row:hover { background: #f5f7ff; }
+.people-picker-row.sel { background: #eef0ff; }
+.people-picker-row input { margin: 0; }
+.upload-dialog-files { max-height: 160px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+.upload-dialog-file { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 4px 6px; background: #f6f7fb; border-radius: 8px; }
+.upload-dialog-fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload-dialog-label { display: block; font-size: 13px; margin: 2px 2px 2px; }
+.upload-dialog-optional { opacity: .7; }
 .files-page.drag-over { outline: 2px dashed var(--accent); outline-offset: -8px; border-radius: 12px; }
 .files-drop-overlay { position: absolute; inset: 0; background: rgba(79, 70, 229, .08); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 5; }
 .files-drop-inner { background: #fff; border: 2px dashed var(--accent); border-radius: 14px; padding: 28px 44px; text-align: center; font-size: 20px; font-weight: 600; color: var(--accent); }

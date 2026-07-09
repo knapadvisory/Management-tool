@@ -17,11 +17,13 @@ export async function uploadFiles(files) {
   return data.attachments;
 }
 
-// Upload files straight into the shared team Drive (optionally into a folder).
-export async function uploadToDrive(files, folderId = null) {
+// Upload files straight into the shared team Drive (optionally into a folder,
+// optionally tagged / shared with a set of teammates).
+export async function uploadToDrive(files, folderId = null, sharedWith = []) {
   const fd = new FormData();
   for (const f of files) fd.append('files', f);
   if (folderId != null) fd.append('folder_id', String(folderId));
+  if (sharedWith && sharedWith.length) fd.append('shared_with', JSON.stringify(sharedWith));
   const res = await fetch('/api/drive', {
     method: 'POST',
     headers: { Authorization: `Bearer ${getToken()}` },
