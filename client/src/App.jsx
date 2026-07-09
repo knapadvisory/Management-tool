@@ -148,6 +148,14 @@ export default function App() {
     setUnreadCount(0);
   }
 
+  // Mark one notification read without navigating (used by the Activity pane).
+  function markNotificationRead(n) {
+    if (n.is_read) return;
+    api(`/notifications/${n.id}/read`, { method: 'POST' }).catch(() => {});
+    setNotifications((ns) => ns.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
+    setUnreadCount((c) => Math.max(0, c - 1));
+  }
+
   async function openDm(otherUser) {
     const channel = await api(`/channels/dm/${otherUser.id}`, { method: 'POST' });
     getSocket()?.emit('channel:subscribe', channel.id);
@@ -216,7 +224,12 @@ export default function App() {
           <TeamDirectory user={user} users={users} onlineIds={onlineIds} onMessage={openDm} />
         )}
         {view?.type === 'activity' && (
-          <ActivityView notifications={notifications} unreadCount={unreadCount} onSelect={selectNotification} onMarkAllRead={markAllRead} />
+          <ActivityView
+            user={user} users={users} onlineIds={onlineIds}
+            channels={channels} collabs={collabs}
+            notifications={notifications} unreadCount={unreadCount}
+            onMarkAllRead={markAllRead} onMarkRead={markNotificationRead}
+          />
         )}
         {view?.type === 'files' && <FilesView />}
         {view?.type === 'workflows' && <WorkflowsView />}

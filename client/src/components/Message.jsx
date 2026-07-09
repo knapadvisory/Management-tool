@@ -65,9 +65,11 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
   if (message.is_deleted) {
     return (
       <div className={`message deleted-row ${grouped ? 'grouped' : ''}`}>
-        {!grouped && <span className="msg-gutter" />}
-        <div className="message-body">
-          <div className="message-text deleted">This message was deleted</div>
+        <div className="message-inner">
+          <span className="msg-gutter" />
+          <div className="message-body">
+            <div className="message-text deleted">This message was deleted</div>
+          </div>
         </div>
       </div>
     );
@@ -75,6 +77,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
 
   return (
     <div className={`message ${grouped ? 'grouped' : ''}`}>
+      <div className="message-inner">
       {grouped ? (
         <span className="msg-gutter"><span className="gutter-time">{formatTime(message.created_at)}</span></span>
       ) : (
@@ -163,6 +166,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
           </div>
         </div>
       )}
+      </div>
 
       {forwardOpen && <ForwardModal message={message} onClose={() => setForwardOpen(false)} />}
       {taskOpen && <TaskFromMessageModal message={message} onClose={() => setTaskOpen(false)} />}

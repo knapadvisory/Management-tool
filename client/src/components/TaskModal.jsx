@@ -6,7 +6,7 @@ import TaskChat from './TaskChat.jsx';
 import RemindersEditor from './RemindersEditor.jsx';
 import StatusControl from './StatusControl.jsx';
 
-export default function TaskModal({ taskId, user, users, workflows = [], projects = [], onClose }) {
+export default function TaskModal({ taskId, user, users, workflows = [], projects = [], onClose, inline = false }) {
   const [tab, setTab] = useState('chat');
   const [task, setTask] = useState(null);
   const [comments, setComments] = useState([]);
@@ -120,9 +120,8 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   const doneCount = checklist.filter((i) => i.is_done).length;
   const progress = checklist.length ? Math.round((doneCount / checklist.length) * 100) : 0;
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal task-modal" onClick={(e) => e.stopPropagation()}>
+  const inner = (
+    <div className={inline ? 'task-modal inline' : 'modal task-modal'} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <input
             className="task-title-input"
@@ -283,7 +282,8 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
             ? <button className="btn btn-danger" onClick={remove}>Delete task</button>
             : <span className="muted">Only an admin can delete a task</span>}
         </div>
-      </div>
     </div>
   );
+
+  return inline ? inner : <div className="modal-overlay" onClick={onClose}>{inner}</div>;
 }

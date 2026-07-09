@@ -12,8 +12,28 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
   const [messages, setMessages] = useState([]);
   const [typingUser, setTypingUser] = useState(null);
   const [threadRoot, setThreadRoot] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
   const bottomRef = useRef(null);
   const typingTimeout = useRef(null);
+  const composerRef = useRef(null);
+  const dragDepth = useRef(0);
+
+  function onDrop(e) {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragOver(false);
+    const dropped = Array.from(e.dataTransfer?.files || []);
+    if (dropped.length) composerRef.current?.addFiles(dropped);
+  }
+  function onDragEnter(e) {
+    if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
+    dragDepth.current += 1;
+    setDragOver(true);
+  }
+  function onDragLeave() {
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragOver(false);
+  }
 
   useEffect(() => {
     setThreadRoot(null);
@@ -62,7 +82,12 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
 
   return (
     <div className="chat-layout">
-      <div className="chat">
+      <div className="chat" onDrop={onDrop} onDragEnter={onDragEnter} onDragOver={(e) => e.preventDefault()} onDragLeave={onDragLeave}>
+        {dragOver && (
+          <div className="drop-overlay">
+            <div className="drop-card">📎 Drop files to share them here</div>
+          </div>
+        )}
         <header className="chat-header">
           <div className="chat-title">
             {channel.is_dm ? (
@@ -110,6 +135,7 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
 
         {canPost ? (
           <MessageComposer
+            ref={composerRef}
             channel={channel}
             members={mentionMembers}
             placeholder={channel.is_dm ? `Message ${channel.display_name}` : `Message ${channel.is_collab ? '' : '#'}${channel.name}`}

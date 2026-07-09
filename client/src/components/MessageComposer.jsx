@@ -1,4 +1,4 @@
-import React, { useState, useRef, useLayoutEffect } from 'react';
+import React, { useState, useRef, useLayoutEffect, forwardRef, useImperativeHandle } from 'react';
 import { uploadFiles } from '../api.js';
 import { getSocket } from '../socket.js';
 import { formatBytes } from '../format.js';
@@ -9,7 +9,7 @@ import { formatBytes } from '../format.js';
  * (Shift+Enter for a newline). Mentions are tracked by user id so the
  * server can notify exactly the right people.
  */
-export default function MessageComposer({ channel, members, parentId = null, placeholder, autoFocus }) {
+const MessageComposer = forwardRef(function MessageComposer({ channel, members, parentId = null, placeholder, autoFocus }, ref) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -17,6 +17,13 @@ export default function MessageComposer({ channel, members, parentId = null, pla
   const [suggest, setSuggest] = useState(null); // { query }
   const inputRef = useRef(null);
   const pendingCaret = useRef(null);
+
+  // Let the parent (ChatView) hand us files dropped anywhere on the chat.
+  useImperativeHandle(ref, () => ({
+    addFiles(list) {
+      if (list && list.length) { setFiles((fs) => [...fs, ...list]); inputRef.current?.focus(); }
+    },
+  }));
 
   const others = members.filter((m) => m.name);
 
@@ -157,4 +164,6 @@ export default function MessageComposer({ channel, members, parentId = null, pla
       </form>
     </div>
   );
-}
+});
+
+export default MessageComposer;
