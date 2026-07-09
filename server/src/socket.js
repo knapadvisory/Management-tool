@@ -46,7 +46,7 @@ export default function setupSocket(io) {
       if (!member) return ack?.({ error: 'Not a member of this channel' });
 
       // In a collab restricted to moderators, only owner/moderators may post.
-      const chan = db.prepare('SELECT is_collab, who_can_post FROM channels WHERE id = ?').get(channel_id);
+      const chan = db.prepare('SELECT is_collab, is_dm, who_can_post FROM channels WHERE id = ?').get(channel_id);
       if (chan?.is_collab && chan.who_can_post === 'mods' && !['owner', 'moderator'].includes(member.role)) {
         return ack?.({ error: 'Only moderators can post in this collab' });
       }
@@ -84,6 +84,20 @@ export default function setupSocket(io) {
             user_id: uid, type: 'mention', actor_id: userId, channel_id,
             text: `${socket.user.name} mentioned you: "${content.slice(0, 80)}"`,
           });
+        }
+      }
+
+      // Direct messages surface in the recipient's Activity feed (skip anyone
+      // already notified via an @mention, and thread replies).
+      if (chan?.is_dm && !parent_id) {
+        const others = db.prepare('SELECT user_id FROM channel_members WHERE channel_id = ? AND user_id != ?').all(channel_id, userId);
+        for (const { user_id } of others) {
+          if (!notified.includes(user_id)) {
+            createNotification(io, {
+              user_id, type: 'dm', actor_id: userId, channel_id,
+              text: `${socket.user.name}: ${content ? content.slice(0, 80) : '📎 sent a file'}`,
+            });
+          }
         }
       }
       ack?.({ message: serializeMessage(messageId, userId) });

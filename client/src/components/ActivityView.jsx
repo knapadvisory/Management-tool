@@ -5,7 +5,7 @@ import ChatView from './ChatView.jsx';
 import TaskModal from './TaskModal.jsx';
 
 const ICON = {
-  mention: '💬', task_assigned: '📌', task_chat: '💬', task_note: '📝', task_moved: '➡️', task_update: '🔔',
+  dm: '✉️', mention: '💬', task_assigned: '📌', task_chat: '💬', task_note: '📝', task_moved: '➡️', task_update: '🔔',
   task_reminder: '⏰', task_recurred: '🔁', task_deleted: '🗑️', task_status: '🚦',
 };
 
@@ -21,6 +21,7 @@ function timeAgo(iso) {
 const FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'unread', label: 'Unread' },
+  { key: 'messages', label: 'Messages' },
   { key: 'mentions', label: 'Mentions' },
   { key: 'tasks', label: 'Tasks' },
 ];
@@ -43,6 +44,7 @@ export default function ActivityView({
 
   const shown = notifications.filter((n) => {
     if (filter === 'unread') return !n.is_read;
+    if (filter === 'messages') return n.type === 'dm' || n.type === 'mention' || n.type === 'task_chat';
     if (filter === 'mentions') return n.type === 'mention';
     if (filter === 'tasks') return n.type.startsWith('task');
     return true;

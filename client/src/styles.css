@@ -943,3 +943,17 @@ input, select, textarea { font: inherit; }
 .emoji-btn { border: none; background: none; font-size: 20px; padding: 4px; border-radius: 6px; line-height: 1; }
 .emoji-btn:hover { background: #f0f1f4; }
 .emoji-empty { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 20px; font-size: 14px; }
+
+/* --- Composer formatting toolbar + attachment cards --- */
+.composer-format { display: flex; align-items: center; gap: 2px; padding: 6px 8px 0; }
+.composer-format button { border: none; background: none; width: 28px; height: 26px; border-radius: 6px; font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; }
+.composer-format button:hover { background: #f0f1f4; color: var(--text); }
+.composer-format button.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.composer-attachments { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 12px 2px; }
+.attach-card { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: #fff; max-width: 260px; }
+.attach-card-icon { font-size: 22px; flex: none; }
+.attach-card-main { min-width: 0; }
+.attach-card-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-card-sub { font-size: 11px; }
+.attach-card-x { border: none; background: none; color: var(--muted); flex: none; border-radius: 6px; padding: 2px 6px; }
+.attach-card-x:hover { background: #f0f1f4; color: var(--danger); }

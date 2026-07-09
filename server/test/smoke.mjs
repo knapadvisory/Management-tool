@@ -444,6 +444,12 @@ async function main() {
   check('assignment produced a notification', bobNotifs.data.notifications.some((n) => n.type === 'task_assigned'));
   check('unread count reflects notifications', bobNotifs.data.unread_count >= 1);
 
+  // A direct message should surface in the recipient's activity feed.
+  await new Promise((resolve) => sockA.emit('message:send', { channel_id: dm.data.id, content: 'hey bob, dm here' }, resolve));
+  await new Promise((r) => setTimeout(r, 200));
+  const bobDmNotifs = await req('GET', '/api/notifications', { token: b });
+  check('direct message surfaces in the activity feed', bobDmNotifs.data.notifications.some((n) => n.type === 'dm'));
+
   // Task chat: alice and bob join task 1, alice sends -> bob receives + gets a notification.
   let bobGotChat = false;
   let bobChatNotif = false;

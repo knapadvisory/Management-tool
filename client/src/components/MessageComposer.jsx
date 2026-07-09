@@ -4,6 +4,21 @@ import { getSocket } from '../socket.js';
 import { formatBytes } from '../format.js';
 import EmojiPicker from './EmojiPicker.jsx';
 
+// Icon + human label for a selected (not-yet-uploaded) File.
+function fileGlyph(f) {
+  const mime = f.type || '';
+  const ext = (f.name.split('.').pop() || '').toLowerCase();
+  if (mime.startsWith('image/')) return { icon: '🖼️', label: 'Image' };
+  if (mime.startsWith('video/')) return { icon: '🎬', label: 'Video' };
+  if (mime.startsWith('audio/')) return { icon: '🎵', label: 'Audio' };
+  if (mime === 'application/pdf' || ext === 'pdf') return { icon: '📕', label: 'PDF' };
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return { icon: '📊', label: 'Spreadsheet' };
+  if (['doc', 'docx'].includes(ext)) return { icon: '📘', label: 'Word document' };
+  if (['ppt', 'pptx'].includes(ext)) return { icon: '📙', label: 'Presentation' };
+  if (['zip', 'rar', '7z'].includes(ext)) return { icon: '🗜️', label: 'Archive' };
+  return { icon: '📄', label: ext ? `${ext.toUpperCase()} file` : 'File' };
+}
+
 /**
  * Message input shared by the main channel view and the thread panel.
  * Handles @mention autocomplete, file selection/upload, and Enter-to-send
@@ -40,6 +55,39 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
     pendingCaret.current = (before + emoji).length;
     setText(before + emoji + after);
     setEmojiOpen(false);
+  }
+
+  // Wrap the current selection with a markdown marker (or insert the marker
+  // pair at the caret if nothing is selected).
+  function wrapSelection(marker, end = marker) {
+    const el = inputRef.current;
+    const s = el ? el.selectionStart : text.length;
+    const e = el ? el.selectionEnd : text.length;
+    const sel = text.slice(s, e);
+    pendingCaret.current = s + marker.length + sel.length;
+    setText(text.slice(0, s) + marker + sel + end + text.slice(e));
+    el?.focus();
+  }
+  function insertLink() {
+    const el = inputRef.current;
+    const s = el ? el.selectionStart : text.length;
+    const e = el ? el.selectionEnd : text.length;
+    const label = text.slice(s, e) || 'text';
+    const snippet = `[${label}](url)`;
+    pendingCaret.current = s + snippet.length - 4; // land on "url"
+    setText(text.slice(0, s) + snippet + text.slice(e));
+    el?.focus();
+  }
+  function insertAt(str) {
+    const el = inputRef.current;
+    const caret = el ? el.selectionStart : text.length;
+    pendingCaret.current = caret + str.length;
+    setText(text.slice(0, caret) + str + text.slice(caret));
+    el?.focus();
+  }
+  function startMention() {
+    insertAt('@');
+    setSuggest({ query: '' });
   }
 
   // Let the parent (ChatView) hand us files dropped anywhere on the chat.
@@ -138,16 +186,6 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
 
   return (
     <div className="composer-wrap">
-      {files.length > 0 && (
-        <div className="attach-tray">
-          {files.map((f, i) => (
-            <span key={i} className="attach-chip">
-              📎 {f.name} <span className="muted">({formatBytes(f.size)})</span>
-              <button onClick={() => setFiles((fs) => fs.filter((_, j) => j !== i))}>✕</button>
-            </span>
-          ))}
-        </div>
-      )}
       {suggestions.length > 0 && (
         <div className="mention-menu">
           {suggestions.map((m) => (
@@ -161,6 +199,16 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
         </div>
       )}
       <form className="composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
+        <div className="composer-format">
+          <button type="button" title="Bold" onClick={() => wrapSelection('**')}><b>B</b></button>
+          <button type="button" title="Italic" onClick={() => wrapSelection('_')}><i>I</i></button>
+          <button type="button" title="Strikethrough" onClick={() => wrapSelection('~~')}><s>S</s></button>
+          <button type="button" title="Inline code" className="mono" onClick={() => wrapSelection('`')}>{'</>'}</button>
+          <button type="button" title="Code block" className="mono" onClick={() => wrapSelection('```\n', '\n```')}>{'{ }'}</button>
+          <button type="button" title="Link" onClick={insertLink}>🔗</button>
+          <button type="button" title="Bulleted list" onClick={() => insertAt('\n- ')}>≔</button>
+        </div>
+
         <textarea
           ref={inputRef}
           rows={1}
@@ -170,6 +218,25 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
           onChange={onChange}
           onKeyDown={onKeyDown}
         />
+
+        {files.length > 0 && (
+          <div className="composer-attachments">
+            {files.map((f, i) => {
+              const g = fileGlyph(f);
+              return (
+                <div key={i} className="attach-card">
+                  <span className="attach-card-icon">{g.icon}</span>
+                  <div className="attach-card-main">
+                    <div className="attach-card-name" title={f.name}>{f.name}</div>
+                    <div className="attach-card-sub muted">{g.label} · {formatBytes(f.size)}</div>
+                  </div>
+                  <button type="button" className="attach-card-x" title="Remove" onClick={() => setFiles((fs) => fs.filter((_, j) => j !== i))}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div className="composer-bar">
           <label className="composer-tool" title="Attach files">
             📎
@@ -181,6 +248,7 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
             />
           </label>
           <button type="button" ref={emojiBtnRef} className="composer-tool" title="Emoji" onClick={openEmoji}>😊</button>
+          <button type="button" className="composer-tool" title="Mention someone" onClick={startMention}>@</button>
           <div className="composer-spacer" />
           <button className="composer-send" title="Send (Enter)" disabled={uploading || (!text.trim() && !files.length)}>
             {uploading ? '…' : '➤'}
