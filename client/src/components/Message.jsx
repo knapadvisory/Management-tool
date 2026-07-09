@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { api, fileUrl } from '../api.js';
 import { renderMarkdown, formatBytes } from '../format.js';
 import Avatar from './Avatar.jsx';
 import ForwardModal from './ForwardModal.jsx';
 import TaskFromMessageModal from './TaskFromMessageModal.jsx';
+import FilePreviewModal from './FilePreviewModal.jsx';
 
 const QUICK_EMOJIS = ['👍', '❤️', '😄', '🎉', '✅', '👀', '🙏'];
 
@@ -12,23 +13,23 @@ function formatTime(iso) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function AttachmentView({ att }) {
+function AttachmentView({ att, onOpen }) {
   const url = fileUrl(att.id);
   if (att.mime_type?.startsWith('image/')) {
     return (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="attach-image-link">
+      <button type="button" className="attach-image-link" onClick={onOpen}>
         <img src={url} alt={att.original_name} className="attach-image" />
-      </a>
+      </button>
     );
   }
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="attach-file">
+    <button type="button" className="attach-file" onClick={onOpen}>
       <span className="attach-file-icon">📄</span>
       <span className="attach-file-meta">
         <span className="attach-file-name">{att.original_name}</span>
         <span className="muted">{formatBytes(att.size)}</span>
       </span>
-    </a>
+    </button>
   );
 }
 
@@ -37,9 +38,36 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
   const [draft, setDraft] = useState(message.content);
   const [showPicker, setShowPicker] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [forwardOpen, setForwardOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
+  const [previewAtt, setPreviewAtt] = useState(null);
+  const moreBtnRef = useRef(null);
   const isMine = message.user_id === currentUser.id;
+  const hasFiles = (message.attachments || []).length > 0;
+
+  function openMenu() {
+    const r = moreBtnRef.current?.getBoundingClientRect();
+    if (r) {
+      const W = 190;
+      const left = Math.min(window.innerWidth - W - 8, Math.max(8, r.right - W));
+      const top = Math.min(window.innerHeight - 340, r.bottom + 4);
+      setMenuPos({ top, left });
+    }
+    setMenuOpen((o) => !o);
+  }
+
+  function downloadFiles() {
+    for (const a of message.attachments) {
+      const link = document.createElement('a');
+      link.href = fileUrl(a.id);
+      link.download = a.original_name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+    setMenuOpen(false);
+  }
   const base = `/channels/${channelId}/messages/${message.id}`;
 
   async function toggleReaction(emoji, mine) {
@@ -111,7 +139,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
 
         {message.attachments.length > 0 && (
           <div className="attachments">
-            {message.attachments.map((a) => <AttachmentView key={a.id} att={a} />)}
+            {message.attachments.map((a) => <AttachmentView key={a.id} att={a} onOpen={() => setPreviewAtt(a)} />)}
           </div>
         )}
 
@@ -152,16 +180,20 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
             )}
           </div>
           <div className="menu-wrap">
-            <button className="msg-action" title="More" onClick={() => setMenuOpen((o) => !o)}>⋯</button>
+            <button ref={moreBtnRef} className="msg-action" title="More" onClick={openMenu}>⋯</button>
             {menuOpen && (
-              <div className="msg-menu" onMouseLeave={() => setMenuOpen(false)}>
-                {!inThread && <button onClick={() => { onOpenThread(message); setMenuOpen(false); }}><span>↩</span> Reply</button>}
-                <button onClick={() => { navigator.clipboard?.writeText(message.content || ''); setMenuOpen(false); }}><span>⧉</span> Copy</button>
-                {isMine && <button onClick={() => { setDraft(message.content); setEditing(true); setMenuOpen(false); }}><span>✏️</span> Edit</button>}
-                <button onClick={() => { setForwardOpen(true); setMenuOpen(false); }}><span>➦</span> Forward</button>
-                <button onClick={() => { setTaskOpen(true); setMenuOpen(false); }}><span>☑</span> Create task</button>
-                {isMine && <button className="danger" onClick={() => { setMenuOpen(false); remove(); }}><span>🗑</span> Delete</button>}
-              </div>
+              <>
+                <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
+                <div className="msg-menu" style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}>
+                  {!inThread && <button onClick={() => { onOpenThread(message); setMenuOpen(false); }}><span>↩</span> Reply</button>}
+                  <button onClick={() => { navigator.clipboard?.writeText(message.content || ''); setMenuOpen(false); }}><span>⧉</span> Copy</button>
+                  {isMine && <button onClick={() => { setDraft(message.content); setEditing(true); setMenuOpen(false); }}><span>✏️</span> Edit</button>}
+                  <button onClick={() => { setForwardOpen(true); setMenuOpen(false); }}><span>➦</span> Forward</button>
+                  <button onClick={() => { setTaskOpen(true); setMenuOpen(false); }}><span>☑</span> Create task</button>
+                  {hasFiles && <button onClick={downloadFiles}><span>⬇</span> Download</button>}
+                  {isMine && <button className="danger" onClick={() => { setMenuOpen(false); remove(); }}><span>🗑</span> Delete</button>}
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -170,6 +202,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
 
       {forwardOpen && <ForwardModal message={message} onClose={() => setForwardOpen(false)} />}
       {taskOpen && <TaskFromMessageModal message={message} onClose={() => setTaskOpen(false)} />}
+      {previewAtt && <FilePreviewModal file={previewAtt} onClose={() => setPreviewAtt(null)} />}
     </div>
   );
 }

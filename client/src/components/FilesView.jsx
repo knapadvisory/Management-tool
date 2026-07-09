@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { api, fileUrl } from '../api.js';
 import { formatBytes, formatDateTime } from '../format.js';
 import Avatar from './Avatar.jsx';
+import FilePreviewModal from './FilePreviewModal.jsx';
 
 // Every file shared across the user's conversations and tasks, with who
 // shared it, where, and a search box.
@@ -9,6 +10,7 @@ export default function FilesView() {
   const [files, setFiles] = useState([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [preview, setPreview] = useState(null);
 
   const load = useCallback(async (q) => {
     setLoading(true);
@@ -34,7 +36,7 @@ export default function FilesView() {
       ) : (
         <div className="files-list">
           {files.map((f) => (
-            <a key={f.id} className="file-row" href={fileUrl(f.id)} target="_blank" rel="noopener noreferrer">
+            <button key={f.id} className="file-row" onClick={() => setPreview(f)}>
               {f.mime_type?.startsWith('image/')
                 ? <img className="file-thumb" src={fileUrl(f.id)} alt="" />
                 : <span className="file-icon">{iconFor(f.mime_type, f.original_name)}</span>}
@@ -51,10 +53,12 @@ export default function FilesView() {
                 </span>
                 <span className="muted">{formatDateTime(f.created_at)}</span>
               </div>
-            </a>
+            </button>
           ))}
         </div>
       )}
+
+      {preview && <FilePreviewModal file={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 }
