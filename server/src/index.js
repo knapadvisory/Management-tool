@@ -31,7 +31,12 @@ app.use(express.json());
 
 // Public config the login screen reads before anyone is authenticated.
 app.get('/api/config', (req, res) => {
-  res.json({ signup_code_required: signupCodeRequired() });
+  res.json({
+    signup_code_required: signupCodeRequired(),
+    // Social sign-in lights up once the provider's credentials are configured.
+    google_auth: !!(process.env.GOOGLE_CLIENT_ID || '').trim(),
+    apple_auth: !!(process.env.APPLE_CLIENT_ID || '').trim(),
+  });
 });
 
 // --- Auth ---
