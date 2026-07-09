@@ -64,7 +64,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
 
   if (message.is_deleted) {
     return (
-      <div className={`message ${grouped ? 'grouped' : ''}`}>
+      <div className={`message deleted-row ${grouped ? 'grouped' : ''}`}>
         {!grouped && <span className="msg-gutter" />}
         <div className="message-body">
           <div className="message-text deleted">This message was deleted</div>

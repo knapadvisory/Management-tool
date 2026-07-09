@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import Avatar from './Avatar.jsx';
+import AssignTaskModal from './AssignTaskModal.jsx';
 
 // A people directory — profiles, not chats. Clicking a card does not open a
 // conversation; use the explicit Message button (which jumps to DMs).
 export default function TeamDirectory({ user, users = [], onlineIds = [], onMessage }) {
   const [query, setQuery] = useState('');
+  const [assignTo, setAssignTo] = useState(null);
   const isOnline = (id) => onlineIds.includes(id);
 
   const q = query.trim().toLowerCase();
@@ -41,12 +43,17 @@ export default function TeamDirectory({ user, users = [], onlineIds = [], onMess
               {u.email && <a className="team-card-email" href={`mailto:${u.email}`}>{u.email}</a>}
             </div>
             {u.id !== user.id && (
-              <button className="btn btn-sm team-msg-btn" onClick={() => onMessage(u)}>💬 Message</button>
+              <div className="team-card-actions">
+                <button className="btn btn-sm" onClick={() => onMessage(u)}>💬 Message</button>
+                <button className="btn btn-sm" onClick={() => setAssignTo(u)}>☑ Assign task</button>
+              </div>
             )}
           </div>
         ))}
         {people.length === 0 && <div className="empty-hint">No one matches “{query}”.</div>}
       </div>
+
+      {assignTo && <AssignTaskModal assignee={assignTo} onClose={() => setAssignTo(null)} />}
     </div>
   );
 }

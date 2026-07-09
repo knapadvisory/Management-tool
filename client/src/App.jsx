@@ -11,6 +11,8 @@ import AdminPanel from './components/AdminPanel.jsx';
 import Messenger from './components/Messenger.jsx';
 import Collabs from './components/Collabs.jsx';
 import TeamDirectory from './components/TeamDirectory.jsx';
+import ActivityView from './components/ActivityView.jsx';
+import FilesView from './components/FilesView.jsx';
 import CallManager from './components/CallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
 
@@ -213,6 +215,10 @@ export default function App() {
         {view?.type === 'team' && (
           <TeamDirectory user={user} users={users} onlineIds={onlineIds} onMessage={openDm} />
         )}
+        {view?.type === 'activity' && (
+          <ActivityView notifications={notifications} unreadCount={unreadCount} onSelect={selectNotification} onMarkAllRead={markAllRead} />
+        )}
+        {view?.type === 'files' && <FilesView />}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'admin' && user.role === 'admin' && (
           <AdminPanel user={user} signupCodeRequired={signupCodeRequired} />

@@ -18,6 +18,7 @@ import templatesRouter from './routes/templates.js';
 import notificationsRouter from './routes/notifications.js';
 import uploadsRouter from './routes/uploads.js';
 import searchRouter from './routes/search.js';
+import filesRouter from './routes/files.js';
 import setupSocket from './socket.js';
 import { startReminderScheduler } from './reminders.js';
 
@@ -74,6 +75,7 @@ app.use('/api/templates', requireAuth, templatesRouter);
 app.use('/api/notifications', requireAuth, notificationsRouter);
 app.use('/api/uploads', uploadsRouter); // POST is guarded inside; GET uses a query-param token
 app.use('/api/search', requireAuth, searchRouter);
+app.use('/api/files', requireAuth, filesRouter);
 
 // Serve the built client in production.
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');

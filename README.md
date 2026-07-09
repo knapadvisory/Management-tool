@@ -50,9 +50,10 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 - Admins have **full oversight** — every task and profile is visible to them for supervision
 - Share the **invite link** (plus the sign-up access code, if set) so teammates create their own login; deactivated users are logged out immediately and can't sign back in
 
-**🔔 Notifications**
-- A notification inbox (bell) with an unread badge, covering @mentions, task assignments, task chat, and activity on tasks you watch
-- Click a notification to jump straight to the channel or task; mark one or all as read
+**🔔 Activity & Files**
+- An **Activity** tab (with an unread badge) collecting every notification — @mentions, task assignments, task chat, reminders, status changes and activity on tasks you watch — with All / Unread / Mentions / Tasks filters and mark-all-read; click one to jump straight to the channel or task
+- A **Files** tab listing every file shared across your conversations and tasks, showing who shared it and where, with a search box
+- Assign a task to a teammate straight from the **Team** directory via a quick popup
 - **Desktop notifications** — opt in from the sidebar (🖥️) to get native browser/desktop alerts when the tab is in the background (mentions, assignments, task activity, reminders) and for incoming calls; clicking an alert focuses TeamHub and opens the relevant item
 
 **⚙ Workflows**

@@ -518,6 +518,12 @@ async function main() {
   const generalCh = chans2.data.channels.find((c) => c.name === 'general');
   check('channel carries a last-message preview', !!generalCh?.last_message && typeof generalCh.last_message.content === 'string' && !!generalCh.last_activity);
 
+  console.log('Files');
+  const filesRes = await req('GET', '/api/files', { token: a });
+  check('files endpoint lists shared files', filesRes.data.files.length >= 1 && filesRes.data.files.every((f) => f.uploader_name && f.context));
+  const fileSearch = await req('GET', '/api/files?q=spec', { token: a });
+  check('files search filters by name', fileSearch.data.files.every((f) => /spec/i.test(f.original_name)) && fileSearch.data.files.length >= 1);
+
   sockA.disconnect();
   sockB.disconnect();
 

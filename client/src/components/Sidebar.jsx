@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
-import NotificationBell from './NotificationBell.jsx';
 import { notificationsSupported, notificationPermission, requestNotificationPermission } from '../desktopNotify.js';
 
 export default function Sidebar({
@@ -45,12 +44,6 @@ export default function Sidebar({
           {notificationsSupported() && notifPerm === 'default' && (
             <button className="icon-btn" title="Enable desktop notifications" onClick={enableDesktopAlerts}>🖥️</button>
           )}
-          <NotificationBell
-            notifications={notifications}
-            unreadCount={unreadCount}
-            onSelect={onSelectNotification}
-            onMarkAllRead={onMarkAllRead}
-          />
           <button className="icon-btn" title="Sign out" onClick={onLogout}>⏻</button>
         </div>
       </div>
@@ -78,6 +71,19 @@ export default function Sidebar({
           onClick={() => onSelectView('collabs')}
         >
           👥 Collabs
+        </button>
+        <button
+          className={`nav-item ${view?.type === 'activity' ? 'active' : ''}`}
+          onClick={() => onSelectView('activity')}
+        >
+          <span className="nav-logo">🔔</span> Activity
+          {unreadCount > 0 && <span className="nav-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+        </button>
+        <button
+          className={`nav-item ${view?.type === 'files' ? 'active' : ''}`}
+          onClick={() => onSelectView('files')}
+        >
+          <span className="nav-logo">🗂️</span> Files
         </button>
         <button
           className={`nav-item ${view?.type === 'tasks' ? 'active' : ''}`}
