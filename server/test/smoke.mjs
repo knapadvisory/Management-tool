@@ -565,6 +565,48 @@ async function main() {
   check('teammate can download a drive file', bobDriveDl.status === 200);
   const driveSearch = await req('GET', '/api/drive?q=drive-note', { token: b });
   check('drive search filters by name', driveSearch.data.files.some((f) => f.id === driveFile.id));
+  check('drive search sets the searching flag', driveSearch.data.searching === true);
+
+  // Folders & subfolders.
+  const mkFolder = await req('POST', '/api/drive/folders', { token: a, body: { name: 'Contracts' } });
+  const contracts = mkFolder.data.folder;
+  check('create a drive folder', mkFolder.status === 201 && contracts?.id && contracts.parent_id == null);
+  const mkSub = await req('POST', '/api/drive/folders', { token: a, body: { name: '2026', parent_id: contracts.id } });
+  const sub2026 = mkSub.data.folder;
+  check('create a subfolder', mkSub.status === 201 && sub2026?.parent_id === contracts.id);
+  // Upload a file straight into the folder.
+  const ffd = new FormData();
+  ffd.append('files', new Blob(['signed'], { type: 'text/plain' }), 'nda.txt');
+  ffd.append('folder_id', String(contracts.id));
+  const inFolderUp = await (await fetch(BASE + '/api/drive', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: ffd })).json();
+  const nda = inFolderUp.files?.[0];
+  check('upload lands in the chosen folder', nda?.drive_folder_id === contracts.id);
+  // Listing the folder shows its file + subfolder and a breadcrumb path.
+  const folderView = await req('GET', `/api/drive?folder=${contracts.id}`, { token: b });
+  check('folder view lists its file', folderView.data.files.some((f) => f.id === nda.id));
+  check('folder view lists its subfolder', folderView.data.folders.some((f) => f.id === sub2026.id));
+  check('folder view carries a breadcrumb path', folderView.data.path.length === 1 && folderView.data.path[0].id === contracts.id);
+  // The nested file is not shown at the Drive root.
+  const rootView = await req('GET', '/api/drive', { token: b });
+  check('root view hides files nested in a folder', !rootView.data.files.some((f) => f.id === nda.id));
+  check('root view lists the top folder', rootView.data.folders.some((f) => f.id === contracts.id && f.files === 1));
+  // A non-empty folder can't be deleted; a non-owner member can't manage it.
+  const delNonEmpty = await req('DELETE', `/api/drive/folders/${contracts.id}`, { token: a });
+  check('cannot delete a non-empty folder', delNonEmpty.status === 409);
+  const bobDelFolder = await req('DELETE', `/api/drive/folders/${sub2026.id}`, { token: b });
+  check('non-owner member cannot delete a folder', bobDelFolder.status === 403);
+  // Move the nested file back to the root; a non-owner can't move it.
+  const bobMove = await req('PATCH', `/api/drive/${nda.id}`, { token: b, body: { folder_id: null } });
+  check('non-owner cannot move a file', bobMove.status === 403);
+  const move = await req('PATCH', `/api/drive/${nda.id}`, { token: a, body: { folder_id: null } });
+  check('owner can move a file to the root', move.status === 200);
+  const rootAfterMove = await req('GET', '/api/drive', { token: a });
+  check('moved file now shows at the root', rootAfterMove.data.files.some((f) => f.id === nda.id));
+  // Now the subfolder is empty and its creator (admin) can delete it.
+  const delSub = await req('DELETE', `/api/drive/folders/${sub2026.id}`, { token: a });
+  check('empty folder can be deleted', delSub.status === 200);
+  await req('DELETE', `/api/drive/${nda.id}`, { token: a }); // tidy up
+
   // WhatsApp-style deletion: only the uploader can remove it.
   const bobDelDrive = await req('DELETE', `/api/drive/${driveFile.id}`, { token: b });
   check('non-owner cannot delete a drive file', bobDelDrive.status === 403);

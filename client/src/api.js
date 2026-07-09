@@ -17,10 +17,11 @@ export async function uploadFiles(files) {
   return data.attachments;
 }
 
-// Upload files straight into the shared team Drive.
-export async function uploadToDrive(files) {
+// Upload files straight into the shared team Drive (optionally into a folder).
+export async function uploadToDrive(files, folderId = null) {
   const fd = new FormData();
   for (const f of files) fd.append('files', f);
+  if (folderId != null) fd.append('folder_id', String(folderId));
   const res = await fetch('/api/drive', {
     method: 'POST',
     headers: { Authorization: `Bearer ${getToken()}` },

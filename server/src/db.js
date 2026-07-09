@@ -64,6 +64,16 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
 
+-- Folders for the shared team Drive. parent_id NULL = a top-level folder.
+CREATE TABLE IF NOT EXISTS drive_folders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  parent_id INTEGER REFERENCES drive_folders(id) ON DELETE CASCADE,
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_drive_folders_parent ON drive_folders(parent_id);
+
 CREATE TABLE IF NOT EXISTS message_reactions (
   message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -239,6 +249,8 @@ ensureColumn('attachments', 'archived_by', 'INTEGER REFERENCES users(id)');
 // Team Drive: a file uploaded straight to the shared Drive (not tied to a
 // message or task) is flagged here so everyone on the team can see it.
 ensureColumn('attachments', 'is_drive', 'INTEGER NOT NULL DEFAULT 0');
+// Which Drive folder a file lives in (NULL = the Drive root).
+ensureColumn('attachments', 'drive_folder_id', 'INTEGER REFERENCES drive_folders(id)');
 ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
 // Repeat rule: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'. When a
 // recurring task is completed, the next occurrence is generated automatically.
