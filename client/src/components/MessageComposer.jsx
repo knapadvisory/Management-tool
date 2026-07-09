@@ -1,4 +1,4 @@
-import React, { useState, useRef, useLayoutEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { uploadFiles } from '../api.js';
 import { getSocket } from '../socket.js';
 import { formatBytes } from '../format.js';
@@ -19,23 +19,130 @@ function fileGlyph(f) {
   return { icon: '📄', label: ext ? `${ext.toUpperCase()} file` : 'File' };
 }
 
-/**
- * Message input shared by the main channel view and the thread panel.
- * Handles @mention autocomplete, file selection/upload, and Enter-to-send
- * (Shift+Enter for a newline). Mentions are tracked by user id so the
- * server can notify exactly the right people.
- */
+// Convert the editor's rich HTML into the markdown we store/send.
+function nodeToMarkdown(node) {
+  let out = '';
+  node.childNodes.forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE) { out += child.nodeValue; return; }
+    if (child.nodeType !== Node.ELEMENT_NODE) return;
+    const inner = nodeToMarkdown(child);
+    switch (child.nodeName) {
+      case 'B': case 'STRONG': out += inner.trim() ? `**${inner}**` : inner; break;
+      case 'I': case 'EM': out += inner.trim() ? `_${inner}_` : inner; break;
+      case 'S': case 'STRIKE': case 'DEL': out += inner.trim() ? `~~${inner}~~` : inner; break;
+      case 'CODE': out += inner.trim() ? '`' + inner + '`' : inner; break;
+      case 'A': out += `[${inner}](${child.getAttribute('href') || ''})`; break;
+      case 'BR': out += '\n'; break;
+      case 'DIV': case 'P': out += (out && !out.endsWith('\n') ? '\n' : '') + inner; break;
+      case 'SPAN': {
+        // Some browsers apply formatting as inline styles rather than tags.
+        const st = child.getAttribute('style') || '';
+        let s = inner;
+        if (s.trim() && /font-weight\s*:\s*(bold|[6-9]00)/i.test(st)) s = `**${s}**`;
+        if (s.trim() && /font-style\s*:\s*italic/i.test(st)) s = `_${s}_`;
+        if (s.trim() && /line-through/i.test(st)) s = `~~${s}~~`;
+        out += s;
+        break;
+      }
+      default: out += inner;
+    }
+  });
+  return out;
+}
+
 const MessageComposer = forwardRef(function MessageComposer({ channel, members, parentId = null, placeholder, autoFocus }, ref) {
-  const [text, setText] = useState('');
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [empty, setEmpty] = useState(true);
   const [mentioned, setMentioned] = useState({}); // name -> id
-  const [suggest, setSuggest] = useState(null); // { query }
+  const [suggest, setSuggest] = useState(null); // { query, node, offset, matchLen }
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [emojiPos, setEmojiPos] = useState({ top: 0, left: 0 });
-  const inputRef = useRef(null);
-  const pendingCaret = useRef(null);
+  const editorRef = useRef(null);
   const emojiBtnRef = useRef(null);
+
+  const others = members.filter((m) => m.name);
+
+  useEffect(() => {
+    try { document.execCommand('styleWithCSS', false, 'false'); } catch { /* older browsers */ }
+    if (autoFocus) editorRef.current?.focus();
+  }, [autoFocus]);
+
+  useImperativeHandle(ref, () => ({
+    addFiles(list) { if (list && list.length) setFiles((fs) => [...fs, ...list]); editorRef.current?.focus(); },
+  }));
+
+  function syncState() {
+    const editor = editorRef.current;
+    setEmpty(!editor || !editor.textContent.trim());
+    getSocket()?.emit('typing', { channel_id: channel.id });
+    // Detect an in-progress @mention just before the caret.
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && sel.anchorNode && sel.anchorNode.nodeType === Node.TEXT_NODE && editor?.contains(sel.anchorNode)) {
+      const before = sel.anchorNode.nodeValue.slice(0, sel.anchorOffset);
+      const m = before.match(/@([\w ]*)$/);
+      setSuggest(m ? { query: m[1].toLowerCase(), node: sel.anchorNode, offset: sel.anchorOffset, matchLen: m[0].length } : null);
+    } else {
+      setSuggest(null);
+    }
+  }
+
+  function exec(cmd, value = null) {
+    editorRef.current?.focus();
+    try { document.execCommand('styleWithCSS', false, 'false'); } catch { /* ignore */ }
+    document.execCommand(cmd, false, value);
+    syncState();
+  }
+  function wrapInline(tag) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    const el = document.createElement(tag);
+    try { range.surroundContents(el); }
+    catch { const frag = range.extractContents(); el.appendChild(frag); range.insertNode(el); }
+    sel.removeAllRanges();
+    syncState();
+  }
+  function makeLink() {
+    const url = window.prompt('Link URL', 'https://');
+    if (url) exec('createLink', url);
+  }
+
+  function insertTextAtCaret(str) {
+    const editor = editorRef.current;
+    editor?.focus();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) { editor?.appendChild(document.createTextNode(str)); syncState(); return; }
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const tn = document.createTextNode(str);
+    range.insertNode(tn);
+    range.setStartAfter(tn); range.collapse(true);
+    sel.removeAllRanges(); sel.addRange(range);
+    syncState();
+  }
+
+  function pickMention(user) {
+    const s = suggest;
+    editorRef.current?.focus();
+    if (s && s.node && s.node.parentNode) {
+      const range = document.createRange();
+      range.setStart(s.node, Math.max(0, s.offset - s.matchLen));
+      range.setEnd(s.node, s.offset);
+      range.deleteContents();
+      const tn = document.createTextNode(`@${user.name} `);
+      range.insertNode(tn);
+      range.setStartAfter(tn); range.collapse(true);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    } else {
+      insertTextAtCaret(`@${user.name} `);
+    }
+    setMentioned((m) => ({ ...m, [user.name]: user.id }));
+    setSuggest(null);
+    syncState();
+  }
+
+  function startMention() { insertTextAtCaret('@'); syncState(); }
 
   function openEmoji() {
     const r = emojiBtnRef.current?.getBoundingClientRect();
@@ -47,136 +154,43 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
     }
     setEmojiOpen((o) => !o);
   }
-  function insertEmoji(emoji) {
-    const el = inputRef.current;
-    const caret = el ? el.selectionStart : text.length;
-    const before = text.slice(0, caret);
-    const after = text.slice(caret);
-    pendingCaret.current = (before + emoji).length;
-    setText(before + emoji + after);
-    setEmojiOpen(false);
-  }
-
-  // Wrap the current selection with a markdown marker (or insert the marker
-  // pair at the caret if nothing is selected).
-  function wrapSelection(marker, end = marker) {
-    const el = inputRef.current;
-    const s = el ? el.selectionStart : text.length;
-    const e = el ? el.selectionEnd : text.length;
-    const sel = text.slice(s, e);
-    pendingCaret.current = s + marker.length + sel.length;
-    setText(text.slice(0, s) + marker + sel + end + text.slice(e));
-    el?.focus();
-  }
-  function insertLink() {
-    const el = inputRef.current;
-    const s = el ? el.selectionStart : text.length;
-    const e = el ? el.selectionEnd : text.length;
-    const label = text.slice(s, e) || 'text';
-    const snippet = `[${label}](url)`;
-    pendingCaret.current = s + snippet.length - 4; // land on "url"
-    setText(text.slice(0, s) + snippet + text.slice(e));
-    el?.focus();
-  }
-  function insertAt(str) {
-    const el = inputRef.current;
-    const caret = el ? el.selectionStart : text.length;
-    pendingCaret.current = caret + str.length;
-    setText(text.slice(0, caret) + str + text.slice(caret));
-    el?.focus();
-  }
-  function startMention() {
-    insertAt('@');
-    setSuggest({ query: '' });
-  }
-
-  // Let the parent (ChatView) hand us files dropped anywhere on the chat.
-  useImperativeHandle(ref, () => ({
-    addFiles(list) {
-      if (list && list.length) { setFiles((fs) => [...fs, ...list]); inputRef.current?.focus(); }
-    },
-  }));
-
-  const others = members.filter((m) => m.name);
-
-  // Apply the caret position after React has committed the new text, so
-  // typing right after picking a mention isn't scrambled by a race.
-  useLayoutEffect(() => {
-    if (pendingCaret.current != null && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.setSelectionRange(pendingCaret.current, pendingCaret.current);
-      pendingCaret.current = null;
-    }
-  }, [text]);
-
-  function onChange(e) {
-    const value = e.target.value;
-    setText(value);
-    getSocket()?.emit('typing', { channel_id: channel.id });
-    // Detect an in-progress @mention right before the caret.
-    const caret = e.target.selectionStart;
-    const upto = value.slice(0, caret);
-    const match = upto.match(/@([\w ]*)$/);
-    setSuggest(match ? { query: match[1].toLowerCase() } : null);
-  }
-
-  function pickMention(user) {
-    const el = inputRef.current;
-    const caret = el ? el.selectionStart : text.length;
-    const match = text.slice(0, caret).match(/@([\w ]*)$/);
-    const start = match ? caret - match[0].length : caret;
-    const before = text.slice(0, start);
-    const after = text.slice(caret);
-    const insert = `@${user.name} `;
-    pendingCaret.current = (before + insert).length;
-    setText(before + insert + after);
-    setMentioned((m) => ({ ...m, [user.name]: user.id }));
-    setSuggest(null);
-  }
 
   async function send() {
-    const content = text.trim();
+    const editor = editorRef.current;
+    let content = '';
+    try { content = nodeToMarkdown(editor).replace(/\u00A0/g, " ").trim(); }
+    catch { content = (editor?.textContent || '').trim(); }
     if (!content && files.length === 0) return;
+
     let attachment_ids = [];
     if (files.length) {
       setUploading(true);
       try {
         const uploaded = await uploadFiles(files);
         attachment_ids = uploaded.map((a) => a.id);
-      } catch (err) {
-        alert(err.message);
-        setUploading(false);
-        return;
-      }
+      } catch (err) { alert(err.message); setUploading(false); return; }
       setUploading(false);
     }
-    // Only keep mentions whose @name still appears in the final text.
     const mention_user_ids = Object.entries(mentioned)
       .filter(([name]) => content.includes(`@${name}`))
       .map(([, id]) => id);
 
-    getSocket()?.emit('message:send', {
-      channel_id: channel.id,
-      content,
-      parent_id: parentId,
-      attachment_ids,
-      mention_user_ids,
-    });
-    setText('');
+    getSocket()?.emit('message:send', { channel_id: channel.id, content, parent_id: parentId, attachment_ids, mention_user_ids });
+    if (editor) editor.innerHTML = '';
     setFiles([]);
     setMentioned({});
     setSuggest(null);
+    setEmpty(true);
   }
 
   function onKeyDown(e) {
-    // Formatting shortcuts (Ctrl/Cmd based), wrapping the selected text.
     if (e.ctrlKey || e.metaKey) {
       const k = e.key.toLowerCase();
-      if (k === 'b') { e.preventDefault(); return wrapSelection('**'); }
-      if (k === 'i') { e.preventDefault(); return wrapSelection('_'); }
-      if (k === 'k') { e.preventDefault(); return insertLink(); }
-      if (e.shiftKey && k === 'x') { e.preventDefault(); return wrapSelection('~~'); }
-      if (e.shiftKey && k === 'c') { e.preventDefault(); return wrapSelection('`'); }
+      if (k === 'b') { e.preventDefault(); return exec('bold'); }
+      if (k === 'i') { e.preventDefault(); return exec('italic'); }
+      if (k === 'k') { e.preventDefault(); return makeLink(); }
+      if (e.shiftKey && k === 'x') { e.preventDefault(); return exec('strikeThrough'); }
+      if (e.shiftKey && k === 'c') { e.preventDefault(); return wrapInline('code'); }
     }
     if (suggest && suggestions.length && (e.key === 'Enter' || e.key === 'Tab')) {
       e.preventDefault();
@@ -199,24 +213,28 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
         <div className="mention-menu">
           {suggestions.map((m) => (
             <button key={m.id} className="mention-option" onMouseDown={(e) => { e.preventDefault(); pickMention(m); }}>
-              <span className="mention-avatar" style={{ background: m.avatar_color }}>
-                {m.name[0]}
-              </span>
+              <span className="mention-avatar" style={{ background: m.avatar_color }}>{m.name[0]}</span>
               {m.name}
             </button>
           ))}
         </div>
       )}
-      <form className="composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
-        <textarea
-          ref={inputRef}
-          rows={1}
-          autoFocus={autoFocus}
-          value={text}
-          placeholder={placeholder}
-          onChange={onChange}
-          onKeyDown={onKeyDown}
-        />
+      <div className="composer">
+        <div className="composer-editor-wrap">
+          {empty && <div className="composer-placeholder">{placeholder}</div>}
+          <div
+            ref={editorRef}
+            className="composer-editor"
+            contentEditable
+            role="textbox"
+            aria-multiline="true"
+            onInput={syncState}
+            onKeyUp={syncState}
+            onMouseUp={syncState}
+            onKeyDown={onKeyDown}
+            suppressContentEditableWarning
+          />
+        </div>
 
         {files.length > 0 && (
           <div className="composer-attachments">
@@ -239,30 +257,18 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
         <div className="composer-bar">
           <label className="composer-tool" title="Attach files">
             📎
-            <input
-              type="file"
-              multiple
-              hidden
-              onChange={(e) => { setFiles((fs) => [...fs, ...Array.from(e.target.files)]); e.target.value = ''; }}
-            />
+            <input type="file" multiple hidden onChange={(e) => { setFiles((fs) => [...fs, ...Array.from(e.target.files)]); e.target.value = ''; }} />
           </label>
           <button type="button" ref={emojiBtnRef} className="composer-tool" title="Emoji" onMouseDown={(e) => e.preventDefault()} onClick={openEmoji}>😊</button>
           <button type="button" className="composer-tool" title="Mention someone" onMouseDown={(e) => e.preventDefault()} onClick={startMention}>@</button>
+          <span className="composer-fmt-hint">Select text, then <kbd>Ctrl/⌘ B</kbd> / <kbd>I</kbd> / <kbd>K</kbd></span>
           <div className="composer-spacer" />
-          <button className="composer-send" title="Send (Enter)" disabled={uploading || (!text.trim() && !files.length)}>
+          <button type="button" className="composer-send" title="Send (Enter)" disabled={uploading || (empty && !files.length)} onClick={send}>
             {uploading ? '…' : '➤'}
           </button>
         </div>
-      </form>
-      <div className="composer-hint">
-        <span><kbd>Ctrl/⌘ B</kbd> bold</span>
-        <span><kbd>Ctrl/⌘ I</kbd> italic</span>
-        <span><kbd>Ctrl/⌘ K</kbd> link</span>
-        <span><kbd>Ctrl/⌘ ⇧ X</kbd> strike</span>
-        <span><kbd>Ctrl/⌘ ⇧ C</kbd> code</span>
-        <span><kbd>Enter</kbd> send</span>
       </div>
-      {emojiOpen && <EmojiPicker position={emojiPos} onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
+      {emojiOpen && <EmojiPicker position={emojiPos} onPick={(e) => { insertTextAtCaret(e); setEmojiOpen(false); }} onClose={() => setEmojiOpen(false)} />}
     </div>
   );
 });

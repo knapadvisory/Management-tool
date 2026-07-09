@@ -517,6 +517,18 @@ input, select, textarea { font: inherit; }
   border: none; outline: none; resize: none; background: transparent; font: inherit;
   padding: 12px 14px 4px; line-height: 1.45; max-height: 200px; min-height: 22px;
 }
+/* Rich contenteditable editor */
+.composer-editor-wrap { position: relative; }
+.composer-editor {
+  min-height: 22px; max-height: 200px; overflow-y: auto; padding: 12px 14px 6px;
+  font: inherit; line-height: 1.45; outline: none; white-space: pre-wrap; word-break: break-word;
+}
+.composer-editor code { background: #f1f2f5; padding: 1px 5px; border-radius: 4px; font-size: .9em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.composer-editor a { color: var(--accent); }
+.composer-placeholder { position: absolute; top: 12px; left: 14px; color: var(--muted); pointer-events: none; }
+.composer-fmt-hint { font-size: 11px; color: var(--muted); margin-left: 8px; }
+.composer-fmt-hint kbd { font-size: 10px; font-weight: 600; color: #4b5563; background: #f1f2f5; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+@media (max-width: 620px) { .composer-fmt-hint { display: none; } }
 .composer-bar { display: flex; align-items: center; gap: 4px; padding: 4px 8px 8px; }
 .composer-spacer { flex: 1; }
 .composer-tool {
