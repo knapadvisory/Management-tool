@@ -52,7 +52,7 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 
 **🔔 Activity & Files**
 - An **Activity** tab (with an unread badge) collecting every notification — @mentions, task assignments, task chat, reminders, status changes and activity on tasks you watch — with All / Unread / Mentions / Tasks filters and mark-all-read; click one to jump straight to the channel or task
-- A **Files** tab listing every file shared across your conversations and tasks, showing who shared it and where, with a search box
+- A **Files** manager listing every file shared across your conversations and tasks — sortable **Name / Owner / Shared-on / Size** columns, **Details** and **Icons** views, search, multi-select with an action bar (Open, Details, Download, Delete), and in-app preview; you can delete files you shared (admins, any)
 - Assign a task to a teammate straight from the **Team** directory via a quick popup
 - **Desktop notifications** — opt in from the sidebar (🖥️) to get native browser/desktop alerts when the tab is in the background (mentions, assignments, task activity, reminders) and for incoming calls; clicking an alert focuses TeamHub and opens the relevant item
 

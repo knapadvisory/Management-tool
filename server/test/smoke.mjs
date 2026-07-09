@@ -523,6 +523,15 @@ async function main() {
   check('files endpoint lists shared files', filesRes.data.files.length >= 1 && filesRes.data.files.every((f) => f.uploader_name && f.context));
   const fileSearch = await req('GET', '/api/files?q=spec', { token: a });
   check('files search filters by name', fileSearch.data.files.every((f) => /spec/i.test(f.original_name)) && fileSearch.data.files.length >= 1);
+  check('files carry the owner (uploader)', filesRes.data.files.every((f) => f.uploader_id && f.uploader_name));
+  // Bob can't delete Alice's file; Alice (owner) can.
+  const specFile = fileSearch.data.files[0];
+  const bobDelFile = await req('DELETE', `/api/files/${specFile.id}`, { token: b });
+  check('non-owner cannot delete a file', bobDelFile.status === 403);
+  const aliceDelFile = await req('DELETE', `/api/files/${specFile.id}`, { token: a });
+  check('owner can delete their file', aliceDelFile.status === 200);
+  const afterDel = await req('GET', '/api/files?q=spec', { token: a });
+  check('deleted file no longer listed', !afterDel.data.files.some((f) => f.id === specFile.id));
 
   sockA.disconnect();
   sockB.disconnect();

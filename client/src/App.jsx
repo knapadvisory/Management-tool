@@ -231,7 +231,7 @@ export default function App() {
             onMarkAllRead={markAllRead} onMarkRead={markNotificationRead}
           />
         )}
-        {view?.type === 'files' && <FilesView />}
+        {view?.type === 'files' && <FilesView user={user} />}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'admin' && user.role === 'admin' && (
           <AdminPanel user={user} signupCodeRequired={signupCodeRequired} />

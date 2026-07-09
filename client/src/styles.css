@@ -875,3 +875,59 @@ input, select, textarea { font: inherit; }
 .preview-none { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 40px; text-align: center; width: 100%; margin: auto; }
 .preview-none-icon { font-size: 48px; }
 .preview-none .btn { text-decoration: none; }
+
+/* --- Files manager --- */
+.files-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.files-sort select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: #fff; }
+.files-dir { width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 8px; background: #fff; font-size: 15px; }
+.files-dir:hover { background: #f4f5f7; }
+.files-view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.files-view-toggle button { border: none; background: #fff; padding: 7px 11px; font-size: 15px; }
+.files-view-toggle button.active { background: var(--accent); color: #fff; }
+
+.files-actionbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 10px; padding: 8px 12px; margin-bottom: 12px;
+}
+.files-selected-count { font-weight: 600; font-size: 14px; color: #3730a3; }
+.files-actionbar-sep { width: 1px; height: 20px; background: #c7d2fe; }
+.fa-btn { border: none; background: none; padding: 6px 10px; border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--text); }
+.fa-btn:hover:not(:disabled) { background: #fff; }
+.fa-btn:disabled { opacity: .4; cursor: default; }
+.fa-btn.danger { color: var(--danger); }
+.fa-btn.ghost { margin-left: auto; color: var(--muted); }
+
+.files-table-wrap { overflow-x: auto; }
+.files-table { width: 100%; border-collapse: collapse; }
+.files-table thead th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; }
+.files-table thead th.fx-check { cursor: default; width: 34px; }
+.files-table tbody td { padding: 9px 10px; border-bottom: 1px solid #f2f3f5; font-size: 14px; vertical-align: middle; }
+.files-table tbody tr:hover { background: #f8f9fc; }
+.files-table tbody tr.sel { background: #eef2ff; }
+.fx-name { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.fx-filename { font-weight: 500; }
+.fx-context { font-size: 12px; margin-left: 2px; }
+.fx-owner { white-space: nowrap; }
+.fx-owner span { display: inline-flex; align-items: center; }
+.fx-owner .avatar-wrap { vertical-align: middle; margin-right: 6px; }
+.fx-date, .fx-size { white-space: nowrap; }
+.file-icon.sm { width: 28px; height: 28px; border-radius: 6px; background: #f1f2f5; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; flex: none; }
+.file-thumb.sm { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); flex: none; }
+
+.files-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.file-card { position: relative; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.file-card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,70,229,.2); }
+.file-card-check { position: absolute; top: 8px; left: 8px; z-index: 1; }
+.file-card-body { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; padding: 18px 12px 12px; background: #fff; border: none; }
+.file-card-body:hover { background: #f8f9fc; }
+.file-card-icon { font-size: 40px; }
+.file-card-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.file-card-name { font-size: 13px; font-weight: 500; text-align: center; word-break: break-word; max-width: 100%; }
+.file-card-owner { font-size: 11px; }
+
+.files-foot { padding: 12px 4px; font-size: 12px; letter-spacing: .03em; }
+.file-details { max-width: 460px; }
+.file-details-list { display: grid; grid-template-columns: 120px 1fr; gap: 8px 12px; margin: 4px 0; }
+.file-details-list dt { color: var(--muted); font-size: 13px; }
+.file-details-list dd { font-size: 14px; word-break: break-word; }
+.file-details .btn { text-decoration: none; }
