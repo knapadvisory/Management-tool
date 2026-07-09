@@ -169,6 +169,15 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
   }
 
   function onKeyDown(e) {
+    // Formatting shortcuts (Ctrl/Cmd based), wrapping the selected text.
+    if (e.ctrlKey || e.metaKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'b') { e.preventDefault(); return wrapSelection('**'); }
+      if (k === 'i') { e.preventDefault(); return wrapSelection('_'); }
+      if (k === 'k') { e.preventDefault(); return insertLink(); }
+      if (e.shiftKey && k === 'x') { e.preventDefault(); return wrapSelection('~~'); }
+      if (e.shiftKey && k === 'c') { e.preventDefault(); return wrapSelection('`'); }
+    }
     if (suggest && suggestions.length && (e.key === 'Enter' || e.key === 'Tab')) {
       e.preventDefault();
       pickMention(suggestions[0]);
@@ -199,16 +208,6 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
         </div>
       )}
       <form className="composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
-        <div className="composer-format" onMouseDown={(e) => e.preventDefault()}>
-          <button type="button" title="Bold" onClick={() => wrapSelection('**')}><b>B</b></button>
-          <button type="button" title="Italic" onClick={() => wrapSelection('_')}><i>I</i></button>
-          <button type="button" title="Strikethrough" onClick={() => wrapSelection('~~')}><s>S</s></button>
-          <button type="button" title="Inline code" className="mono" onClick={() => wrapSelection('`')}>{'</>'}</button>
-          <button type="button" title="Code block" className="mono" onClick={() => wrapSelection('```\n', '\n```')}>{'{ }'}</button>
-          <button type="button" title="Link" onClick={insertLink}>🔗</button>
-          <button type="button" title="Bulleted list" onClick={() => insertAt('\n- ')}>≔</button>
-        </div>
-
         <textarea
           ref={inputRef}
           rows={1}
@@ -255,6 +254,9 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
           </button>
         </div>
       </form>
+      <div className="composer-hint">
+        <b>Ctrl/⌘+B</b> bold · <b>Ctrl/⌘+I</b> italic · <b>Ctrl/⌘+K</b> link · <b>Ctrl/⌘+⇧X</b> strike · <b>Ctrl/⌘+⇧C</b> code · <b>Enter</b> to send
+      </div>
       {emojiOpen && <EmojiPicker position={emojiPos} onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
     </div>
   );

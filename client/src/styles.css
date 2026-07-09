@@ -968,3 +968,7 @@ input, select, textarea { font: inherit; }
 .archive-main { flex: 1; min-width: 0; }
 .archive-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .archive-sub { font-size: 12px; margin-top: 2px; }
+
+/* --- Composer shortcut hint --- */
+.composer-hint { font-size: 11px; color: var(--muted); padding: 4px 6px 0; }
+.composer-hint b { font-weight: 600; color: #4b5563; }
