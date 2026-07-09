@@ -74,7 +74,7 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
 
   function syncState() {
     const editor = editorRef.current;
-    setEmpty(!editor || !editor.textContent.trim());
+    setEmpty(!editor || !editor.textContent.replace(/\u200B/g, "").trim());
     getSocket()?.emit('typing', { channel_id: channel.id });
     // Detect an in-progress @mention just before the caret.
     const sel = window.getSelection();
@@ -87,25 +87,29 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
     }
   }
 
-  function exec(cmd, value = null) {
-    editorRef.current?.focus();
-    try { document.execCommand('styleWithCSS', false, 'false'); } catch { /* ignore */ }
-    document.execCommand(cmd, false, value);
-    syncState();
-  }
-  function wrapInline(tag) {
+  // Wrap the current selection in a tag and drop the caret OUTSIDE it (after a
+  // zero-width space) so text typed next is plain, not formatted.
+  function applyWrap(tag, attrs) {
+    const editor = editorRef.current;
+    editor?.focus();
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount || sel.isCollapsed) return;
     const range = sel.getRangeAt(0);
     const el = document.createElement(tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
     try { range.surroundContents(el); }
     catch { const frag = range.extractContents(); el.appendChild(frag); range.insertNode(el); }
-    sel.removeAllRanges();
+    // Escape the formatting context: a ZWSP text node right after the wrapper.
+    const after = document.createTextNode("\u200B");
+    el.parentNode.insertBefore(after, el.nextSibling);
+    const nr = document.createRange();
+    nr.setStart(after, 1); nr.collapse(true);
+    sel.removeAllRanges(); sel.addRange(nr);
     syncState();
   }
   function makeLink() {
     const url = window.prompt('Link URL', 'https://');
-    if (url) exec('createLink', url);
+    if (url) applyWrap('a', { href: url });
   }
 
   function insertTextAtCaret(str) {
@@ -158,7 +162,7 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
   async function send() {
     const editor = editorRef.current;
     let content = '';
-    try { content = nodeToMarkdown(editor).replace(/\u00A0/g, " ").trim(); }
+    try { content = nodeToMarkdown(editor).replace(/[\u200B]/g, "").replace(/\u00A0/g, " ").trim(); }
     catch { content = (editor?.textContent || '').trim(); }
     if (!content && files.length === 0) return;
 
@@ -186,11 +190,11 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
   function onKeyDown(e) {
     if (e.ctrlKey || e.metaKey) {
       const k = e.key.toLowerCase();
-      if (k === 'b') { e.preventDefault(); return exec('bold'); }
-      if (k === 'i') { e.preventDefault(); return exec('italic'); }
+      if (k === 'b') { e.preventDefault(); return applyWrap('strong'); }
+      if (k === 'i') { e.preventDefault(); return applyWrap('em'); }
       if (k === 'k') { e.preventDefault(); return makeLink(); }
-      if (e.shiftKey && k === 'x') { e.preventDefault(); return exec('strikeThrough'); }
-      if (e.shiftKey && k === 'c') { e.preventDefault(); return wrapInline('code'); }
+      if (e.shiftKey && k === 'x') { e.preventDefault(); return applyWrap('s'); }
+      if (e.shiftKey && k === 'c') { e.preventDefault(); return applyWrap('code'); }
     }
     if (suggest && suggestions.length && (e.key === 'Enter' || e.key === 'Tab')) {
       e.preventDefault();
