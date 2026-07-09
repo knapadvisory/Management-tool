@@ -19,7 +19,7 @@ const storage = multer.diskStorage({
     cb(null, `${crypto.randomBytes(16).toString('hex')}${ext}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 25 * 1024 * 1024, files: 10 } });
+const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024, files: 50 } });
 
 const router = Router();
 
@@ -204,7 +204,7 @@ router.delete('/folders/:id', (req, res) => {
 });
 
 // Upload one or more files into the shared Drive (into `folder_id`, or root).
-router.post('/', upload.array('files', 10), (req, res) => {
+router.post('/', upload.array('files', 50), (req, res) => {
   let folderId = req.body?.folder_id != null && req.body.folder_id !== '' ? Number(req.body.folder_id) : null;
   if (folderId != null) {
     if (!Number.isInteger(folderId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ?').get(folderId)) folderId = null;
@@ -242,22 +242,59 @@ router.patch('/:id/shares', (req, res) => {
   res.json({ ok: true, shared_with: sharedWith(att.id) });
 });
 
-// Move a Drive file into another folder (uploader or admin).
+// Move and/or rename a Drive file (uploader or admin). Accepts `folder_id`
+// (move) and/or `name` (rename).
 router.patch('/:id', (req, res) => {
   const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND is_drive = 1').get(req.params.id);
   if (!att) return res.status(404).json({ error: 'File not found' });
   if (att.uploader_id !== req.user.id && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'You can only move files you uploaded' });
+    return res.status(403).json({ error: 'You can only change files you uploaded' });
   }
-  let folderId = req.body?.folder_id != null && req.body.folder_id !== '' ? Number(req.body.folder_id) : null;
-  if (folderId != null) {
-    if (!Number.isInteger(folderId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ?').get(folderId)) {
-      return res.status(404).json({ error: 'Target folder not found' });
+  if ('folder_id' in (req.body || {})) {
+    let folderId = req.body.folder_id != null && req.body.folder_id !== '' ? Number(req.body.folder_id) : null;
+    if (folderId != null) {
+      if (!Number.isInteger(folderId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ?').get(folderId)) {
+        return res.status(404).json({ error: 'Target folder not found' });
+      }
     }
+    db.prepare('UPDATE attachments SET drive_folder_id = ? WHERE id = ?').run(folderId, att.id);
   }
-  db.prepare('UPDATE attachments SET drive_folder_id = ? WHERE id = ?').run(folderId, att.id);
+  if (req.body?.name != null) {
+    const name = String(req.body.name).trim();
+    if (!name) return res.status(400).json({ error: 'File name is required' });
+    db.prepare('UPDATE attachments SET original_name = ? WHERE id = ?').run(name, att.id);
+  }
   req.app.get('io')?.emit('drive:changed');
   res.json({ ok: true });
+});
+
+// Copy a Drive file into a folder (root by default). Duplicates the stored
+// file on disk and creates a fresh attachment owned by the current user.
+router.post('/:id/copy', (req, res) => {
+  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND is_drive = 1 AND archived_at IS NULL').get(req.params.id);
+  if (!att) return res.status(404).json({ error: 'File not found' });
+  let folderId = req.body?.folder_id != null && req.body.folder_id !== '' ? Number(req.body.folder_id) : null;
+  if (folderId != null) {
+    if (!Number.isInteger(folderId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ?').get(folderId)) folderId = null;
+  }
+  const ext = path.extname(att.stored_name).slice(0, 10);
+  const newStored = `${crypto.randomBytes(16).toString('hex')}${ext}`;
+  try {
+    fs.copyFileSync(path.join(uploadDir, att.stored_name), path.join(uploadDir, newStored));
+  } catch {
+    return res.status(500).json({ error: 'Could not copy the file' });
+  }
+  const info = db.prepare(`
+    INSERT INTO attachments (uploader_id, stored_name, original_name, mime_type, size, is_drive, drive_folder_id)
+    VALUES (?, ?, ?, ?, ?, 1, ?)
+  `).run(req.user.id, newStored, att.original_name, att.mime_type, att.size, folderId);
+  const row = db.prepare(`
+    SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, a.uploader_id, a.drive_folder_id,
+           u.name AS uploader_name, u.avatar_color AS uploader_color
+    FROM attachments a JOIN users u ON u.id = a.uploader_id WHERE a.id = ?
+  `).get(info.lastInsertRowid);
+  req.app.get('io')?.emit('drive:changed');
+  res.status(201).json({ file: serializeDriveFile(row) });
 });
 
 // Delete a Drive file — you can only remove your own (like WhatsApp). It is

@@ -621,6 +621,20 @@ async function main() {
   check('non-owner cannot edit a file’s tags', bobRetag.status === 403);
   const retag = await req('PATCH', `/api/drive/${tagged.id}/shares`, { token: a, body: { user_ids: [] } });
   check('owner can clear a file’s tags', retag.status === 200 && retag.data.shared_with.length === 0);
+
+  // Rename + copy (Ctrl+C/V) behaviour.
+  const bobRename = await req('PATCH', `/api/drive/${tagged.id}`, { token: b, body: { name: 'hijack.txt' } });
+  check('non-owner cannot rename a file', bobRename.status === 403);
+  const rename = await req('PATCH', `/api/drive/${tagged.id}`, { token: a, body: { name: 'renamed.txt' } });
+  check('owner can rename a file', rename.status === 200);
+  const afterRename = await req('GET', '/api/drive', { token: a });
+  check('rename is reflected in the listing', afterRename.data.files.some((f) => f.id === tagged.id && f.original_name === 'renamed.txt'));
+  // Any teammate can copy a Drive file; the copy is a new, independently-owned file.
+  const copy = await req('POST', `/api/drive/${tagged.id}/copy`, { token: b, body: { folder_id: null } });
+  check('teammate can copy a drive file', copy.status === 201 && copy.data.file.id !== tagged.id && copy.data.file.uploader_id === bobId);
+  const bobCopyDl = await fetch(`${BASE}/api/uploads/${copy.data.file.id}?token=${b}`);
+  check('the copied file is downloadable', bobCopyDl.status === 200);
+  await req('DELETE', `/api/drive/${copy.data.file.id}`, { token: b }); // tidy up
   await req('DELETE', `/api/drive/${tagged.id}`, { token: a }); // tidy up
 
   // WhatsApp-style deletion: only the uploader can remove it.

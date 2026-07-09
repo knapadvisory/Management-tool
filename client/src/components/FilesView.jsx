@@ -58,8 +58,13 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
   const [selected, setSelected] = useState(() => new Set());
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [clipboard, setClipboard] = useState(null); // { mode:'copy'|'cut', files:[...] }
+  const [menu, setMenu] = useState(null); // { x, y, kind:'file'|'folder'|'bg', item }
   const inputRef = useRef(null);
+  const folderInputRef = useRef(null);
   const dragDepth = useRef(0);
+  const selectedFilesRef = useRef([]);
+  const clipboardRef = useRef(null);
 
   const load = useCallback(async (q, fid) => {
     setLoading(true);
@@ -87,6 +92,34 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
     return () => s.off('drive:changed', refresh);
   }, [isDrive, load, query, folderId]);
 
+  // Keyboard: Ctrl/Cmd C/X copy or cut the selection, Ctrl/Cmd V pastes into
+  // the current folder. Ignored while typing in a field.
+  useEffect(() => {
+    if (!isDrive) return;
+    const onKey = (e) => {
+      if (menu) setMenu(null);
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === 'c' && selectedFilesRef.current.length) { e.preventDefault(); copyToClipboard(selectedFilesRef.current, 'copy'); }
+      else if (k === 'x' && selectedFilesRef.current.length) { e.preventDefault(); copyToClipboard(selectedFilesRef.current, 'cut'); }
+      else if (k === 'v' && clipboardRef.current) { e.preventDefault(); paste(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDrive, menu, folderId, query]);
+
+  // Close the context menu on any outside click or scroll.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
+  }, [menu]);
+
   const searching = isDrive && !!query.trim();
 
   // Choosing/dropping files opens the upload dialog (name + tag people) rather
@@ -94,6 +127,46 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
   function chooseFiles(list) {
     const arr = Array.from(list || []);
     if (arr.length) setPending(arr);
+  }
+
+  // Files picked via a folder input carry webkitRelativePath ("dir/sub/file");
+  // rebuild that folder structure in the Drive, then upload.
+  async function uploadFolderInput(list) {
+    const arr = Array.from(list || []);
+    if (!arr.length) return;
+    setUploading(true);
+    try {
+      const cache = new Map(); // relative dir path -> Drive folder id
+      cache.set('', folderId);
+      const ensureDir = async (dirPath) => {
+        if (cache.has(dirPath)) return cache.get(dirPath);
+        const parts = dirPath.split('/');
+        const name = parts.pop();
+        const parentId = await ensureDir(parts.join('/'));
+        const { folder } = await api('/drive/folders', { method: 'POST', body: { name, parent_id: parentId } });
+        cache.set(dirPath, folder.id);
+        return folder.id;
+      };
+      const byDir = new Map();
+      for (const f of arr) {
+        const rel = f.webkitRelativePath || f.name;
+        const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '';
+        if (!byDir.has(dir)) byDir.set(dir, []);
+        byDir.get(dir).push(f);
+      }
+      for (const [dir, list2] of byDir) {
+        const target = await ensureDir(dir);
+        for (let i = 0; i < list2.length; i += 25) await uploadToDrive(list2.slice(i, i + 25), target, []);
+      }
+      await load(query, folderId);
+    } catch (err) { alert(err.message || 'Upload failed'); }
+    finally { setUploading(false); }
+  }
+
+  function openMenu(e, kind, item) {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY, kind, item });
   }
 
   async function confirmUpload(arr, sharedWith) {
@@ -126,7 +199,47 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
     e.preventDefault();
     dragDepth.current = 0;
     setDragging(false);
-    if (isDrive && e.dataTransfer?.files?.length) chooseFiles(e.dataTransfer.files);
+    if (!isDrive) return;
+    // If whole folders were dropped, recreate their structure; otherwise treat
+    // it as a plain multi-file upload (which opens the tag dialog).
+    const items = e.dataTransfer?.items ? Array.from(e.dataTransfer.items) : [];
+    const entries = items.map((it) => (it.webkitGetAsEntry ? it.webkitGetAsEntry() : null)).filter(Boolean);
+    if (entries.some((en) => en.isDirectory)) { uploadEntries(entries); return; }
+    if (e.dataTransfer?.files?.length) chooseFiles(e.dataTransfer.files);
+  }
+
+  // Walk dropped filesystem entries, recreating any folders in the Drive and
+  // uploading files into the folder that mirrors their location.
+  async function uploadEntries(entries) {
+    setUploading(true);
+    try {
+      const readEntries = (reader) => new Promise((resolve) => reader.readEntries(resolve));
+      const fileOf = (entry) => new Promise((resolve) => entry.file(resolve));
+      // Depth-first walk; create each directory then queue its files.
+      const walk = async (entry, parentId) => {
+        if (entry.isFile) {
+          const file = await fileOf(entry);
+          batches.push({ file, parentId });
+        } else if (entry.isDirectory) {
+          const { folder } = await api('/drive/folders', { method: 'POST', body: { name: entry.name, parent_id: parentId } });
+          const reader = entry.createReader();
+          let children = [];
+          let chunk;
+          do { chunk = await readEntries(reader); children = children.concat(chunk); } while (chunk.length);
+          for (const c of children) await walk(c, folder.id);
+        }
+      };
+      const batches = [];
+      for (const en of entries) await walk(en, folderId);
+      // Upload files grouped by their target folder, in reasonable chunks.
+      const byFolder = new Map();
+      for (const b of batches) { const k = b.parentId ?? 'root'; if (!byFolder.has(k)) byFolder.set(k, { parentId: b.parentId, files: [] }); byFolder.get(k).files.push(b.file); }
+      for (const { parentId, files: list } of byFolder.values()) {
+        for (let i = 0; i < list.length; i += 25) await uploadToDrive(list.slice(i, i + 25), parentId, []);
+      }
+      await load(query, folderId);
+    } catch (err) { alert(err.message || 'Upload failed'); }
+    finally { setUploading(false); }
   }
   function onDragOver(e) { if (isDrive) e.preventDefault(); }
   function onDragEnter(e) { if (!isDrive) return; e.preventDefault(); dragDepth.current += 1; setDragging(true); }
@@ -143,6 +256,8 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
   });
 
   const selectedFiles = sorted.filter((f) => selected.has(f.id));
+  selectedFilesRef.current = selectedFiles;
+  clipboardRef.current = clipboard;
   const canDelete = (f) => f.uploader_id === user.id; // you can only delete files you shared
   const canManageFolder = (f) => f.created_by === user.id || user.role === 'admin';
 
@@ -167,6 +282,45 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
 
   function openFolder(id) { setQuery(''); setFolderId(id); }
 
+  async function renameFile(f) {
+    const name = prompt('Rename file', f.original_name);
+    if (!name || !name.trim() || name.trim() === f.original_name) return;
+    try { await api(`/drive/${f.id}`, { method: 'PATCH', body: { name: name.trim() } }); await load(query, folderId); }
+    catch (err) { alert(err.message); }
+  }
+  async function deleteFile(f) {
+    if (f.uploader_id !== user.id) { alert('You can only delete files you uploaded.'); return; }
+    if (!confirm(`Delete “${f.original_name}”? It'll be removed from the Drive.`)) return;
+    try { await api(`/drive/${f.id}`, { method: 'DELETE' }); await load(query, folderId); }
+    catch (err) { alert(err.message); }
+  }
+
+  // Clipboard: copy/cut selected (or a single) file(s), then paste into the
+  // current folder. Cut = move; copy = server-side duplicate.
+  function copyToClipboard(fileList, mode) {
+    const arr = (fileList && fileList.length ? fileList : selectedFiles);
+    if (!arr.length) return;
+    setClipboard({ mode, files: arr });
+  }
+  async function paste() {
+    const cb = clipboardRef.current;
+    if (!cb || !isDrive) return;
+    const { mode, files: cbFiles } = cb;
+    setUploading(true);
+    try {
+      for (const f of cbFiles) {
+        if (mode === 'copy') {
+          await api(`/drive/${f.id}/copy`, { method: 'POST', body: { folder_id: folderId } });
+        } else if (f.uploader_id === user.id || user.role === 'admin') {
+          await api(`/drive/${f.id}`, { method: 'PATCH', body: { folder_id: folderId } });
+        }
+      }
+      if (mode === 'cut') setClipboard(null);
+      await load(query, folderId);
+    } catch (err) { alert(err.message); }
+    finally { setUploading(false); }
+  }
+
   const arrow = (key) => (sort.key === key ? (sort.dir === 1 ? ' ▲' : ' ▼') : '');
   const one = selectedFiles.length === 1 ? selectedFiles[0] : null;
   const movableSelected = selectedFiles.filter((f) => f.uploader_id === user.id || user.role === 'admin');
@@ -180,6 +334,7 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
     <div
       className={`files-page ${dragging ? 'drag-over' : ''}`}
       onDrop={onDrop} onDragOver={onDragOver} onDragEnter={onDragEnter} onDragLeave={onDragLeave}
+      onContextMenu={isDrive && !searching ? (e) => openMenu(e, 'bg', null) : undefined}
     >
       <header className="files-head">
         <h2>{isDrive ? 'Drive' : 'Files'}</h2>
@@ -197,11 +352,14 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
           </div>
           {isDrive && (
             <>
+              {clipboard && <button className="btn files-paste-btn" disabled={uploading} onClick={paste} title="Paste here (Ctrl+V)">📋 Paste {clipboard.files.length} ({clipboard.mode})</button>}
               <button className="btn files-newfolder-btn" onClick={newFolder}>📁 New folder</button>
+              <button className="btn files-newfolder-btn" disabled={uploading} onClick={() => folderInputRef.current?.click()} title="Upload a whole folder">📂 Folder</button>
               <button className="btn btn-primary files-upload-btn" disabled={uploading} onClick={() => inputRef.current?.click()}>
                 {uploading ? 'Uploading…' : '⬆ Upload'}
               </button>
               <input ref={inputRef} type="file" multiple hidden onChange={(e) => { chooseFiles(e.target.files); e.target.value = ''; }} />
+              <input ref={folderInputRef} type="file" webkitdirectory="" directory="" multiple hidden onChange={(e) => { uploadFolderInput(e.target.files); e.target.value = ''; }} />
             </>
           )}
         </div>
@@ -255,7 +413,7 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
             </thead>
             <tbody>
               {isDrive && !searching && folders.map((f) => (
-                <tr key={`folder-${f.id}`} className="folder-row">
+                <tr key={`folder-${f.id}`} className="folder-row" onContextMenu={(e) => openMenu(e, 'folder', f)}>
                   <td className="fx-check" />
                   <td className="fx-name" onClick={() => openFolder(f.id)}>
                     <span className="file-icon sm">📁</span>
@@ -274,7 +432,7 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
                 </tr>
               ))}
               {sorted.map((f) => (
-                <tr key={f.id} className={selected.has(f.id) ? 'sel' : ''}>
+                <tr key={f.id} className={selected.has(f.id) ? 'sel' : ''} onContextMenu={(e) => openMenu(e, 'file', f)}>
                   <td className="fx-check"><input type="checkbox" checked={selected.has(f.id)} onChange={() => toggle(f.id)} onClick={(e) => e.stopPropagation()} /></td>
                   <td className="fx-name" onClick={() => setPreview(f)}>
                     {f.mime_type?.startsWith('image/') ? <img className="file-thumb sm" src={fileUrl(f.id)} alt="" /> : <span className="file-icon sm">{iconFor(f.mime_type, f.original_name)}</span>}
@@ -305,7 +463,7 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
       ) : (
         <div className="files-grid">
           {isDrive && !searching && folders.map((f) => (
-            <div key={`folder-${f.id}`} className="file-card folder-card">
+            <div key={`folder-${f.id}`} className="file-card folder-card" onContextMenu={(e) => openMenu(e, 'folder', f)}>
               <button className="file-card-body" onClick={() => openFolder(f.id)}>
                 <span className="file-card-icon">📁</span>
                 <span className="file-card-name">{f.name}</span>
@@ -320,7 +478,7 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
             </div>
           ))}
           {sorted.map((f) => (
-            <div key={f.id} className={`file-card ${selected.has(f.id) ? 'sel' : ''}`}>
+            <div key={f.id} className={`file-card ${selected.has(f.id) ? 'sel' : ''}`} onContextMenu={(e) => openMenu(e, 'file', f)}>
               <input className="file-card-check" type="checkbox" checked={selected.has(f.id)} onChange={() => toggle(f.id)} />
               <button className="file-card-body" onClick={() => setPreview(f)}>
                 {f.mime_type?.startsWith('image/') ? <img className="file-card-thumb" src={fileUrl(f.id)} alt="" /> : <span className="file-card-icon">{iconFor(f.mime_type, f.original_name)}</span>}
@@ -360,6 +518,71 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
           onClose={() => setSharing(null)}
           onSaved={() => { setSharing(null); load(query, folderId); }}
         />
+      )}
+      {menu && (
+        <ContextMenu
+          menu={menu} user={user} clipboard={clipboard} canManageFolder={canManageFolder}
+          onClose={() => setMenu(null)}
+          actions={{
+            openFile: (f) => setPreview(f),
+            openFolder,
+            download: (f) => downloadFile(f),
+            copy: (f) => copyToClipboard([f], 'copy'),
+            cut: (f) => copyToClipboard([f], 'cut'),
+            paste,
+            renameFile, deleteFile, renameFolder, deleteFolder,
+            move: (f) => setMoving([f]),
+            tag: (f) => setSharing([f]),
+            details: (f) => setDetails(f),
+            newFolder,
+            upload: () => inputRef.current?.click(),
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Right-click menu for a file, a folder, or the empty background.
+function ContextMenu({ menu, user, clipboard, canManageFolder, onClose, actions }) {
+  const { x, y, kind, item } = menu;
+  const run = (fn, arg) => (e) => { e.stopPropagation(); onClose(); fn(arg); };
+  const style = { top: Math.min(y, window.innerHeight - 320), left: Math.min(x, window.innerWidth - 210) };
+  const canEditFile = item && (item.uploader_id === user.id || user.role === 'admin');
+
+  return (
+    <div className="ctx-menu" style={style} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
+      {kind === 'file' && (
+        <>
+          <button onClick={run(actions.openFile, item)}>👁 Open</button>
+          <button onClick={run(actions.download, item)}>⬇ Download</button>
+          <div className="ctx-sep" />
+          <button onClick={run(actions.copy, item)}>⧉ Copy <span className="ctx-kbd">Ctrl+C</span></button>
+          {canEditFile && <button onClick={run(actions.cut, item)}>✂ Cut <span className="ctx-kbd">Ctrl+X</span></button>}
+          {clipboard && <button onClick={run(actions.paste)}>📋 Paste <span className="ctx-kbd">Ctrl+V</span></button>}
+          {canEditFile && <button onClick={run(actions.move, item)}>📂 Move to…</button>}
+          {canEditFile && <button onClick={run(actions.renameFile, item)}>✎ Rename</button>}
+          {canEditFile && <button onClick={run(actions.tag, item)}>🏷 Tag people</button>}
+          <div className="ctx-sep" />
+          <button onClick={run(actions.details, item)}>ℹ Details</button>
+          {canEditFile && <button className="danger" onClick={run(actions.deleteFile, item)}>🗑 Delete</button>}
+        </>
+      )}
+      {kind === 'folder' && (
+        <>
+          <button onClick={run(actions.openFolder, item.id)}>📂 Open</button>
+          {clipboard && <button onClick={run(actions.paste)}>📋 Paste here <span className="ctx-kbd">Ctrl+V</span></button>}
+          {canManageFolder(item) && <div className="ctx-sep" />}
+          {canManageFolder(item) && <button onClick={run(actions.renameFolder, item)}>✎ Rename</button>}
+          {canManageFolder(item) && <button className="danger" onClick={run(actions.deleteFolder, item)}>🗑 Delete</button>}
+        </>
+      )}
+      {kind === 'bg' && (
+        <>
+          <button onClick={run(actions.newFolder)}>📁 New folder</button>
+          <button onClick={run(actions.upload)}>⬆ Upload files</button>
+          {clipboard && <button onClick={run(actions.paste)}>📋 Paste {clipboard.files.length} here <span className="ctx-kbd">Ctrl+V</span></button>}
+        </>
       )}
     </div>
   );

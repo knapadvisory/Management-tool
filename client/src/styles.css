@@ -1050,6 +1050,16 @@ input, select, textarea { font: inherit; }
 .upload-dialog-fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .upload-dialog-label { display: block; font-size: 13px; margin: 2px 2px 2px; }
 .upload-dialog-optional { opacity: .7; }
+
+/* Right-click context menu. */
+.ctx-menu { position: fixed; z-index: 1000; min-width: 200px; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 6px; display: flex; flex-direction: column; }
+.ctx-menu button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: none; background: none; padding: 7px 10px; border-radius: 6px; font-size: 14px; cursor: pointer; color: var(--text); }
+.ctx-menu button:hover { background: #f0f2f8; }
+.ctx-menu button.danger { color: #d33; }
+.ctx-menu button.danger:hover { background: #fdeaea; }
+.ctx-menu .ctx-kbd { margin-left: auto; font-size: 11px; color: var(--muted); }
+.ctx-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+.files-paste-btn { white-space: nowrap; }
 .files-page.drag-over { outline: 2px dashed var(--accent); outline-offset: -8px; border-radius: 12px; }
 .files-drop-overlay { position: absolute; inset: 0; background: rgba(79, 70, 229, .08); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 5; }
 .files-drop-inner { background: #fff; border: 2px dashed var(--accent); border-radius: 14px; padding: 28px 44px; text-align: center; font-size: 20px; font-weight: 600; color: var(--accent); }
