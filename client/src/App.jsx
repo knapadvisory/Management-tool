@@ -10,6 +10,7 @@ import WorkflowsView from './components/WorkflowsView.jsx';
 import AdminPanel from './components/AdminPanel.jsx';
 import Messenger from './components/Messenger.jsx';
 import Collabs from './components/Collabs.jsx';
+import TeamDirectory from './components/TeamDirectory.jsx';
 import CallManager from './components/CallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
 
@@ -208,6 +209,9 @@ export default function App() {
         )}
         {view?.type === 'collabs' && (
           <Collabs user={user} users={users} collabs={collabs} onlineIds={onlineIds} onRefresh={refreshCollabs} />
+        )}
+        {view?.type === 'team' && (
+          <TeamDirectory user={user} users={users} onlineIds={onlineIds} onMessage={openDm} />
         )}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'admin' && user.role === 'admin' && (

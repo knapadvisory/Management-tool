@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { api, fileUrl } from '../api.js';
 import { renderMarkdown, formatBytes } from '../format.js';
 import Avatar from './Avatar.jsx';
+import ForwardModal from './ForwardModal.jsx';
+import TaskFromMessageModal from './TaskFromMessageModal.jsx';
 
 const QUICK_EMOJIS = ['👍', '❤️', '😄', '🎉', '✅', '👀', '🙏'];
 
@@ -34,6 +36,9 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const [showPicker, setShowPicker] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [taskOpen, setTaskOpen] = useState(false);
   const isMine = message.user_id === currentUser.id;
   const base = `/channels/${channelId}/messages/${message.id}`;
 
@@ -141,13 +146,24 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
               </div>
             )}
           </div>
-          {!inThread && (
-            <button className="msg-action" title="Reply in thread" onClick={() => onOpenThread(message)}>💬</button>
-          )}
-          {isMine && <button className="msg-action" title="Edit" onClick={() => { setDraft(message.content); setEditing(true); }}>✏️</button>}
-          {isMine && <button className="msg-action" title="Delete" onClick={remove}>🗑</button>}
+          <div className="menu-wrap">
+            <button className="msg-action" title="More" onClick={() => setMenuOpen((o) => !o)}>⋯</button>
+            {menuOpen && (
+              <div className="msg-menu" onMouseLeave={() => setMenuOpen(false)}>
+                {!inThread && <button onClick={() => { onOpenThread(message); setMenuOpen(false); }}><span>↩</span> Reply</button>}
+                <button onClick={() => { navigator.clipboard?.writeText(message.content || ''); setMenuOpen(false); }}><span>⧉</span> Copy</button>
+                {isMine && <button onClick={() => { setDraft(message.content); setEditing(true); setMenuOpen(false); }}><span>✏️</span> Edit</button>}
+                <button onClick={() => { setForwardOpen(true); setMenuOpen(false); }}><span>➦</span> Forward</button>
+                <button onClick={() => { setTaskOpen(true); setMenuOpen(false); }}><span>☑</span> Create task</button>
+                {isMine && <button className="danger" onClick={() => { setMenuOpen(false); remove(); }}><span>🗑</span> Delete</button>}
+              </div>
+            )}
+          </div>
         </div>
       )}
+
+      {forwardOpen && <ForwardModal message={message} onClose={() => setForwardOpen(false)} />}
+      {taskOpen && <TaskFromMessageModal message={message} onClose={() => setTaskOpen(false)} />}
     </div>
   );
 }

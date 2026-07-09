@@ -65,7 +65,13 @@ export default function Sidebar({
           className={`nav-item ${view?.type === 'messenger' ? 'active' : ''}`}
           onClick={() => onSelectView('messenger')}
         >
-          💬 Messenger
+          <span className="nav-logo">💬</span> DMs
+        </button>
+        <button
+          className={`nav-item ${view?.type === 'team' ? 'active' : ''}`}
+          onClick={() => onSelectView('team')}
+        >
+          <span className="nav-logo">👤</span> Team
         </button>
         <button
           className={`nav-item ${view?.type === 'collabs' ? 'active' : ''}`}
@@ -125,31 +131,6 @@ export default function Sidebar({
             <span className="hash">#</span> {c.name} <span className="join-tag">join</span>
           </button>
         ))}
-      </div>
-
-      <div className="sidebar-section">
-        <div className="section-title"><span>Direct messages</span></div>
-        {dms.map((c) => (
-          <button
-            key={c.id}
-            className={`nav-item ${activeChannelId === c.id ? 'active' : ''}`}
-            onClick={() => onSelectChannel(c)}
-          >
-            <Avatar user={c.dm_user} size={20} online={c.dm_user ? isOnline(c.dm_user.id) : false} />
-            <span className="dm-name">{c.display_name}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="sidebar-section">
-        <div className="section-title"><span>Team</span></div>
-        {users.filter((u) => u.id !== user.id).map((u) => (
-          <button key={u.id} className="nav-item" onClick={() => onOpenDm(u)} title={`Message ${u.name}`}>
-            <Avatar user={u} size={20} online={isOnline(u.id)} />
-            <span className="dm-name">{u.name}</span>
-          </button>
-        ))}
-        {users.length <= 1 && <div className="empty-hint">Invite teammates by sharing this app's URL — they can register themselves.</div>}
       </div>
     </aside>
   );

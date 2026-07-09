@@ -13,6 +13,7 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 - **File & image sharing** — attach files to any message; images preview inline
 - **Emoji reactions** on any message
 - **Threads** — reply in a side panel to keep channels tidy
+- **Message actions** — a per-message ⋯ menu: Reply (thread), Copy, Edit, **Forward** to another conversation, **Create task** from the message, and Delete
 - **Edit & delete** your own messages
 - **@mentions** with autocomplete; mentioned teammates get a notification
 - **Message search** across every channel you're in
