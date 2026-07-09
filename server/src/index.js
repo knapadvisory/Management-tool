@@ -9,6 +9,7 @@ import { Server } from 'socket.io';
 import db from './db.js';
 import { register, login, signToken, requireAuth, requireAdmin, publicUser, signupCodeRequired } from './auth.js';
 import channelsRouter from './routes/channels.js';
+import collabsRouter from './routes/collabs.js';
 import adminRouter from './routes/admin.js';
 import tasksRouter from './routes/tasks.js';
 import workflowsRouter from './routes/workflows.js';
@@ -64,6 +65,7 @@ app.get('/api/users', requireAuth, (req, res) => {
 });
 
 app.use('/api/admin', requireAuth, requireAdmin, adminRouter);
+app.use('/api/collabs', requireAuth, collabsRouter);
 app.use('/api/channels', requireAuth, channelsRouter);
 app.use('/api/tasks', requireAuth, tasksRouter);
 app.use('/api/workflows', requireAuth, workflowsRouter);

@@ -348,6 +348,51 @@ async function main() {
   const afterS = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
   check('completing via status spawns the next occurrence', afterS === beforeS + 1);
 
+  console.log('Collabs');
+  const collab = await req('POST', '/api/collabs', {
+    token: a,
+    body: { name: 'Client X War Room', description: 'External project space', member_ids: [bobId], who_can_invite: 'mods', history_visible: false },
+  });
+  check('collab created as a private group space', collab.status === 201 && collab.data.is_collab === 1 && collab.data.is_dm === 0);
+  check('creator is the owner', collab.data.owner_id === alice.data.user.id && collab.data.my_role === 'owner');
+  const collabId = collab.data.id;
+  check('members added to the collab', collab.data.members.length === 2 && collab.data.members.find((m) => m.id === bobId)?.channel_role === 'member');
+
+  const aChans = await req('GET', '/api/channels', { token: a });
+  check('collab excluded from the regular channels list', !aChans.data.channels.some((c) => c.id === collabId));
+  const bCollabs = await req('GET', '/api/collabs', { token: b });
+  check('member sees the collab in their list', bCollabs.data.collabs.some((c) => c.id === collabId));
+
+  const bInvite = await req('POST', `/api/collabs/${collabId}/members`, { token: b, body: { user_ids: [carolId] } });
+  check('plain member cannot invite when invites are mods-only', bInvite.status === 403);
+  const aInvite = await req('POST', `/api/collabs/${collabId}/members`, { token: a, body: { user_ids: [carolId] } });
+  check('owner can invite members', aInvite.status === 201 && aInvite.data.members.some((m) => m.id === carolId));
+
+  const modPatch = await req('PATCH', `/api/collabs/${collabId}`, { token: a, body: { moderator_ids: [bobId] } });
+  check('owner promotes a moderator', modPatch.data.members.find((m) => m.id === bobId)?.channel_role === 'moderator');
+  const bInvite2 = await req('POST', `/api/collabs/${collabId}/members`, { token: b, body: { user_ids: [] } });
+  check('a moderator may invite', bInvite2.status === 201);
+
+  const dave = await req('POST', '/api/admin/users', { token: a, body: { name: 'Dave', email: 'dave@smoke.test', password: 'secret123' } });
+  const daveTok = (await req('POST', '/api/auth/login', { body: { email: 'dave@smoke.test', password: 'secret123' } })).data.token;
+  const daveGet = await req('GET', `/api/collabs/${collabId}`, { token: daveTok });
+  check('non-member is blocked from a collab', daveGet.status === 403);
+  check('non-member does not list the collab', !(await req('GET', '/api/collabs', { token: daveTok })).data.collabs.some((c) => c.id === collabId));
+
+  const carolPatch = await req('PATCH', `/api/collabs/${collabId}`, { token: carolTok, body: { who_can_post: 'mods' } });
+  check('non-manager cannot change collab settings', carolPatch.status === 403);
+  const permPatch = await req('PATCH', `/api/collabs/${collabId}`, { token: a, body: { who_can_post: 'all', history_visible: true } });
+  check('owner updates permissions', permPatch.data.who_can_post === 'all' && permPatch.data.history_visible === 1);
+
+  const carolLeave = await req('DELETE', `/api/collabs/${collabId}/members/${carolId}`, { token: carolTok });
+  check('a member can leave a collab', carolLeave.status === 200 && !carolLeave.data.members.some((m) => m.id === carolId));
+  const removeOwner = await req('DELETE', `/api/collabs/${collabId}/members/${alice.data.user.id}`, { token: a });
+  check('the owner cannot be removed', removeOwner.status === 400);
+
+  // A separate mods-only collab for the socket posting checks below.
+  const collab2 = await req('POST', '/api/collabs', { token: a, body: { name: 'Announcements', member_ids: [bobId], who_can_post: 'mods' } });
+  const collab2Id = collab2.data.id;
+
   console.log('Sockets');
   const generalId = chans.data.channels.find((c) => c.name === 'general').id;
   const sockA = io(BASE, { auth: { token: a } });
@@ -386,6 +431,12 @@ async function main() {
   check('presence broadcast', events.presence);
   check('call invite signaled', events.call);
   check('assignee notified of new task', events.taskAssigned);
+
+  // Collab posting permissions (who_can_post = 'mods'): bob is a plain member, alice is owner.
+  const bobCollabPost = await new Promise((resolve) => sockB.emit('message:send', { channel_id: collab2Id, content: 'may I post?' }, resolve));
+  check('plain member blocked from posting in a mods-only collab', !!bobCollabPost.error);
+  const ownerCollabPost = await new Promise((resolve) => sockA.emit('message:send', { channel_id: collab2Id, content: 'owner announcement' }, resolve));
+  check('owner can post in a mods-only collab', !!ownerCollabPost.message);
 
   console.log('Notifications & task chat');
   // The earlier task assignment (to bob) should have created a notification.

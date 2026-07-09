@@ -6,6 +6,7 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 
 **💬 Messaging (Slack-style)**
 - A **Messenger** view (Bitrix-style) — a single screen listing every conversation (channels + direct messages) with last-message previews and timestamps on the left, and the open chat on the right; start a new chat with any teammate from the same list
+- **Collabs** — private group spaces for a focused engagement, each with an **owner and moderators** and configurable **access permissions**: who can invite members, who can post messages, and whether new members can see earlier history. Create one from the Collabs tab, manage it from the Access-permissions panel
 - Public channels (everyone starts in `#general`) — create and join channels from the sidebar
 - 1:1 direct messages with any teammate
 - Real-time delivery, typing indicators, and online/offline presence dots

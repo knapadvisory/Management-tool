@@ -245,6 +245,14 @@ ensureColumn('tasks', 'status_reason', "TEXT NOT NULL DEFAULT ''");
 // 'active' gates access; deactivating revokes login without destroying data.
 ensureColumn('users', 'role', "TEXT NOT NULL DEFAULT 'member'");
 ensureColumn('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
+// Collabs are private group spaces (a specialised channel) with their own
+// owner/moderators and permission settings.
+ensureColumn('channels', 'is_collab', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('channels', 'history_visible', 'INTEGER NOT NULL DEFAULT 1');
+ensureColumn('channels', 'who_can_invite', "TEXT NOT NULL DEFAULT 'all'"); // 'all' | 'mods'
+ensureColumn('channels', 'who_can_post', "TEXT NOT NULL DEFAULT 'all'"); // 'all' | 'mods'
+// Per-channel membership role: 'owner' | 'moderator' | 'member'.
+ensureColumn('channel_members', 'role', "TEXT NOT NULL DEFAULT 'member'");
 
 // Indexes on migration-added columns must come after the columns exist,
 // otherwise upgrading an existing database fails on startup.

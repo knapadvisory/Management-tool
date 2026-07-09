@@ -68,6 +68,12 @@ export default function Sidebar({
           💬 Messenger
         </button>
         <button
+          className={`nav-item ${view?.type === 'collabs' ? 'active' : ''}`}
+          onClick={() => onSelectView('collabs')}
+        >
+          👥 Collabs
+        </button>
+        <button
           className={`nav-item ${view?.type === 'tasks' ? 'active' : ''}`}
           onClick={() => onSelectView('tasks')}
         >

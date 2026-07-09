@@ -7,9 +7,9 @@ const router = Router();
 
 function channelWithMeta(channel, userId) {
   const members = db.prepare(`
-    SELECT u.* FROM channel_members cm JOIN users u ON u.id = cm.user_id WHERE cm.channel_id = ?
-  `).all(channel.id).map(publicUser);
-  const out = { ...channel, members };
+    SELECT u.*, cm.role AS channel_role FROM channel_members cm JOIN users u ON u.id = cm.user_id WHERE cm.channel_id = ?
+  `).all(channel.id).map((m) => ({ ...publicUser(m), channel_role: m.channel_role || 'member' }));
+  const out = { ...channel, members, owner_id: channel.created_by };
   if (channel.is_dm) {
     const other = members.find((m) => m.id !== userId) || members[0];
     out.display_name = other ? other.name : 'Direct message';
@@ -35,11 +35,11 @@ function channelWithMeta(channel, userId) {
 router.get('/', (req, res) => {
   const mine = db.prepare(`
     SELECT c.* FROM channels c JOIN channel_members cm ON cm.channel_id = c.id
-    WHERE cm.user_id = ? ORDER BY c.is_dm, c.name
+    WHERE cm.user_id = ? AND c.is_collab = 0 ORDER BY c.is_dm, c.name
   `).all(req.user.id);
   const joinable = db.prepare(`
     SELECT c.* FROM channels c
-    WHERE c.is_dm = 0 AND c.is_private = 0
+    WHERE c.is_dm = 0 AND c.is_private = 0 AND c.is_collab = 0
       AND c.id NOT IN (SELECT channel_id FROM channel_members WHERE user_id = ?)
     ORDER BY c.name
   `).all(req.user.id);
@@ -79,11 +79,20 @@ router.get('/:id/messages', (req, res) => {
     return res.status(403).json({ error: 'Not a member of this channel' });
   }
   const before = Number(req.query.before) || Number.MAX_SAFE_INTEGER;
+  // In a collab where history isn't shared, members only see messages from
+  // after they joined.
+  const channel = db.prepare('SELECT is_collab, history_visible FROM channels WHERE id = ?').get(req.params.id);
+  let since = null;
+  if (channel?.is_collab && !channel.history_visible) {
+    const m = db.prepare('SELECT joined_at FROM channel_members WHERE channel_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    since = m?.joined_at || null;
+  }
   const rows = db.prepare(`
     SELECT id FROM messages
     WHERE channel_id = ? AND parent_id IS NULL AND id < ?
+      AND (? IS NULL OR created_at >= ?)
     ORDER BY id DESC LIMIT 50
-  `).all(req.params.id, before).reverse();
+  `).all(req.params.id, before, since, since).reverse();
   res.json({ messages: rows.map((r) => serializeMessage(r.id, req.user.id)) });
 });
 

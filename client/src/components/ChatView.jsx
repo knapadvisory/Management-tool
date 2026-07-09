@@ -6,7 +6,7 @@ import Message from './Message.jsx';
 import MessageComposer from './MessageComposer.jsx';
 import ThreadPanel from './ThreadPanel.jsx';
 
-export default function ChatView({ channel, user, users = [], onlineIds }) {
+export default function ChatView({ channel, user, users = [], onlineIds, canPost = true }) {
   // In a public/named channel anyone can be mentioned; in a DM, just the two of you.
   const mentionMembers = channel.is_dm ? (channel.members || []) : users;
   const [messages, setMessages] = useState([]);
@@ -72,7 +72,7 @@ export default function ChatView({ channel, user, users = [], onlineIds }) {
               </>
             ) : (
               <>
-                <strong># {channel.name}</strong>
+                <strong>{channel.is_collab ? '👥 ' : '# '}{channel.name}</strong>
                 {channel.description && <span className="chat-desc">{channel.description}</span>}
               </>
             )}
@@ -108,11 +108,15 @@ export default function ChatView({ channel, user, users = [], onlineIds }) {
 
         <div className="typing-indicator">{typingUser ? `${typingUser} is typing…` : ' '}</div>
 
-        <MessageComposer
-          channel={channel}
-          members={mentionMembers}
-          placeholder={channel.is_dm ? `Message ${channel.display_name}` : `Message #${channel.name}`}
-        />
+        {canPost ? (
+          <MessageComposer
+            channel={channel}
+            members={mentionMembers}
+            placeholder={channel.is_dm ? `Message ${channel.display_name}` : `Message ${channel.is_collab ? '' : '#'}${channel.name}`}
+          />
+        ) : (
+          <div className="composer-locked">🔒 Only moderators can post in this collab.</div>
+        )}
       </div>
 
       {threadRoot && (

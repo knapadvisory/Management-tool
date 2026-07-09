@@ -41,9 +41,15 @@ export default function setupSocket(io) {
       content = (content || '').trim();
       const hasFiles = Array.isArray(attachment_ids) && attachment_ids.length > 0;
       if (!content && !hasFiles) return ack?.({ error: 'Empty message' });
-      const member = db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?')
+      const member = db.prepare('SELECT role FROM channel_members WHERE channel_id = ? AND user_id = ?')
         .get(channel_id, userId);
       if (!member) return ack?.({ error: 'Not a member of this channel' });
+
+      // In a collab restricted to moderators, only owner/moderators may post.
+      const chan = db.prepare('SELECT is_collab, who_can_post FROM channels WHERE id = ?').get(channel_id);
+      if (chan?.is_collab && chan.who_can_post === 'mods' && !['owner', 'moderator'].includes(member.role)) {
+        return ack?.({ error: 'Only moderators can post in this collab' });
+      }
 
       // A reply must point at a real message in the same channel.
       if (parent_id) {

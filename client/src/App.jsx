@@ -9,6 +9,7 @@ import TasksBoard from './components/TasksBoard.jsx';
 import WorkflowsView from './components/WorkflowsView.jsx';
 import AdminPanel from './components/AdminPanel.jsx';
 import Messenger from './components/Messenger.jsx';
+import Collabs from './components/Collabs.jsx';
 import CallManager from './components/CallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
 
@@ -17,6 +18,7 @@ export default function App() {
   const [booting, setBooting] = useState(!!getToken());
   const [channels, setChannels] = useState([]);
   const [joinable, setJoinable] = useState([]);
+  const [collabs, setCollabs] = useState([]);
   const [users, setUsers] = useState([]);
   const [onlineIds, setOnlineIds] = useState([]);
   // view: { type: 'channel', channel } | { type: 'tasks' } | { type: 'workflows' }
@@ -48,6 +50,12 @@ export default function App() {
     setUsers(data.users);
   }, []);
 
+  const refreshCollabs = useCallback(async () => {
+    const data = await api('/collabs');
+    setCollabs(data.collabs);
+    return data.collabs;
+  }, []);
+
   const refreshNotifications = useCallback(async () => {
     const data = await api('/notifications');
     setNotifications(data.notifications);
@@ -72,6 +80,7 @@ export default function App() {
     socket.on('task:assigned', ({ task, by }) => showToast(`${by.name} assigned you: "${task.title}"`));
     socket.on('mention', ({ from, preview }) => showToast(`${from.name} mentioned you: "${preview}"`));
     socket.on('directory:changed', () => { refreshUsers(); refreshChannels(); });
+    socket.on('collabs:changed', () => { refreshCollabs(); });
     socket.on('account:deactivated', () => { showToast('Your access has been revoked by an administrator.'); logout(); });
     socket.on('notification:new', ({ notification, unread_count }) => {
       setNotifications((ns) => [notification, ...ns].slice(0, 50));
@@ -87,13 +96,14 @@ export default function App() {
 
     refreshUsers();
     refreshNotifications();
+    refreshCollabs();
     refreshChannels().then((d) => {
       const general = d.channels.find((c) => c.name === 'general' && !c.is_dm) || d.channels[0];
       setView((v) => v || (general ? { type: 'channel', channel: general } : { type: 'tasks' }));
     });
 
     return () => disconnectSocket();
-  }, [user, refreshChannels, refreshUsers, refreshNotifications, showToast]);
+  }, [user, refreshChannels, refreshUsers, refreshNotifications, refreshCollabs, showToast]);
 
   // Keep the desktop-notification click handler pointed at the latest state.
   useEffect(() => { selectNotifRef.current = selectNotification; });
@@ -109,6 +119,7 @@ export default function App() {
     setUser(null);
     setView(null);
     setChannels([]);
+    setCollabs([]);
     setNotifications([]);
     setUnreadCount(0);
   }
@@ -194,6 +205,9 @@ export default function App() {
         )}
         {view?.type === 'messenger' && (
           <Messenger user={user} users={users} channels={channels} onlineIds={onlineIds} onEnsureDm={ensureDm} />
+        )}
+        {view?.type === 'collabs' && (
+          <Collabs user={user} users={users} collabs={collabs} onlineIds={onlineIds} onRefresh={refreshCollabs} />
         )}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'admin' && user.role === 'admin' && (
