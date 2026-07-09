@@ -255,7 +255,12 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
         </div>
       </form>
       <div className="composer-hint">
-        <b>Ctrl/⌘+B</b> bold · <b>Ctrl/⌘+I</b> italic · <b>Ctrl/⌘+K</b> link · <b>Ctrl/⌘+⇧X</b> strike · <b>Ctrl/⌘+⇧C</b> code · <b>Enter</b> to send
+        <span><kbd>Ctrl/⌘ B</kbd> bold</span>
+        <span><kbd>Ctrl/⌘ I</kbd> italic</span>
+        <span><kbd>Ctrl/⌘ K</kbd> link</span>
+        <span><kbd>Ctrl/⌘ ⇧ X</kbd> strike</span>
+        <span><kbd>Ctrl/⌘ ⇧ C</kbd> code</span>
+        <span><kbd>Enter</kbd> send</span>
       </div>
       {emojiOpen && <EmojiPicker position={emojiPos} onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
     </div>
