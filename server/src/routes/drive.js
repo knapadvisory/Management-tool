@@ -185,16 +185,32 @@ router.post('/folders', (req, res) => {
   res.status(201).json({ folder: { ...folder, files: 0, subs: 0 } });
 });
 
-// Rename a folder (creator or admin).
+// Rename and/or move a folder (creator or admin). Accepts `name` (rename)
+// and/or `parent_id` (move — null moves it to the Drive root).
 router.patch('/folders/:id', (req, res) => {
   const folder = db.prepare('SELECT * FROM drive_folders WHERE id = ?').get(req.params.id);
   if (!folder) return res.status(404).json({ error: 'Folder not found' });
   if (folder.created_by !== req.user.id && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Only the folder’s creator or an admin can rename it' });
+    return res.status(403).json({ error: 'Only the folder’s creator or an admin can change it' });
   }
-  const name = (req.body?.name || '').trim();
-  if (!name) return res.status(400).json({ error: 'Folder name is required' });
-  db.prepare('UPDATE drive_folders SET name = ? WHERE id = ?').run(name, folder.id);
+  if (req.body?.name != null) {
+    const name = String(req.body.name).trim();
+    if (!name) return res.status(400).json({ error: 'Folder name is required' });
+    db.prepare('UPDATE drive_folders SET name = ? WHERE id = ?').run(name, folder.id);
+  }
+  if ('parent_id' in (req.body || {})) {
+    let parentId = req.body.parent_id != null && req.body.parent_id !== '' ? Number(req.body.parent_id) : null;
+    if (parentId != null) {
+      if (!Number.isInteger(parentId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ?').get(parentId)) {
+        return res.status(404).json({ error: 'Target folder not found' });
+      }
+      // Can't move a folder into itself or any of its own descendants.
+      if (folderAndDescendants(folder.id).includes(parentId)) {
+        return res.status(400).json({ error: 'Can’t move a folder into itself' });
+      }
+    }
+    db.prepare('UPDATE drive_folders SET parent_id = ? WHERE id = ?').run(parentId, folder.id);
+  }
   req.app.get('io')?.emit('drive:changed');
   res.json({ ok: true });
 });

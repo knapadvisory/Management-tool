@@ -1021,14 +1021,8 @@ input, select, textarea { font: inherit; }
 .folder-row .fx-name { cursor: pointer; }
 .folder-row:hover { background: #f5f7ff; }
 .folder-row .fx-filename { font-weight: 600; }
-.folder-row-actions { margin-left: auto; display: none; gap: 2px; }
-.folder-row:hover .folder-row-actions { display: inline-flex; }
-.folder-row-actions button, .folder-card-actions button { border: none; background: none; cursor: pointer; padding: 2px 5px; border-radius: 5px; font-size: 13px; color: var(--muted); }
-.folder-row-actions button:hover, .folder-card-actions button:hover { background: #e5e8f2; color: var(--text); }
 .folder-card { position: relative; }
 .folder-card .file-card-icon { color: #f0b429; }
-.folder-card-actions { position: absolute; top: 6px; right: 6px; display: none; gap: 2px; }
-.folder-card:hover .folder-card-actions { display: inline-flex; }
 
 /* "Shared with" tags column. */
 .fx-shared { white-space: nowrap; }

@@ -617,6 +617,17 @@ async function main() {
   check('nested subfolder is gone too', subGone.status === 404);
   const binArch = await req('GET', '/api/admin/files/archived', { token: a });
   check('files from a deleted folder are kept in the archive', binArch.data.files.some((f) => f.id === binFile.id));
+  // Folders can be moved (nested under another folder) with a cycle guard.
+  const fA = (await req('POST', '/api/drive/folders', { token: a, body: { name: 'MoveA' } })).data.folder;
+  const fB = (await req('POST', '/api/drive/folders', { token: a, body: { name: 'MoveB' } })).data.folder;
+  const moveFolder = await req('PATCH', `/api/drive/folders/${fB.id}`, { token: a, body: { parent_id: fA.id } });
+  check('a folder can be moved into another folder', moveFolder.status === 200);
+  const inA = await req('GET', `/api/drive?folder=${fA.id}`, { token: a });
+  check('moved folder shows under its new parent', inA.data.folders.some((f) => f.id === fB.id));
+  const cycle = await req('PATCH', `/api/drive/folders/${fA.id}`, { token: a, body: { parent_id: fB.id } });
+  check('a folder cannot be moved into its own descendant', cycle.status === 400);
+  await req('DELETE', `/api/drive/folders/${fA.id}`, { token: a }); // tidy up (recursive)
+
   // Now delete the (empty) subfolder from earlier.
   const delSub = await req('DELETE', `/api/drive/folders/${sub2026.id}`, { token: a });
   check('empty folder can be deleted', delSub.status === 200);

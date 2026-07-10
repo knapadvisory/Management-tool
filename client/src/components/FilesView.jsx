@@ -50,12 +50,14 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState(null);
   const [details, setDetails] = useState(null);
+  const [folderDetails, setFolderDetails] = useState(null);
   const [moving, setMoving] = useState(null); // files pending a "move to folder"
   const [sharing, setSharing] = useState(null); // files pending a "share with" edit
   const [pending, setPending] = useState(null); // files chosen, awaiting the upload dialog
   const [view, setView] = useState('details'); // 'details' | 'grid'
   const [sort, setSort] = useState({ key: 'date', dir: -1 });
   const [selected, setSelected] = useState(() => new Set());
+  const [selectedFolders, setSelectedFolders] = useState(() => new Set());
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [clipboard, setClipboard] = useState(null); // { mode:'copy'|'cut', files:[...] }
@@ -77,6 +79,7 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
       setFolders(d.folders || []);
       setPath(d.path || []);
       setSelected(new Set());
+      setSelectedFolders(new Set());
     } catch { /* ignore */ } finally { setLoading(false); }
   }, [endpoint, isDrive]);
 
@@ -260,27 +263,40 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
   });
 
   const selectedFiles = sorted.filter((f) => selected.has(f.id));
+  const selectedFolderItems = folders.filter((f) => selectedFolders.has(f.id));
   selectedFilesRef.current = selectedFiles;
   clipboardRef.current = clipboard;
   const canDelete = (f) => f.uploader_id === user.id; // you can only delete files you shared
   const canManageFolder = (f) => f.created_by === user.id || user.role === 'admin';
+  const totalSelected = selected.size + selectedFolders.size;
 
   function toggle(id) {
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
+  function toggleFolder(id) {
+    setSelectedFolders((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function clearSelection() { setSelected(new Set()); setSelectedFolders(new Set()); }
   function toggleAll() {
-    setSelected((s) => (s.size === sorted.length ? new Set() : new Set(sorted.map((f) => f.id))));
+    const allSelected = selected.size === sorted.length && selectedFolders.size === folders.length;
+    if (allSelected) { clearSelection(); return; }
+    setSelected(new Set(sorted.map((f) => f.id)));
+    setSelectedFolders(new Set(folders.map((f) => f.id)));
   }
   function setSortKey(key) {
     setSort((s) => (s.key === key ? { key, dir: -s.dir } : { key, dir: key === 'name' || key === 'owner' ? 1 : -1 }));
   }
 
   async function deleteSelected() {
-    const targets = selectedFiles.filter(canDelete);
-    if (!targets.length) { alert(`You can only delete files you ${isDrive ? 'uploaded' : 'shared'}.`); return; }
-    const where = isDrive ? 'the Drive' : 'your chats and Files';
-    if (!confirm(`Delete ${targets.length} file${targets.length === 1 ? '' : 's'}? They'll be removed from ${where}.`)) return;
-    for (const f of targets) { try { await api(`${endpoint}/${f.id}`, { method: 'DELETE' }); } catch { /* skip */ } }
+    const files2 = selectedFiles.filter(canDelete);
+    const folders2 = selectedFolderItems.filter(canManageFolder);
+    if (!files2.length && !folders2.length) { alert(`You can only delete files you ${isDrive ? 'uploaded' : 'shared'} and folders you created.`); return; }
+    const parts = [];
+    if (files2.length) parts.push(`${files2.length} file${files2.length === 1 ? '' : 's'}`);
+    if (folders2.length) parts.push(`${folders2.length} folder${folders2.length === 1 ? '' : 's'} (and everything inside)`);
+    if (!confirm(`Delete ${parts.join(' and ')}? Files can be restored from the admin Archive.`)) return;
+    for (const f of files2) { try { await api(`${endpoint}/${f.id}`, { method: 'DELETE' }); } catch { /* skip */ } }
+    for (const f of folders2) { try { await api(`/drive/folders/${f.id}`, { method: 'DELETE' }); } catch { /* skip */ } }
     load(query, folderId);
   }
 
@@ -328,6 +344,11 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
   const arrow = (key) => (sort.key === key ? (sort.dir === 1 ? ' ▲' : ' ▼') : '');
   const one = selectedFiles.length === 1 ? selectedFiles[0] : null;
   const movableSelected = selectedFiles.filter((f) => f.uploader_id === user.id || user.role === 'admin');
+  // The single selected item (file or folder), for Open / Details / Rename.
+  const onlyOne = totalSelected === 1 ? (selectedFiles[0] || selectedFolderItems[0]) : null;
+  const onlyOneIsFolder = totalSelected === 1 && selectedFolderItems.length === 1;
+  const movableFolders = selectedFolderItems.filter(canManageFolder);
+  const canRenameOne = onlyOne && (onlyOneIsFolder ? canManageFolder(onlyOne) : (onlyOne.uploader_id === user.id || user.role === 'admin'));
 
   const emptyMsg = query
     ? `No files match “${query}”.`
@@ -382,17 +403,18 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
         </div>
       )}
 
-      {selected.size > 0 && (
+      {totalSelected > 0 && (
         <div className="files-actionbar">
-          <span className="files-selected-count">Selected: {selected.size}</span>
+          <span className="files-selected-count">Selected: {totalSelected}</span>
           <span className="files-actionbar-sep" />
-          <button className="fa-btn" disabled={!one} onClick={() => one && setPreview(one)}>👁 Open</button>
-          <button className="fa-btn" disabled={!one} onClick={() => one && setDetails(one)}>ℹ Details</button>
-          <button className="fa-btn" onClick={() => selectedFiles.forEach(downloadFile)}>⬇ Download</button>
-          {isDrive && <button className="fa-btn" disabled={!movableSelected.length} onClick={() => setMoving(movableSelected)}>📂 Move</button>}
+          <button className="fa-btn" disabled={!onlyOne} onClick={() => { if (onlyOneIsFolder) openFolder(onlyOne.id); else if (onlyOne) setPreview(onlyOne); }}>👁 Open</button>
+          <button className="fa-btn" disabled={!onlyOne} onClick={() => { if (onlyOneIsFolder) setFolderDetails(onlyOne); else if (onlyOne) setDetails(onlyOne); }}>ℹ Details</button>
+          {isDrive && <button className="fa-btn" disabled={!canRenameOne} onClick={() => { if (onlyOneIsFolder) renameFolder(onlyOne); else if (onlyOne) renameFile(onlyOne); }}>✎ Rename</button>}
+          <button className="fa-btn" disabled={!selectedFiles.length} onClick={() => selectedFiles.forEach(downloadFile)}>⬇ Download</button>
+          {isDrive && <button className="fa-btn" disabled={!movableSelected.length && !movableFolders.length} onClick={() => setMoving({ files: movableSelected, folders: movableFolders })}>📂 Move</button>}
           {isDrive && <button className="fa-btn" disabled={!movableSelected.length} onClick={() => setSharing(movableSelected)}>🏷 Tag people</button>}
           <button className="fa-btn danger" onClick={deleteSelected}>🗑 Delete</button>
-          <button className="fa-btn ghost" onClick={() => setSelected(new Set())}>Clear</button>
+          <button className="fa-btn ghost" onClick={clearSelection}>Clear</button>
         </div>
       )}
 
@@ -407,7 +429,7 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
           <table className="files-table">
             <thead>
               <tr>
-                <th className="fx-check"><input type="checkbox" checked={sorted.length > 0 && selected.size === sorted.length} onChange={toggleAll} /></th>
+                <th className="fx-check"><input type="checkbox" checked={(sorted.length + folders.length) > 0 && selected.size === sorted.length && selectedFolders.size === folders.length} onChange={toggleAll} /></th>
                 <th className="fx-name" onClick={() => setSortKey('name')}>Name{arrow('name')}</th>
                 <th className="fx-owner" onClick={() => setSortKey('owner')}>Owner{arrow('owner')}</th>
                 {isDrive && <th className="fx-shared">Shared with</th>}
@@ -417,17 +439,11 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
             </thead>
             <tbody>
               {isDrive && !searching && folders.map((f) => (
-                <tr key={`folder-${f.id}`} className="folder-row" onContextMenu={(e) => openMenu(e, 'folder', f)}>
-                  <td className="fx-check" />
+                <tr key={`folder-${f.id}`} className={`folder-row ${selectedFolders.has(f.id) ? 'sel' : ''}`} onContextMenu={(e) => openMenu(e, 'folder', f)}>
+                  <td className="fx-check"><input type="checkbox" checked={selectedFolders.has(f.id)} onChange={() => toggleFolder(f.id)} onClick={(e) => e.stopPropagation()} /></td>
                   <td className="fx-name" onClick={() => openFolder(f.id)}>
                     <span className="file-icon sm">📁</span>
                     <span className="fx-filename">{f.name}</span>
-                    {canManageFolder(f) && (
-                      <span className="folder-row-actions">
-                        <button title="Rename" onClick={(e) => { e.stopPropagation(); renameFolder(f); }}>✎</button>
-                        <button title="Delete" onClick={(e) => { e.stopPropagation(); deleteFolder(f); }}>🗑</button>
-                      </span>
-                    )}
                   </td>
                   <td className="fx-owner"><span className="muted">{f.created_by_name}</span></td>
                   {isDrive && <td className="fx-shared muted">—</td>}
@@ -467,18 +483,13 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
       ) : (
         <div className="files-grid">
           {isDrive && !searching && folders.map((f) => (
-            <div key={`folder-${f.id}`} className="file-card folder-card" onContextMenu={(e) => openMenu(e, 'folder', f)}>
+            <div key={`folder-${f.id}`} className={`file-card folder-card ${selectedFolders.has(f.id) ? 'sel' : ''}`} onContextMenu={(e) => openMenu(e, 'folder', f)}>
+              <input className="file-card-check" type="checkbox" checked={selectedFolders.has(f.id)} onChange={() => toggleFolder(f.id)} />
               <button className="file-card-body" onClick={() => openFolder(f.id)}>
                 <span className="file-card-icon">📁</span>
                 <span className="file-card-name">{f.name}</span>
                 <span className="file-card-owner muted">{f.files + f.subs === 0 ? 'Empty' : `${f.files} file${f.files === 1 ? '' : 's'}`}</span>
               </button>
-              {canManageFolder(f) && (
-                <span className="folder-card-actions">
-                  <button title="Rename" onClick={() => renameFolder(f)}>✎</button>
-                  <button title="Delete" onClick={() => deleteFolder(f)}>🗑</button>
-                </span>
-              )}
             </div>
           ))}
           {sorted.map((f) => (
@@ -494,7 +505,7 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
         </div>
       )}
 
-      <div className="files-foot muted">SELECTED: {selected.size} / {sorted.length}{isDrive && folders.length ? ` · ${folders.length} folder${folders.length === 1 ? '' : 's'}` : ''}</div>
+      <div className="files-foot muted">SELECTED: {totalSelected} / {sorted.length + folders.length}{isDrive && folders.length ? ` · ${folders.length} folder${folders.length === 1 ? '' : 's'}` : ''}</div>
 
       {isDrive && dragging && (
         <div className="files-drop-overlay"><div className="files-drop-inner">⬆<br />Drop files to upload here</div></div>
@@ -502,9 +513,10 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
 
       {preview && <FilePreviewModal file={preview} onClose={() => setPreview(null)} />}
       {details && <FileDetails file={details} onClose={() => setDetails(null)} onOpen={() => { setPreview(details); setDetails(null); }} />}
+      {folderDetails && <FolderDetails folder={folderDetails} onClose={() => setFolderDetails(null)} onOpen={() => { openFolder(folderDetails.id); setFolderDetails(null); }} />}
       {moving && (
         <MoveModal
-          files={moving} currentFolder={folderId}
+          files={moving.files || []} folders={moving.folders || []} currentFolder={folderId}
           onClose={() => setMoving(null)}
           onMoved={() => { setMoving(null); load(query, folderId); }}
         />
@@ -535,9 +547,11 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
             cut: (f) => copyToClipboard([f], 'cut'),
             paste,
             renameFile, deleteFile, renameFolder, deleteFolder,
-            move: (f) => setMoving([f]),
+            move: (f) => setMoving({ files: [f], folders: [] }),
+            moveFolder: (f) => setMoving({ files: [], folders: [f] }),
             tag: (f) => setSharing([f]),
             details: (f) => setDetails(f),
+            folderDetails: (f) => setFolderDetails(f),
             newFolder,
             upload: () => inputRef.current?.click(),
           }}
@@ -576,7 +590,9 @@ function ContextMenu({ menu, user, clipboard, canManageFolder, onClose, actions 
         <>
           <button onClick={run(actions.openFolder, item.id)}>📂 Open</button>
           {clipboard && <button onClick={run(actions.paste)}>📋 Paste here <span className="ctx-kbd">Ctrl+V</span></button>}
+          <button onClick={run(actions.folderDetails, item)}>ℹ Details</button>
           {canManageFolder(item) && <div className="ctx-sep" />}
+          {canManageFolder(item) && <button onClick={run(actions.moveFolder, item)}>📂 Move to…</button>}
           {canManageFolder(item) && <button onClick={run(actions.renameFolder, item)}>✎ Rename</button>}
           {canManageFolder(item) && <button className="danger" onClick={run(actions.deleteFolder, item)}>🗑 Delete</button>}
         </>
@@ -665,17 +681,22 @@ function ShareModal({ files, team, onClose, onSaved }) {
 
 // Pick a destination folder for the selected files. Loads the flat folder list
 // and lets the user choose the root or any folder.
-function MoveModal({ files, currentFolder, onClose, onMoved }) {
+function MoveModal({ files = [], folders: moveFolders = [], currentFolder, onClose, onMoved }) {
   const [folders, setFolders] = useState([]);
   const [target, setTarget] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => { api('/drive/folders').then((d) => setFolders(d.folders || [])).catch(() => {}); }, []);
 
+  const movingIds = new Set(moveFolders.map((f) => f.id));
+  const count = files.length + moveFolders.length;
+  const label = [files.length && `${files.length} file${files.length === 1 ? '' : 's'}`, moveFolders.length && `${moveFolders.length} folder${moveFolders.length === 1 ? '' : 's'}`].filter(Boolean).join(' + ');
+
   async function move() {
     setBusy(true);
-    const folder_id = target === '' ? null : Number(target);
-    for (const f of files) { try { await api(`/drive/${f.id}`, { method: 'PATCH', body: { folder_id } }); } catch { /* skip */ } }
+    const dest = target === '' ? null : Number(target);
+    for (const f of files) { try { await api(`/drive/${f.id}`, { method: 'PATCH', body: { folder_id: dest } }); } catch { /* skip */ } }
+    for (const f of moveFolders) { try { await api(`/drive/folders/${f.id}`, { method: 'PATCH', body: { parent_id: dest } }); } catch { /* skip */ } }
     setBusy(false);
     onMoved();
   }
@@ -683,17 +704,43 @@ function MoveModal({ files, currentFolder, onClose, onMoved }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 380 }}>
-        <div className="modal-header"><strong>Move {files.length} file{files.length === 1 ? '' : 's'}</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="modal-header"><strong>Move {label || `${count} item${count === 1 ? '' : 's'}`}</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div style={{ padding: '4px 4px 12px' }}>
           <label className="muted" style={{ display: 'block', marginBottom: 6, fontSize: 13 }}>Destination folder</label>
           <select value={target} onChange={(e) => setTarget(e.target.value)} style={{ width: '100%' }}>
             <option value="">💾 Drive (root)</option>
-            {folders.map((f) => <option key={f.id} value={f.id} disabled={f.id === currentFolder}>📁 {f.name}{f.id === currentFolder ? ' (current)' : ''}</option>)}
+            {folders.filter((f) => !movingIds.has(f.id)).map((f) => (
+              <option key={f.id} value={f.id} disabled={f.id === currentFolder}>📁 {f.name}{f.id === currentFolder ? ' (current)' : ''}</option>
+            ))}
           </select>
         </div>
         <div className="editor-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" disabled={busy} onClick={move}>{busy ? 'Moving…' : 'Move here'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FolderDetails({ folder, onClose, onOpen }) {
+  const inside = (folder.subs || 0) + (folder.files || 0);
+  const rows = [
+    ['Name', folder.name],
+    ['Type', 'Folder'],
+    ['Contents', inside === 0 ? 'Empty' : `${folder.subs || 0} folder${folder.subs === 1 ? '' : 's'}, ${folder.files || 0} file${folder.files === 1 ? '' : 's'}`],
+    ['Created by', folder.created_by_name || '—'],
+    ['Created on', formatDateTime(folder.created_at)],
+  ];
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal file-details" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header"><strong>Folder details</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <dl className="file-details-list">
+          {rows.map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v}</dd></React.Fragment>)}
+        </dl>
+        <div className="editor-actions">
+          <button className="btn btn-primary" onClick={onOpen}>Open</button>
         </div>
       </div>
     </div>
