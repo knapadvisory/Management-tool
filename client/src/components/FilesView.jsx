@@ -379,9 +379,9 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
             <>
               {clipboard && <button className="btn files-paste-btn" disabled={uploading} onClick={paste} title="Paste here (Ctrl+V)">📋 Paste {clipboard.files.length} ({clipboard.mode})</button>}
               <button className="btn files-newfolder-btn" onClick={newFolder}>📁 New folder</button>
-              <button className="btn files-newfolder-btn" disabled={uploading} onClick={() => folderInputRef.current?.click()} title="Upload a whole folder">📂 Folder</button>
+              <button className="btn files-newfolder-btn" disabled={uploading} onClick={() => folderInputRef.current?.click()} title="Upload a whole folder">📂 Upload Folder</button>
               <button className="btn btn-primary files-upload-btn" disabled={uploading} onClick={() => inputRef.current?.click()}>
-                {uploading ? 'Uploading…' : '⬆ Upload'}
+                {uploading ? 'Uploading…' : '⬆ Upload Files'}
               </button>
               <input ref={inputRef} type="file" multiple hidden onChange={(e) => { chooseFiles(e.target.files); e.target.value = ''; }} />
               <input ref={folderInputRef} type="file" webkitdirectory="" directory="" multiple hidden onChange={(e) => { uploadFolderInput(e.target.files); e.target.value = ''; }} />
