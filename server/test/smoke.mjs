@@ -590,9 +590,7 @@ async function main() {
   const rootView = await req('GET', '/api/drive', { token: b });
   check('root view hides files nested in a folder', !rootView.data.files.some((f) => f.id === nda.id));
   check('root view lists the top folder', rootView.data.folders.some((f) => f.id === contracts.id && f.files === 1));
-  // A non-empty folder can't be deleted; a non-owner member can't manage it.
-  const delNonEmpty = await req('DELETE', `/api/drive/folders/${contracts.id}`, { token: a });
-  check('cannot delete a non-empty folder', delNonEmpty.status === 409);
+  // A non-owner member can't delete someone else's folder.
   const bobDelFolder = await req('DELETE', `/api/drive/folders/${sub2026.id}`, { token: b });
   check('non-owner member cannot delete a folder', bobDelFolder.status === 403);
   // Move the nested file back to the root; a non-owner can't move it.
@@ -602,7 +600,24 @@ async function main() {
   check('owner can move a file to the root', move.status === 200);
   const rootAfterMove = await req('GET', '/api/drive', { token: a });
   check('moved file now shows at the root', rootAfterMove.data.files.some((f) => f.id === nda.id));
-  // Now the subfolder is empty and its creator (admin) can delete it.
+
+  // Deleting a folder removes it and everything inside (files archived, not lost).
+  const bin = await req('POST', '/api/drive/folders', { token: a, body: { name: 'Bin' } });
+  const binSub = await req('POST', '/api/drive/folders', { token: a, body: { name: 'BinSub', parent_id: bin.data.folder.id } });
+  const bfd = new FormData();
+  bfd.append('files', new Blob(['x'], { type: 'text/plain' }), 'inside.txt');
+  bfd.append('folder_id', String(binSub.data.folder.id));
+  const binFileUp = await (await fetch(BASE + '/api/drive', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: bfd })).json();
+  const binFile = binFileUp.files?.[0];
+  const delFull = await req('DELETE', `/api/drive/folders/${bin.data.folder.id}`, { token: a });
+  check('a non-empty folder can be deleted', delFull.status === 200);
+  const afterFullDel = await req('GET', '/api/drive', { token: a });
+  check('deleted folder is gone from the Drive', !afterFullDel.data.folders.some((f) => f.id === bin.data.folder.id));
+  const subGone = await req('GET', `/api/drive?folder=${binSub.data.folder.id}`, { token: a });
+  check('nested subfolder is gone too', subGone.status === 404);
+  const binArch = await req('GET', '/api/admin/files/archived', { token: a });
+  check('files from a deleted folder are kept in the archive', binArch.data.files.some((f) => f.id === binFile.id));
+  // Now delete the (empty) subfolder from earlier.
   const delSub = await req('DELETE', `/api/drive/folders/${sub2026.id}`, { token: a });
   check('empty folder can be deleted', delSub.status === 200);
   await req('DELETE', `/api/drive/${nda.id}`, { token: a }); // tidy up

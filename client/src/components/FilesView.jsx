@@ -190,7 +190,11 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
     catch (err) { alert(err.message); }
   }
   async function deleteFolder(f) {
-    if (!confirm(`Delete folder “${f.name}”? It must be empty.`)) return;
+    const inside = (f.files || 0) + (f.subs || 0);
+    const msg = inside
+      ? `Delete folder “${f.name}” and everything inside it (${f.subs ? `${f.subs} folder${f.subs === 1 ? '' : 's'}` : ''}${f.subs && f.files ? ', ' : ''}${f.files ? `${f.files} file${f.files === 1 ? '' : 's'}` : ''})? Files can be restored from the admin Archive.`
+      : `Delete folder “${f.name}”?`;
+    if (!confirm(msg)) return;
     try { await api(`/drive/folders/${f.id}`, { method: 'DELETE' }); await load(query, folderId); }
     catch (err) { alert(err.message); }
   }

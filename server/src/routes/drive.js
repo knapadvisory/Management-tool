@@ -115,6 +115,16 @@ function folderFileCount(id) {
   return { files, subs };
 }
 
+// A folder and all of its nested subfolders (ids), so it can be deleted whole.
+function folderAndDescendants(id) {
+  const ids = [id];
+  const childrenOf = db.prepare('SELECT id FROM drive_folders WHERE parent_id = ?');
+  for (let i = 0; i < ids.length; i++) {
+    for (const c of childrenOf.all(ids[i])) ids.push(c.id);
+  }
+  return ids;
+}
+
 // List a folder's contents (subfolders + files). With ?q= set, search files
 // across the whole Drive instead (folders are omitted from a search result).
 router.get('/', (req, res) => {
@@ -189,16 +199,28 @@ router.patch('/folders/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// Delete a folder — only when it is empty, and only its creator or an admin.
+// Delete a folder and everything inside it (subfolders + files). Only the
+// folder's creator or an admin may do so. Files are archived (recoverable from
+// the admin Archive), not destroyed; folder rows are removed.
 router.delete('/folders/:id', (req, res) => {
   const folder = db.prepare('SELECT * FROM drive_folders WHERE id = ?').get(req.params.id);
   if (!folder) return res.status(404).json({ error: 'Folder not found' });
   if (folder.created_by !== req.user.id && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Only the folder’s creator or an admin can delete it' });
   }
-  const { files, subs } = folderFileCount(folder.id);
-  if (files > 0 || subs > 0) return res.status(409).json({ error: 'Folder isn’t empty — remove its contents first' });
-  db.prepare('DELETE FROM drive_folders WHERE id = ?').run(folder.id);
+  const ids = folderAndDescendants(folder.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const purge = db.transaction(() => {
+    // Archive still-live files in these folders (kept for the admin Archive)...
+    db.prepare(`UPDATE attachments SET archived_at = datetime('now'), archived_by = ?
+                WHERE is_drive = 1 AND archived_at IS NULL AND drive_folder_id IN (${placeholders})`)
+      .run(req.user.id, ...ids);
+    // ...and detach every file (archived or not) so the folder rows can go.
+    db.prepare(`UPDATE attachments SET drive_folder_id = NULL WHERE drive_folder_id IN (${placeholders})`).run(...ids);
+    // Remove the folder (parent_id ON DELETE CASCADE clears the subfolders).
+    db.prepare('DELETE FROM drive_folders WHERE id = ?').run(folder.id);
+  });
+  purge();
   req.app.get('io')?.emit('drive:changed');
   res.json({ ok: true });
 });
