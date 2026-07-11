@@ -15,7 +15,7 @@ import ActivityView from './components/ActivityView.jsx';
 import FilesView from './components/FilesView.jsx';
 import CallManager from './components/CallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
-import ProfileModal from './components/ProfileModal.jsx';
+import SettingsModal from './components/SettingsModal.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import { applyTheme, saveLocalTheme } from './theme.js';
 
@@ -36,7 +36,7 @@ export default function App() {
   const [taskToOpen, setTaskToOpen] = useState(null);
   const [signupCodeRequired, setSignupCodeRequired] = useState(false);
   const [avatarColors, setAvatarColors] = useState([]);
-  const [profileOpen, setProfileOpen] = useState(false);
+  const [settings, setSettings] = useState(null); // null or { section }
   // Always-current pointer to selectNotification, so desktop-notification
   // clicks navigate using the latest state (channels, etc.).
   const selectNotifRef = useRef(null);
@@ -223,7 +223,7 @@ export default function App() {
           setView({ type: 'channel', channel });
         }}
         onLogout={logout}
-        onEditProfile={() => setProfileOpen(true)}
+        onOpenSettings={(section) => setSettings({ section: section || 'profile' })}
         darkMode={user.theme === 'dark'}
         onToggleTheme={toggleDarkMode}
         onOpenSearch={() => setSearchOpen(true)}
@@ -282,10 +282,10 @@ export default function App() {
           }}
         />
       )}
-      {profileOpen && (
-        <ProfileModal
-          user={user} colors={avatarColors}
-          onClose={() => setProfileOpen(false)}
+      {settings && (
+        <SettingsModal
+          user={user} colors={avatarColors} initialSection={settings.section}
+          onClose={() => setSettings(null)}
           onSaved={(u) => setUser(u)}
         />
       )}

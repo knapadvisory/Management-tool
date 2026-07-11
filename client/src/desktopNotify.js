@@ -7,6 +7,16 @@ export function notificationsSupported() {
   return typeof window !== 'undefined' && 'Notification' in window;
 }
 
+// User preference (client-side) to switch desktop notifications on/off even
+// when the browser permission is granted.
+const ENABLED_KEY = 'teamhub_desktop_notify';
+export function desktopEnabled() {
+  return localStorage.getItem(ENABLED_KEY) !== 'off';
+}
+export function setDesktopEnabled(on) {
+  localStorage.setItem(ENABLED_KEY, on ? 'on' : 'off');
+}
+
 export function notificationPermission() {
   return notificationsSupported() ? Notification.permission : 'denied';
 }
@@ -27,6 +37,7 @@ export async function requestNotificationPermission() {
 // hidden (in-app toasts cover the foreground). Pass force:true to always show.
 export function showDesktopNotification(title, { body, tag, onClick, force = false } = {}) {
   if (!notificationsSupported() || Notification.permission !== 'granted') return;
+  if (!desktopEnabled()) return;
   if (!force && document.visibilityState === 'visible') return;
   try {
     const n = new Notification(title, { body, tag });

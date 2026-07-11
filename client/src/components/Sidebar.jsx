@@ -1,21 +1,15 @@
 import React, { useState } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
-import { notificationsSupported, notificationPermission, requestNotificationPermission } from '../desktopNotify.js';
 
 export default function Sidebar({
   user, channels, joinable, users, onlineIds, view,
-  onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onEditProfile, darkMode, onToggleTheme, onOpenSearch,
+  onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onOpenSettings, darkMode, onToggleTheme, onOpenSearch,
   notifications = [], unreadCount = 0, onSelectNotification, onMarkAllRead,
 }) {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [error, setError] = useState(null);
-  const [notifPerm, setNotifPerm] = useState(notificationPermission());
-
-  async function enableDesktopAlerts() {
-    setNotifPerm(await requestNotificationPermission());
-  }
 
   const regularChannels = channels.filter((c) => !c.is_dm);
   const dms = channels.filter((c) => c.is_dm);
@@ -42,17 +36,15 @@ export default function Sidebar({
         <div className="header-actions">
           <button className="icon-btn" title="Search messages" onClick={onOpenSearch}>🔍</button>
           <button className="icon-btn" title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={onToggleTheme}>{darkMode ? '☀️' : '🌙'}</button>
-          {notificationsSupported() && notifPerm === 'default' && (
-            <button className="icon-btn" title="Enable desktop notifications" onClick={enableDesktopAlerts}>🖥️</button>
-          )}
+          <button className="icon-btn" title="Settings" onClick={() => onOpenSettings('appearance')}>⚙️</button>
           <button className="icon-btn" title="Sign out" onClick={onLogout}>⏻</button>
         </div>
       </div>
 
-      <button className="sidebar-me" onClick={onEditProfile} title="Edit your profile">
+      <button className="sidebar-me" onClick={() => onOpenSettings('profile')} title="Your profile & settings">
         <Avatar user={user} size={28} online />
         <span className="me-name">{user.name}</span>
-        <span className="me-edit">✎</span>
+        <span className="me-edit">⚙</span>
       </button>
 
       <nav className="sidebar-nav">

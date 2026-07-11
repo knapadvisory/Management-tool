@@ -1205,3 +1205,39 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .mode-btn { flex: 1; padding: 8px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
 .mode-btn:hover { background: var(--surface-2); }
 .mode-btn.sel { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+/* ---------- Settings (Preferences) modal ---------- */
+.settings-modal { width: min(860px, 96vw); max-width: 860px; height: min(620px, 88vh); display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.settings-modal .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.settings-body { display: flex; flex: 1; min-height: 0; }
+.settings-nav { width: 210px; flex: 0 0 210px; border-right: 1px solid var(--border); background: var(--surface-2); padding: 10px; overflow-y: auto; }
+.settings-nav-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; background: none; border: none; padding: 9px 11px; border-radius: 8px; font-size: 14px; color: var(--text); cursor: pointer; }
+.settings-nav-item:hover { background: var(--surface); }
+.settings-nav-item.active { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.settings-nav-icon { width: 18px; text-align: center; }
+.settings-panel { flex: 1; min-width: 0; overflow-y: auto; padding: 22px 26px; }
+.settings-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.settings-hint { font-size: 13px; margin-bottom: 14px; }
+
+/* Theme cards (appearance) */
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 4px; }
+.theme-card { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--border); background: var(--surface); border-radius: 10px; cursor: pointer; color: var(--text); }
+.theme-card:hover { border-color: var(--accent); }
+.theme-card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.theme-swatch { width: 34px; height: 34px; border-radius: 8px; flex: 0 0 auto; display: flex; align-items: flex-end; justify-content: flex-end; padding: 4px; }
+.theme-swatch span { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.theme-name { font-size: 13px; font-weight: 600; }
+
+/* Toggle rows */
+.settings-toggle { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.settings-toggle.disabled { opacity: .6; cursor: not-allowed; }
+.settings-toggle input { margin-top: 3px; width: 16px; height: 16px; }
+.settings-toggle-main { display: flex; flex-direction: column; gap: 2px; }
+.settings-toggle-label { font-size: 14px; font-weight: 600; }
+.settings-toggle-hint { font-size: 12px; }
+
+@media (max-width: 640px) {
+  .settings-body { flex-direction: column; }
+  .settings-nav { width: 100%; flex-basis: auto; display: flex; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); }
+  .settings-nav-item { white-space: nowrap; }
+}
