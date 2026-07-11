@@ -40,7 +40,7 @@ function timeAgo(iso) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-export default function DashboardView({ user, onOpenTask, onOpenTasks }) {
+export default function DashboardView({ user, onOpenTask, onOpenTasks, onOpenActivity }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -151,7 +151,7 @@ export default function DashboardView({ user, onOpenTask, onOpenTasks }) {
             <div className="dash-block-head"><h2>Recent activity</h2></div>
             <div className="dash-activity">
               {data.activity.length === 0 && <p className="muted" style={{ padding: 8 }}>No recent activity.</p>}
-              {data.activity.map((a) => (
+              {data.activity.slice(0, 5).map((a) => (
                 <button key={a.id} className="dash-activity-row" onClick={() => onOpenTask(a.task_id)}>
                   <span className="dash-activity-dot" style={{ background: a.user_color }} />
                   <span className="dash-activity-text">
@@ -161,6 +161,9 @@ export default function DashboardView({ user, onOpenTask, onOpenTasks }) {
                 </button>
               ))}
             </div>
+            {data.activity.length > 0 && (
+              <button className="dash-seeall" onClick={onOpenActivity}>See all activity →</button>
+            )}
           </section>
         </aside>
       </div>

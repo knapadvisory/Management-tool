@@ -1,15 +1,18 @@
 // Per-user theming: a light/dark mode plus an accent colour. Applied by
 // toggling data-theme on <html> and overriding the --accent variables.
 
+// Each theme carries an accent (buttons, links, highlights) AND a deep
+// sidebar colour, so picking one recolours the whole app (Slack-style).
 export const ACCENTS = [
-  { name: 'Indigo', accent: '#4f46e5', hover: '#4338ca' },
-  { name: 'Violet', accent: '#7c3aed', hover: '#6d28d9' },
-  { name: 'Aubergine', accent: '#8b34a5', hover: '#722a89' },
-  { name: 'Blue', accent: '#2563eb', hover: '#1d4ed8' },
-  { name: 'Teal', accent: '#0d9488', hover: '#0f766e' },
-  { name: 'Green', accent: '#16a34a', hover: '#15803d' },
-  { name: 'Amber', accent: '#d97706', hover: '#b45309' },
-  { name: 'Rose', accent: '#e11d48', hover: '#be123c' },
+  { name: 'Indigo', accent: '#4f46e5', hover: '#4338ca', sidebar: '#1e1b4b' },
+  { name: 'Violet', accent: '#7c3aed', hover: '#6d28d9', sidebar: '#2e1065' },
+  { name: 'Aubergine', accent: '#a53692', hover: '#8a2a7a', sidebar: '#3f0e40' },
+  { name: 'Blue', accent: '#2563eb', hover: '#1d4ed8', sidebar: '#0f2544' },
+  { name: 'Teal', accent: '#0d9488', hover: '#0f766e', sidebar: '#062f2b' },
+  { name: 'Green', accent: '#16a34a', hover: '#15803d', sidebar: '#08341e' },
+  { name: 'Amber', accent: '#d97706', hover: '#b45309', sidebar: '#3a2408' },
+  { name: 'Rose', accent: '#e11d48', hover: '#be123c', sidebar: '#4a0f22' },
+  { name: 'Slate', accent: '#475569', hover: '#334155', sidebar: '#1a1d29' },
 ];
 
 export const MODES = ['light', 'dark', 'system'];
@@ -33,4 +36,5 @@ export function applyTheme({ mode = 'light', accent } = {}) {
   const a = ACCENTS.find((x) => x.accent.toLowerCase() === String(accent).toLowerCase()) || ACCENTS[0];
   root.style.setProperty('--accent', a.accent);
   root.style.setProperty('--accent-hover', a.hover);
+  root.style.setProperty('--sidebar-bg', a.sidebar);
 }

@@ -238,6 +238,7 @@ export default function App() {
             user={user}
             onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }}
             onOpenTasks={() => setView({ type: 'tasks' })}
+            onOpenActivity={() => setView({ type: 'activity' })}
           />
         )}
         {view?.type === 'channel' && (

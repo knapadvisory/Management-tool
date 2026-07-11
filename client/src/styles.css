@@ -21,11 +21,11 @@
   --success: #16a34a;  --success-soft: #e7f6ec;
   --warning: #d97706;  --warning-soft: #fbf4dc;
 
-  /* Sidebar (dark in the light theme; recolours in dark mode) */
-  --sidebar-bg: #1a1d29;
-  --sidebar-hover: #272b3d;
+  /* Sidebar — deep colour set per-theme by the picker; hover derives from it */
+  --sidebar-bg: #1e1b4b;
+  --sidebar-hover: color-mix(in srgb, var(--sidebar-bg) 82%, #ffffff);
   --sidebar-active: var(--accent);
-  --sidebar-text: #c9cdd8;
+  --sidebar-text: rgba(255, 255, 255, .72);
 }
 
 :root[data-theme="dark"] {
@@ -40,9 +40,6 @@
   --danger: #f87171;   --danger-soft: rgba(248, 113, 113, .16);
   --success: #4ade80;  --success-soft: rgba(74, 222, 128, .16);
   --warning: #fbbf24;  --warning-soft: rgba(251, 191, 36, .16);
-  --sidebar-bg: #12141d;
-  --sidebar-hover: #1e2230;
-  --sidebar-text: #c2c8d4;
 }
 
 body {
@@ -51,7 +48,7 @@ body {
   background: var(--bg);
 }
 
-button { cursor: pointer; font: inherit; }
+button { cursor: pointer; font: inherit; color: inherit; }
 input, select, textarea { font: inherit; background: var(--surface); color: var(--text); border-color: var(--border); }
 input::placeholder, textarea::placeholder { color: var(--muted); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -1182,6 +1179,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .dash-activity-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: 0 0 auto; }
 .dash-activity-text { font-size: 13px; line-height: 1.4; }
 .dash-activity-time { display: block; font-size: 11px; margin-top: 2px; }
+.dash-seeall { width: 100%; margin-top: 8px; padding: 8px; border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; }
+.dash-seeall:hover { background: var(--accent-soft); }
 
 @media (max-width: 900px) {
   .dash { padding: 18px 16px; }
