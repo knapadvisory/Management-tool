@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { getSocket } from '../socket.js';
+import { getPrefs } from '../prefs.js';
 import Avatar from './Avatar.jsx';
 import Message from './Message.jsx';
 import MessageComposer from './MessageComposer.jsx';
@@ -131,7 +132,7 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
           <div ref={bottomRef} />
         </div>
 
-        <div className="typing-indicator">{typingUser ? `${typingUser} is typing…` : ' '}</div>
+        <div className="typing-indicator">{typingUser && getPrefs().showTyping ? `${typingUser} is typing…` : ' '}</div>
 
         {canPost ? (
           <MessageComposer

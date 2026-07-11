@@ -12,6 +12,12 @@ export const ACCENTS = [
   { name: 'Green', accent: '#16a34a', hover: '#15803d', sidebar: '#08341e' },
   { name: 'Amber', accent: '#d97706', hover: '#b45309', sidebar: '#3a2408' },
   { name: 'Rose', accent: '#e11d48', hover: '#be123c', sidebar: '#4a0f22' },
+  { name: 'Clementine', accent: '#e8590c', hover: '#c2410c', sidebar: '#3a1c06' },
+  { name: 'Jade', accent: '#0f9d76', hover: '#0b7a5c', sidebar: '#06342a' },
+  { name: 'Lagoon', accent: '#0e7490', hover: '#155e75', sidebar: '#07293a' },
+  { name: 'Mood Indigo', accent: '#3730a3', hover: '#312e81', sidebar: '#191540' },
+  { name: 'Barbra', accent: '#db2777', hover: '#be185d', sidebar: '#420f2b' },
+  { name: 'Graphite', accent: '#4b5563', hover: '#374151', sidebar: '#171a21' },
   { name: 'Slate', accent: '#475569', hover: '#334155', sidebar: '#1a1d29' },
 ];
 

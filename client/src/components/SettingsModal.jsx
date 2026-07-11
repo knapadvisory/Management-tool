@@ -3,11 +3,15 @@ import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
 import { ACCENTS, applyTheme, saveLocalTheme } from '../theme.js';
 import { notificationsSupported, notificationPermission, requestNotificationPermission, desktopEnabled, setDesktopEnabled } from '../desktopNotify.js';
+import { getPrefs, setPref } from '../prefs.js';
 
 const SECTIONS = [
   { key: 'profile', label: 'Profile', icon: '👤' },
   { key: 'appearance', label: 'Appearance', icon: '🎨' },
   { key: 'notifications', label: 'Notifications', icon: '🔔' },
+  { key: 'messages', label: 'Messages & media', icon: '💬' },
+  { key: 'language', label: 'Language & region', icon: '🌐' },
+  { key: 'accessibility', label: 'Accessibility', icon: '♿' },
   { key: 'account', label: 'Account & password', icon: '🔒' },
 ];
 
@@ -32,6 +36,9 @@ export default function SettingsModal({ user, colors = [], initialSection = 'pro
             {section === 'profile' && <ProfilePanel user={user} colors={colors} onSaved={onSaved} />}
             {section === 'appearance' && <AppearancePanel user={user} onSaved={onSaved} />}
             {section === 'notifications' && <NotificationsPanel />}
+            {section === 'messages' && <MessagesPanel />}
+            {section === 'language' && <LanguagePanel />}
+            {section === 'accessibility' && <AccessibilityPanel />}
             {section === 'account' && <AccountPanel user={user} />}
           </div>
         </div>
@@ -157,6 +164,66 @@ function NotificationsPanel() {
           <p className="muted settings-hint" style={{ marginTop: 14 }}>Browser permission: <strong>{perm}</strong></p>
         </>
       )}
+    </div>
+  );
+}
+
+// A local-preference toggle backed by prefs.js (re-renders this panel on change).
+function usePref(key) {
+  const [v, setV] = useState(getPrefs()[key]);
+  return [v, (nv) => { setPref(key, nv); setV(nv); }];
+}
+
+function MessagesPanel() {
+  const [density, setDensity] = usePref('density');
+  const [clock24, setClock24] = usePref('clock24');
+  const [showTyping, setShowTyping] = usePref('showTyping');
+  return (
+    <div>
+      <h3 className="settings-title">Messages &amp; media</h3>
+      <label className="profile-label">Message density</label>
+      <div className="mode-toggle" style={{ marginBottom: 16 }}>
+        <button className={`mode-btn ${density === 'comfortable' ? 'sel' : ''}`} onClick={() => setDensity('comfortable')}>Comfortable</button>
+        <button className={`mode-btn ${density === 'compact' ? 'sel' : ''}`} onClick={() => setDensity('compact')}>Compact</button>
+      </div>
+      <div className="settings-toggles">
+        <Toggle checked={clock24} onChange={setClock24} label="24-hour clock" hint="Show message and task times as 14:30 instead of 2:30 PM." />
+        <Toggle checked={showTyping} onChange={setShowTyping} label="Show typing indicators" hint="Display “… is typing” under a conversation." />
+      </div>
+    </div>
+  );
+}
+
+function LanguagePanel() {
+  const [spellcheck, setSpellcheck] = usePref('spellcheck');
+  const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'your device setting'; } })();
+  return (
+    <div>
+      <h3 className="settings-title">Language &amp; region</h3>
+      <label className="profile-label">Language</label>
+      <select className="profile-input" disabled value="en"><option value="en">English</option></select>
+      <p className="muted settings-hint">More languages aren’t available yet.</p>
+      <label className="profile-label" style={{ marginTop: 12 }}>Time zone</label>
+      <input className="profile-input" value={tz} disabled />
+      <p className="muted settings-hint">Times are shown in your device’s time zone.</p>
+      <hr className="profile-sep" />
+      <div className="settings-toggles">
+        <Toggle checked={spellcheck} onChange={setSpellcheck} label="Spellcheck" hint="Check spelling as you type in the message box." />
+      </div>
+    </div>
+  );
+}
+
+function AccessibilityPanel() {
+  const [reduceMotion, setReduceMotion] = usePref('reduceMotion');
+  const [underlineLinks, setUnderlineLinks] = usePref('underlineLinks');
+  return (
+    <div>
+      <h3 className="settings-title">Accessibility</h3>
+      <div className="settings-toggles">
+        <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint="Turn off animations and transitions across the app." />
+        <Toggle checked={underlineLinks} onChange={setUnderlineLinks} label="Underline links" hint="Always underline links in messages, not just on hover." />
+      </div>
     </div>
   );
 }

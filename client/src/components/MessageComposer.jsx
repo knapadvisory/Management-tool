@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { uploadFiles } from '../api.js';
 import { getSocket } from '../socket.js';
+import { getPrefs } from '../prefs.js';
 import { formatBytes } from '../format.js';
 import EmojiPicker from './EmojiPicker.jsx';
 
@@ -230,6 +231,7 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
             ref={editorRef}
             className="composer-editor"
             contentEditable
+            spellCheck={getPrefs().spellcheck}
             role="textbox"
             aria-multiline="true"
             onInput={syncState}

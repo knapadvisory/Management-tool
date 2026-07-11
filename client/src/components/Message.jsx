@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { api, fileUrl } from '../api.js';
 import { renderMarkdown, formatBytes } from '../format.js';
+import { clock24 } from '../prefs.js';
 import Avatar from './Avatar.jsx';
 import ForwardModal from './ForwardModal.jsx';
 import TaskFromMessageModal from './TaskFromMessageModal.jsx';
@@ -9,7 +10,7 @@ import EmojiPicker from './EmojiPicker.jsx';
 
 function formatTime(iso) {
   const d = new Date(iso.replace(' ', 'T') + 'Z');
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !clock24() });
 }
 
 function AttachmentView({ att, onOpen }) {
