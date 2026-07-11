@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 
 import db from './db.js';
-import { register, login, signToken, requireAuth, requireAdmin, publicUser, signupCodeRequired } from './auth.js';
+import { register, login, signToken, requireAuth, requireAdmin, publicUser, signupCodeRequired, updateOwnProfile, changeOwnPassword, AVATAR_COLORS } from './auth.js';
 import channelsRouter from './routes/channels.js';
 import collabsRouter from './routes/collabs.js';
 import adminRouter from './routes/admin.js';
@@ -34,7 +34,7 @@ app.use(express.json());
 
 // Public config the login screen reads before anyone is authenticated.
 app.get('/api/config', (req, res) => {
-  res.json({ signup_code_required: signupCodeRequired() });
+  res.json({ signup_code_required: signupCodeRequired(), avatar_colors: AVATAR_COLORS });
 });
 
 // --- Auth ---
@@ -59,6 +59,27 @@ app.post('/api/auth/login', (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user) });
+});
+
+// Self-service profile: update your own name / title / avatar colour.
+app.patch('/api/auth/me', requireAuth, (req, res) => {
+  try {
+    const updated = updateOwnProfile(req.user.id, req.body || {});
+    io.emit('directory:changed'); // let teammates see the new name/colour
+    res.json({ user: publicUser(updated) });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
+// Self-service password change (verifies the current password).
+app.post('/api/auth/password', requireAuth, (req, res) => {
+  try {
+    changeOwnPassword(req.user.id, req.body?.current_password, req.body?.new_password);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
 });
 
 // --- Directory (active teammates only) ---

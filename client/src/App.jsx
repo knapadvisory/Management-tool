@@ -15,6 +15,7 @@ import ActivityView from './components/ActivityView.jsx';
 import FilesView from './components/FilesView.jsx';
 import CallManager from './components/CallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
+import ProfileModal from './components/ProfileModal.jsx';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -32,6 +33,8 @@ export default function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [taskToOpen, setTaskToOpen] = useState(null);
   const [signupCodeRequired, setSignupCodeRequired] = useState(false);
+  const [avatarColors, setAvatarColors] = useState([]);
+  const [profileOpen, setProfileOpen] = useState(false);
   // Always-current pointer to selectNotification, so desktop-notification
   // clicks navigate using the latest state (channels, etc.).
   const selectNotifRef = useRef(null);
@@ -67,7 +70,7 @@ export default function App() {
 
   // Restore session on load, and read public config (for the invite panel).
   useEffect(() => {
-    api('/config').then((c) => setSignupCodeRequired(!!c.signup_code_required)).catch(() => {});
+    api('/config').then((c) => { setSignupCodeRequired(!!c.signup_code_required); setAvatarColors(c.avatar_colors || []); }).catch(() => {});
     if (!getToken()) return;
     api('/auth/me')
       .then((d) => setUser(d.user))
@@ -204,6 +207,7 @@ export default function App() {
           setView({ type: 'channel', channel });
         }}
         onLogout={logout}
+        onEditProfile={() => setProfileOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
         notifications={notifications}
         unreadCount={unreadCount}
@@ -250,6 +254,13 @@ export default function App() {
             if (ch) setView({ type: 'channel', channel: ch });
             setSearchOpen(false);
           }}
+        />
+      )}
+      {profileOpen && (
+        <ProfileModal
+          user={user} colors={avatarColors}
+          onClose={() => setProfileOpen(false)}
+          onSaved={(u) => setUser(u)}
         />
       )}
       {toast && <div className="toast">{toast}</div>}

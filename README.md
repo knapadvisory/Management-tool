@@ -44,6 +44,7 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 - Watchers are notified on every meaningful change — assignment, stage moves, edits (title/priority/due date), notes, chat, and deletion
 
 **👑 Organisation & roles**
+- **Your profile** — click your name in the sidebar to edit your own display name, title and avatar colour, and to change your own password (verifying the current one) — no admin needed
 - The **first person to register** the workspace becomes the **super admin**
 - An **Admin** panel (super-admin only) to run the team: create teammates directly, promote/demote between Admin and Member, reset passwords, and **deactivate** (revoke access — reversible, keeps all their data) or reactivate accounts
 - **Task privacy** — regular members see only the tasks they created, are assigned, or watch; **super admins see every task** for supervision

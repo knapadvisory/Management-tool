@@ -80,6 +80,25 @@ async function main() {
   const b = bob.data.token;
   const bobId = bob.data.user.id;
 
+  console.log('Self-service profile');
+  const cfg = await req('GET', '/api/config');
+  check('config exposes the avatar palette', Array.isArray(cfg.data.avatar_colors) && cfg.data.avatar_colors.length > 0);
+  const newColor = cfg.data.avatar_colors[1];
+  const prof = await req('PATCH', '/api/auth/me', { token: b, body: { name: 'Bobby', title: 'Analyst', avatar_color: newColor } });
+  check('user can update their own name/title/colour', prof.status === 200 && prof.data.user.name === 'Bobby' && prof.data.user.title === 'Analyst' && prof.data.user.avatar_color === newColor);
+  const badColor = await req('PATCH', '/api/auth/me', { token: b, body: { avatar_color: '#123456' } });
+  check('an off-palette colour is rejected', badColor.status === 400);
+  const wrongPw = await req('POST', '/api/auth/password', { token: b, body: { current_password: 'nope', new_password: 'newsecret1' } });
+  check('password change needs the correct current password', wrongPw.status === 403);
+  const shortPw = await req('POST', '/api/auth/password', { token: b, body: { current_password: 'secret123', new_password: '123' } });
+  check('a too-short new password is rejected', shortPw.status === 400);
+  const okPw = await req('POST', '/api/auth/password', { token: b, body: { current_password: 'secret123', new_password: 'newsecret1' } });
+  check('user can change their own password', okPw.status === 200);
+  const reLogin = await req('POST', '/api/auth/login', { body: { email: 'bob@smoke.test', password: 'newsecret1' } });
+  check('the new password works at login', reLogin.status === 200 && !!reLogin.data.token);
+  await req('POST', '/api/auth/password', { token: b, body: { current_password: 'newsecret1', new_password: 'secret123' } }); // restore
+  await req('PATCH', '/api/auth/me', { token: b, body: { name: 'Bob' } }); // restore name
+
   console.log('Channels & DMs');
   const chans = await req('GET', '/api/channels', { token: a });
   check('auto-joined #general', chans.data.channels.some((c) => c.name === 'general'));

@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import db from './db.js';
 
 export const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
-const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3aed', '#f97316', '#0ea5e9', '#db2777'];
+export const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3aed', '#f97316', '#0ea5e9', '#db2777'];
 
 export function publicUser(u) {
   if (!u) return null;
@@ -68,6 +68,35 @@ export function register({ name, email, password, code }) {
     db.prepare('INSERT OR IGNORE INTO channel_members (channel_id, user_id) VALUES (?, ?)').run(general.id, user.id);
   }
   return user;
+}
+
+// Self-service profile edit: a user updates their own name, title and avatar
+// colour. Only the provided fields change.
+export function updateOwnProfile(userId, { name, title, avatar_color }) {
+  const sets = [], vals = [];
+  if (name !== undefined) {
+    if (!String(name).trim()) throw Object.assign(new Error('Name is required'), { status: 400 });
+    sets.push('name = ?'); vals.push(String(name).trim());
+  }
+  if (title !== undefined) { sets.push('title = ?'); vals.push(String(title).trim() || null); }
+  if (avatar_color !== undefined) {
+    if (!AVATAR_COLORS.includes(avatar_color)) throw Object.assign(new Error('Invalid avatar colour'), { status: 400 });
+    sets.push('avatar_color = ?'); vals.push(avatar_color);
+  }
+  if (sets.length) db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals, userId);
+  return db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+}
+
+// Self-service password change: verify the current password before setting a new one.
+export function changeOwnPassword(userId, current, next) {
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!u || !bcrypt.compareSync(current || '', u.password_hash)) {
+    throw Object.assign(new Error('Your current password is incorrect'), { status: 403 });
+  }
+  if (!next || next.length < 6) {
+    throw Object.assign(new Error('New password must be at least 6 characters'), { status: 400 });
+  }
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(next, 10), userId);
 }
 
 export function login({ email, password }) {

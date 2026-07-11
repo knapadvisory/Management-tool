@@ -5,7 +5,7 @@ import { notificationsSupported, notificationPermission, requestNotificationPerm
 
 export default function Sidebar({
   user, channels, joinable, users, onlineIds, view,
-  onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onOpenSearch,
+  onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onEditProfile, onOpenSearch,
   notifications = [], unreadCount = 0, onSelectNotification, onMarkAllRead,
 }) {
   const [showCreate, setShowCreate] = useState(false);
@@ -48,10 +48,11 @@ export default function Sidebar({
         </div>
       </div>
 
-      <div className="sidebar-me">
+      <button className="sidebar-me" onClick={onEditProfile} title="Edit your profile">
         <Avatar user={user} size={28} online />
         <span className="me-name">{user.name}</span>
-      </div>
+        <span className="me-edit">✎</span>
+      </button>
 
       <nav className="sidebar-nav">
         <button

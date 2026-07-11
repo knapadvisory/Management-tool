@@ -91,8 +91,24 @@ input, select, textarea { font: inherit; }
   padding: 14px 16px; border-bottom: 1px solid #2c3040;
 }
 .logo { font-weight: 800; font-size: 18px; color: #fff; }
-.sidebar-me { display: flex; align-items: center; gap: 8px; padding: 10px 16px; }
+.sidebar-me { display: flex; align-items: center; gap: 8px; padding: 10px 16px; width: 100%; background: none; border: none; cursor: pointer; text-align: left; border-radius: 8px; }
+.sidebar-me:hover { background: rgba(255,255,255,.08); }
 .me-name { font-weight: 600; color: #fff; font-size: 14px; }
+.me-edit { margin-left: auto; color: rgba(255,255,255,.6); font-size: 13px; }
+.sidebar-me:hover .me-edit { color: #fff; }
+
+/* Profile modal (self-service) */
+.profile-modal { max-width: 440px; }
+.profile-head { display: flex; align-items: center; gap: 14px; padding: 6px 2px 14px; }
+.profile-head-name { font-size: 17px; font-weight: 700; }
+.profile-label { display: block; font-size: 13px; color: var(--muted); margin: 10px 2px 4px; }
+.profile-input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
+.profile-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.profile-swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; color: #fff; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.profile-swatch.sel { border-color: var(--text); box-shadow: 0 0 0 2px #fff inset; }
+.profile-sep { border: none; border-top: 1px solid var(--border); margin: 18px 0 12px; }
+.profile-section-title { font-weight: 600; margin: 0 2px 4px; }
+.form-ok { color: var(--accent); font-size: 13px; }
 .sidebar-nav { padding: 6px 8px; border-bottom: 1px solid #2c3040; }
 .sidebar-section { padding: 10px 8px 0; }
 .section-title {
