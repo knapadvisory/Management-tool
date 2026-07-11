@@ -16,6 +16,7 @@ import FilesView from './components/FilesView.jsx';
 import CallManager from './components/CallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
 import ProfileModal from './components/ProfileModal.jsx';
+import DashboardView from './components/DashboardView.jsx';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -106,10 +107,8 @@ export default function App() {
     refreshUsers();
     refreshNotifications();
     refreshCollabs();
-    refreshChannels().then((d) => {
-      const general = d.channels.find((c) => c.name === 'general' && !c.is_dm) || d.channels[0];
-      setView((v) => v || (general ? { type: 'channel', channel: general } : { type: 'tasks' }));
-    });
+    setView((v) => v || { type: 'dashboard' });
+    refreshChannels();
 
     return () => disconnectSocket();
   }, [user, refreshChannels, refreshUsers, refreshNotifications, refreshCollabs, showToast]);
@@ -215,6 +214,13 @@ export default function App() {
         onMarkAllRead={markAllRead}
       />
       <main className="main">
+        {view?.type === 'dashboard' && (
+          <DashboardView
+            user={user}
+            onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }}
+            onOpenTasks={() => setView({ type: 'tasks' })}
+          />
+        )}
         {view?.type === 'channel' && (
           <ChatView key={view.channel.id} channel={view.channel} user={user} users={users} onlineIds={onlineIds} />
         )}

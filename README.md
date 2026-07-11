@@ -4,6 +4,10 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 
 ## Features
 
+**📊 Dashboard (home)**
+- A role-aware home screen (the default landing view). **Members** see only their own work: **Urgent tasks**, **All my tasks** (each showing who allotted it), upcoming deadlines and their recent activity. **Admins** additionally see the whole firm: a task-board summary, **team workload** (open tasks per teammate) and firm-wide recent activity
+- An **Upcoming deadlines** strip with colour-coded T-minus badges; click any card or task to jump straight to it
+
 **💬 Messaging (Slack-style)**
 - A **Messenger** view (Bitrix-style) — a single screen listing every conversation (channels + direct messages) with last-message previews and timestamps on the left, and the open chat on the right; start a new chat with any teammate from the same list
 - **Collabs** — private group spaces for a focused engagement, each with an **owner and moderators** and configurable **access permissions**: who can invite members, who can post messages, and whether new members can see earlier history. Create one from the Collabs tab, manage it from the Access-permissions panel

@@ -571,6 +571,17 @@ async function main() {
   const afterPurge = await req('GET', '/api/files?q=spec', { token: a });
   check('permanently deleted file is gone', !afterPurge.data.files.some((f) => f.id === specFile.id));
 
+  console.log('Dashboard');
+  const dashA = await req('GET', '/api/dashboard', { token: a });
+  check('admin dashboard reports the admin role', dashA.data.role === 'admin');
+  check('dashboard carries a task summary', typeof dashA.data.summary.open === 'number' && Array.isArray(dashA.data.board));
+  check('admin dashboard includes team workload', Array.isArray(dashA.data.workload));
+  check('dashboard lists recent activity', Array.isArray(dashA.data.activity));
+  const dashB = await req('GET', '/api/dashboard', { token: b });
+  check('member dashboard reports the member role', dashB.data.role === 'member');
+  check('member dashboard exposes no team workload', dashB.data.workload.length === 0);
+  check('member dashboard tasks carry an allotted-by creator', dashB.data.all_tasks.every((t) => 'creator' in t));
+
   console.log('Drive');
   const dfd = new FormData();
   dfd.append('files', new Blob(['team drive contents'], { type: 'text/plain' }), 'drive-note.txt');
