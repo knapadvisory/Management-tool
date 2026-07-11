@@ -1252,3 +1252,19 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 :root[data-reduce-motion="on"] *,
 :root[data-reduce-motion="on"] *::before,
 :root[data-reduce-motion="on"] *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+
+/* Files/Drive sub-tabs */
+.files-tabs { display: flex; gap: 4px; padding: 10px 20px 0; border-bottom: 1px solid var(--border); }
+.files-tab { background: none; border: none; padding: 8px 14px; border-radius: 8px 8px 0 0; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.files-tab:hover { background: var(--surface-2); color: var(--text); }
+.files-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Advanced settings: radios, shortcuts */
+.settings-radios { display: flex; flex-direction: column; gap: 8px; }
+.settings-radio { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.settings-radio input { margin-top: 3px; }
+.settings-radio > span { display: flex; flex-direction: column; gap: 3px; }
+.settings-radio .settings-toggle-hint { display: block; }
+.settings-shortcuts { list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.settings-shortcuts li { display: flex; align-items: center; gap: 8px; }
+.settings-panel kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; background: var(--surface-2); font-size: 11px; font-family: inherit; }

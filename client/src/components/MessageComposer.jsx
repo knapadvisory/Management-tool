@@ -202,9 +202,14 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
       pickMention(suggestions[0]);
       return;
     }
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      send();
+    if (e.key === 'Enter') {
+      // Enter-to-send (default): Enter sends, Shift+Enter = newline.
+      // Otherwise: Enter = newline, Ctrl/Cmd+Enter sends.
+      if (getPrefs().enterToSend) {
+        if (!e.shiftKey) { e.preventDefault(); send(); }
+      } else if (e.ctrlKey || e.metaKey) {
+        e.preventDefault(); send();
+      }
     }
   }
 

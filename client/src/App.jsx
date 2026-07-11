@@ -130,6 +130,16 @@ export default function App() {
     saveLocalTheme(t);
   }, [user?.theme, user?.accent]);
 
+  // Ctrl/Cmd+K opens search from anywhere (like Slack's quick switcher).
+  useEffect(() => {
+    if (!user) return;
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setSearchOpen(true); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [user]);
+
   // Sidebar quick toggle between light and dark.
   function toggleDarkMode() {
     if (!user) return;
@@ -264,8 +274,9 @@ export default function App() {
             onMarkAllRead={markAllRead} onMarkRead={markNotificationRead}
           />
         )}
-        {view?.type === 'files' && <FilesView user={user} />}
-        {view?.type === 'drive' && <FilesView user={user} users={users} mode="drive" />}
+        {(view?.type === 'files' || view?.type === 'drive') && (
+          <FilesView user={user} users={users} initialMode={view.type === 'drive' ? 'drive' : 'files'} />
+        )}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'admin' && user.role === 'admin' && (
           <AdminPanel user={user} signupCodeRequired={signupCodeRequired} />

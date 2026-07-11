@@ -52,7 +52,7 @@ export default function Sidebar({
           className={`nav-item ${view?.type === 'dashboard' ? 'active' : ''}`}
           onClick={() => onSelectView('dashboard')}
         >
-          <span className="nav-logo">📊</span> Dashboard
+          <span className="nav-logo">🏠</span> Home
         </button>
         <button
           className={`nav-item ${view?.type === 'messenger' ? 'active' : ''}`}
@@ -84,12 +84,6 @@ export default function Sidebar({
           onClick={() => onSelectView('files')}
         >
           <span className="nav-logo">🗂️</span> Files
-        </button>
-        <button
-          className={`nav-item ${view?.type === 'drive' ? 'active' : ''}`}
-          onClick={() => onSelectView('drive')}
-        >
-          <span className="nav-logo">💾</span> Drive
         </button>
         <button
           className={`nav-item ${view?.type === 'tasks' ? 'active' : ''}`}

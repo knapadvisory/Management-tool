@@ -10,6 +10,7 @@ const DEFAULTS = {
   underlineLinks: false,    // underline links in messages
   reduceMotion: false,      // disable transitions/animations
   spellcheck: true,         // browser spellcheck in the composer
+  enterToSend: true,        // Enter sends (vs. Enter = newline, Ctrl+Enter sends)
 };
 
 let cache = null;

@@ -37,7 +37,8 @@ function downloadFile(f) {
 // selection with a contextual action bar, Details/Grid views and in-app
 // preview. Powers both the Files aggregate and the shared team Drive; the Drive
 // adds folders, uploading (button + drag-and-drop) and a live socket refresh.
-export default function FilesView({ user, users = [], mode = 'files' }) {
+export default function FilesView({ user, users = [], initialMode = 'files' }) {
+  const [mode, setMode] = useState(initialMode);
   const isDrive = mode === 'drive';
   const endpoint = isDrive ? '/drive' : '/files';
   const team = users.filter((u) => u.id !== user.id);
@@ -302,6 +303,11 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
 
   function openFolder(id) { setQuery(''); setFolderId(id); }
 
+  function switchMode(m) {
+    if (m === mode) return;
+    setMode(m); setFolderId(null); setQuery(''); setSelected(new Set()); setSelectedFolders(new Set()); setFiles([]); setFolders([]); setPath([]);
+  }
+
   async function renameFile(f) {
     const name = prompt('Rename file', f.original_name);
     if (!name || !name.trim() || name.trim() === f.original_name) return;
@@ -361,8 +367,12 @@ export default function FilesView({ user, users = [], mode = 'files' }) {
       onDrop={onDrop} onDragOver={onDragOver} onDragEnter={onDragEnter} onDragLeave={onDragLeave}
       onContextMenu={isDrive && !searching ? (e) => openMenu(e, 'bg', null) : undefined}
     >
+      <div className="files-tabs">
+        <button className={`files-tab ${!isDrive ? 'active' : ''}`} onClick={() => switchMode('files')}>🗂️ All files</button>
+        <button className={`files-tab ${isDrive ? 'active' : ''}`} onClick={() => switchMode('drive')}>💾 Drive</button>
+      </div>
       <header className="files-head">
-        <h2>{isDrive ? 'Drive' : 'Files'}</h2>
+        <h2>{isDrive ? 'Drive' : 'All files'}</h2>
         <div className="files-controls">
           <input className="files-search" placeholder={isDrive ? 'Search the Drive…' : 'Search files, people or places…'} value={query} onChange={(e) => setQuery(e.target.value)} />
           <label className="files-sort">

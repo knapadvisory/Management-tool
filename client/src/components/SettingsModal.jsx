@@ -12,6 +12,7 @@ const SECTIONS = [
   { key: 'messages', label: 'Messages & media', icon: '💬' },
   { key: 'language', label: 'Language & region', icon: '🌐' },
   { key: 'accessibility', label: 'Accessibility', icon: '♿' },
+  { key: 'advanced', label: 'Advanced', icon: '⚙️' },
   { key: 'account', label: 'Account & password', icon: '🔒' },
 ];
 
@@ -39,6 +40,7 @@ export default function SettingsModal({ user, colors = [], initialSection = 'pro
             {section === 'messages' && <MessagesPanel />}
             {section === 'language' && <LanguagePanel />}
             {section === 'accessibility' && <AccessibilityPanel />}
+            {section === 'advanced' && <AdvancedPanel />}
             {section === 'account' && <AccountPanel user={user} />}
           </div>
         </div>
@@ -224,6 +226,35 @@ function AccessibilityPanel() {
         <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint="Turn off animations and transitions across the app." />
         <Toggle checked={underlineLinks} onChange={setUnderlineLinks} label="Underline links" hint="Always underline links in messages, not just on hover." />
       </div>
+    </div>
+  );
+}
+
+function AdvancedPanel() {
+  const [enterToSend, setEnterToSend] = usePref('enterToSend');
+  const mod = navigator.platform?.toLowerCase().includes('mac') ? '⌘' : 'Ctrl';
+  return (
+    <div>
+      <h3 className="settings-title">Advanced</h3>
+      <label className="profile-label">When writing a message, press <kbd>Enter</kbd> to…</label>
+      <div className="settings-radios">
+        <label className="settings-radio">
+          <input type="radio" name="enter" checked={enterToSend} onChange={() => setEnterToSend(true)} />
+          <span><span className="settings-toggle-label">Send the message</span><span className="settings-toggle-hint muted"><kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span></span>
+        </label>
+        <label className="settings-radio">
+          <input type="radio" name="enter" checked={!enterToSend} onChange={() => setEnterToSend(false)} />
+          <span><span className="settings-toggle-label">Start a new line</span><span className="settings-toggle-hint muted">Use <kbd>{mod}</kbd>+<kbd>Enter</kbd> to send</span></span>
+        </label>
+      </div>
+      <hr className="profile-sep" />
+      <div className="profile-section-title">Keyboard shortcuts</div>
+      <ul className="settings-shortcuts">
+        <li><kbd>{mod}</kbd>+<kbd>K</kbd> <span className="muted">Search messages</span></li>
+        <li><kbd>{mod}</kbd>/<kbd>⌘</kbd>+<kbd>B</kbd> / <kbd>I</kbd> / <kbd>K</kbd> <span className="muted">Bold / italic / link (with text selected)</span></li>
+        <li><kbd>Enter</kbd> <span className="muted">Send a message (or add a new line — see above)</span></li>
+        <li><kbd>Esc</kbd> <span className="muted">Close a dialog</span></li>
+      </ul>
     </div>
   );
 }
