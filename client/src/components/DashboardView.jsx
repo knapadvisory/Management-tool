@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
+import TaskModal from './TaskModal.jsx';
 
 const PRIO = {
   urgent: { label: 'URGENT', cls: 'p-urgent' },
@@ -40,15 +41,39 @@ function timeAgo(iso) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-export default function DashboardView({ user, onOpenTask, onOpenTasks, onOpenActivity }) {
+export default function DashboardView({ user, users = [], onOpenTasks, onOpenActivity }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [workflows, setWorkflows] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [openTaskId, setOpenTaskId] = useState(null);   // task detail popup
+  const [listPopup, setListPopup] = useState(null);     // { title, tasks } popup
+
+  const reload = () => api('/dashboard').then(setData).catch(() => {});
 
   useEffect(() => {
     let alive = true;
     api('/dashboard').then((d) => { if (alive) { setData(d); setLoading(false); } }).catch(() => { if (alive) setLoading(false); });
+    api('/workflows').then((d) => alive && setWorkflows(d.workflows || d || [])).catch(() => {});
+    api('/projects').then((d) => alive && setProjects(d.projects || d || [])).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  const openTask = (id) => setOpenTaskId(id);
+
+  // Open a small popup listing a filtered set of tasks (board column / a
+  // teammate's workload). Pulls the in-scope task list, which respects role.
+  const OPEN = (t) => !['completed', 'cancelled'].includes(t.status);
+  async function openList(title, pred) {
+    try {
+      const d = await api('/tasks');
+      const tasks = (d.tasks || []).filter(pred).map((t) => ({
+        id: t.id, title: t.title, priority: t.priority, due_date: t.due_date, status: t.status,
+        stage: t.stage?.name, assignee: t.assignee, creator: t.creator, project: t.project,
+      }));
+      setListPopup({ title, tasks });
+    } catch { /* ignore */ }
+  }
 
   if (loading) return <div className="dash"><p className="muted" style={{ padding: 24 }}>Loading dashboard…</p></div>;
   if (!data) return <div className="dash"><p className="muted" style={{ padding: 24 }}>Couldn’t load the dashboard.</p></div>;
@@ -81,7 +106,7 @@ export default function DashboardView({ user, onOpenTask, onOpenTasks, onOpenAct
             {data.upcoming.map((t) => {
               const b = dueBadge(t.due_date);
               return (
-                <button key={t.id} className={`deadline-card tone-${b.tone}`} onClick={() => onOpenTask(t.id)}>
+                <button key={t.id} className={`deadline-card tone-${b.tone}`} onClick={() => openTask(t.id)}>
                   <span className={`deadline-badge tone-${b.tone}`}>{b.text}</span>
                   <span className="deadline-title" title={t.title}>{t.title}</span>
                   <span className="deadline-meta muted">{t.project?.name || (t.assignee ? t.assignee.name : 'Unassigned')}</span>
@@ -100,28 +125,28 @@ export default function DashboardView({ user, onOpenTask, onOpenTasks, onOpenAct
               <div className="dash-block-head"><h2>Task board</h2><button className="dash-link" onClick={onOpenTasks}>Open board →</button></div>
               <div className="board-summary">
                 {data.board.map((col) => (
-                  <div key={col.stage} className="board-col">
+                  <button key={col.stage} className="board-col" onClick={() => openList(col.stage, (t) => t.stage?.name === col.stage && OPEN(t))}>
                     <div className="board-col-count">{col.count}</div>
                     <div className="board-col-name muted">{col.stage}</div>
-                  </div>
+                  </button>
                 ))}
-                <div className="board-col done">
+                <button className="board-col done" onClick={() => openList('Completed', (t) => t.status === 'completed')}>
                   <div className="board-col-count">{data.done_count}</div>
                   <div className="board-col-name muted">Completed</div>
-                </div>
+                </button>
                 {data.board.length === 0 && <p className="muted" style={{ padding: 12 }}>No open tasks.</p>}
               </div>
             </section>
           ) : (
             <section className="dash-panel">
               <div className="dash-block-head"><h2>Urgent tasks</h2><span className="pill-count">{data.urgent.length}</span></div>
-              <TaskList tasks={data.urgent} onOpenTask={onOpenTask} empty="Nothing urgent — you’re on top of it 🎉" showBy />
+              <TaskList tasks={data.urgent} onOpenTask={openTask} empty="Nothing urgent — you’re on top of it 🎉" detailed />
             </section>
           )}
 
           <section className="dash-panel">
             <div className="dash-block-head"><h2>{isAdmin ? 'All open tasks' : 'All my tasks'}</h2><span className="pill-count">{data.all_tasks.length}</span></div>
-            <TaskList tasks={data.all_tasks} onOpenTask={onOpenTask} empty="No open tasks." showBy={!isAdmin} showAssignee={isAdmin} />
+            <TaskList tasks={data.all_tasks} onOpenTask={openTask} empty="No open tasks." detailed showAssignee={isAdmin} showBy={!isAdmin} />
           </section>
         </div>
 
@@ -134,13 +159,13 @@ export default function DashboardView({ user, onOpenTask, onOpenTasks, onOpenAct
                 {data.workload.map((w) => {
                   const max = Math.max(...data.workload.map((x) => x.count), 1);
                   return (
-                    <div key={w.id} className="workload-row">
+                    <button key={w.id} className="workload-row" onClick={() => openList(`${w.name}’s tasks`, (t) => t.assignee?.id === w.id && OPEN(t))}>
                       <div className="workload-top">
                         <span className="workload-name"><Avatar user={w} size={20} /> {w.name}</span>
                         <span className="muted">{w.count} task{w.count === 1 ? '' : 's'}</span>
                       </div>
                       <div className="workload-bar"><span style={{ width: `${(w.count / max) * 100}%`, background: w.avatar_color }} /></div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -152,7 +177,7 @@ export default function DashboardView({ user, onOpenTask, onOpenTasks, onOpenAct
             <div className="dash-activity">
               {data.activity.length === 0 && <p className="muted" style={{ padding: 8 }}>No recent activity.</p>}
               {data.activity.slice(0, 5).map((a) => (
-                <button key={a.id} className="dash-activity-row" onClick={() => onOpenTask(a.task_id)}>
+                <button key={a.id} className="dash-activity-row" onClick={() => openTask(a.task_id)}>
                   <span className="dash-activity-dot" style={{ background: a.user_color }} />
                   <span className="dash-activity-text">
                     <strong>{a.user_name}</strong> {a.action} — <span className="muted">{a.task_title}</span>
@@ -167,11 +192,33 @@ export default function DashboardView({ user, onOpenTask, onOpenTasks, onOpenAct
           </section>
         </aside>
       </div>
+
+      {listPopup && (
+        <div className="modal-overlay" onClick={() => setListPopup(null)}>
+          <div className="modal dash-listpopup" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <strong>{listPopup.title} <span className="pill-count">{listPopup.tasks.length}</span></strong>
+              <button className="icon-btn" onClick={() => setListPopup(null)}>✕</button>
+            </div>
+            <div className="dash-listpopup-body">
+              <TaskList tasks={listPopup.tasks} onOpenTask={(id) => { setListPopup(null); openTask(id); }} empty="No tasks here." detailed showAssignee />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {openTaskId && (
+        <TaskModal
+          taskId={openTaskId} user={user} users={users}
+          workflows={workflows} projects={projects}
+          onClose={() => { setOpenTaskId(null); reload(); }}
+        />
+      )}
     </div>
   );
 }
 
-function TaskList({ tasks, onOpenTask, empty, showBy, showAssignee }) {
+function TaskList({ tasks, onOpenTask, empty, showBy, showAssignee, detailed }) {
   if (!tasks.length) return <p className="muted" style={{ padding: 12 }}>{empty}</p>;
   return (
     <div className="dash-tasklist">
@@ -184,9 +231,15 @@ function TaskList({ tasks, onOpenTask, empty, showBy, showAssignee }) {
             <span className="dash-task-main">
               <span className="dash-task-title">{t.title}</span>
               <span className="dash-task-sub">
+                {detailed && <span className={`dash-prio ${p.cls}`}>{p.label}</span>}
+                {detailed && t.stage && <span className="dash-chip">{t.stage}</span>}
                 {t.project?.name && <span className="dash-chip" style={t.project.color ? { borderColor: t.project.color, color: t.project.color } : undefined}>{t.project.name}</span>}
                 {showBy && t.creator && <span className="muted">by {t.creator.name}</span>}
-                {showAssignee && <span className="muted">{t.assignee ? t.assignee.name : 'Unassigned'}</span>}
+                {showAssignee && (
+                  <span className="dash-assignee muted">
+                    {t.assignee ? <><Avatar user={t.assignee} size={16} /> {t.assignee.name}</> : 'Unassigned'}
+                  </span>
+                )}
               </span>
             </span>
             {t.due_date && <span className={`dash-task-due tone-${b.tone}`}>{b.text}</span>}

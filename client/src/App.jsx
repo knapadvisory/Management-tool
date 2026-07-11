@@ -236,7 +236,7 @@ export default function App() {
         {view?.type === 'dashboard' && (
           <DashboardView
             user={user}
-            onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }}
+            users={users}
             onOpenTasks={() => setView({ type: 'tasks' })}
             onOpenActivity={() => setView({ type: 'activity' })}
           />
