@@ -5,7 +5,7 @@ import { notificationsSupported, notificationPermission, requestNotificationPerm
 
 export default function Sidebar({
   user, channels, joinable, users, onlineIds, view,
-  onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onEditProfile, onOpenSearch,
+  onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onEditProfile, darkMode, onToggleTheme, onOpenSearch,
   notifications = [], unreadCount = 0, onSelectNotification, onMarkAllRead,
 }) {
   const [showCreate, setShowCreate] = useState(false);
@@ -41,6 +41,7 @@ export default function Sidebar({
         <span className="logo">TeamHub</span>
         <div className="header-actions">
           <button className="icon-btn" title="Search messages" onClick={onOpenSearch}>🔍</button>
+          <button className="icon-btn" title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={onToggleTheme}>{darkMode ? '☀️' : '🌙'}</button>
           {notificationsSupported() && notifPerm === 'default' && (
             <button className="icon-btn" title="Enable desktop notifications" onClick={enableDesktopAlerts}>🖥️</button>
           )}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
+import { ACCENTS, applyTheme, saveLocalTheme } from '../theme.js';
 
 // Self-service profile: a user edits their own name, title and avatar colour,
 // and changes their own password (no admin needed).
@@ -10,6 +11,9 @@ export default function ProfileModal({ user, colors = [], onClose, onSaved }) {
   const [color, setColor] = useState(user.avatar_color);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState(null);
+
+  const [mode, setMode] = useState(user.theme || 'light');
+  const [accent, setAccent] = useState(user.accent || ACCENTS[0].accent);
 
   const [cur, setCur] = useState('');
   const [next, setNext] = useState('');
@@ -29,6 +33,15 @@ export default function ProfileModal({ user, colors = [], onClose, onSaved }) {
       setProfileMsg({ err: false, text: 'Profile saved.' });
     } catch (e) { setProfileMsg({ err: true, text: e.message }); }
     finally { setSavingProfile(false); }
+  }
+
+  // Appearance changes apply instantly (live preview) and save right away.
+  function applyAndSave(nextMode, nextAccent) {
+    setMode(nextMode); setAccent(nextAccent);
+    const t = { mode: nextMode, accent: nextAccent };
+    applyTheme(t); saveLocalTheme(t);
+    api('/auth/me', { method: 'PATCH', body: { theme: nextMode, accent: nextAccent } })
+      .then(({ user: u }) => onSaved(u)).catch(() => {});
   }
 
   async function savePassword() {
@@ -74,6 +87,24 @@ export default function ProfileModal({ user, colors = [], onClose, onSaved }) {
         {profileMsg && <p className={profileMsg.err ? 'form-error' : 'form-ok'}>{profileMsg.text}</p>}
         <div className="editor-actions">
           <button className="btn btn-primary" disabled={savingProfile || !dirty} onClick={saveProfile}>{savingProfile ? 'Saving…' : 'Save profile'}</button>
+        </div>
+
+        <hr className="profile-sep" />
+
+        <div className="profile-section-title">Appearance</div>
+        <label className="profile-label">Mode</label>
+        <div className="mode-toggle">
+          {[['light', '☀️ Light'], ['dark', '🌙 Dark'], ['system', '🖥 System']].map(([m, lbl]) => (
+            <button key={m} type="button" className={`mode-btn ${mode === m ? 'sel' : ''}`} onClick={() => applyAndSave(m, accent)}>{lbl}</button>
+          ))}
+        </div>
+        <label className="profile-label">Accent colour</label>
+        <div className="profile-swatches">
+          {ACCENTS.map((a) => (
+            <button key={a.accent} type="button" className={`profile-swatch ${a.accent === accent ? 'sel' : ''}`} style={{ background: a.accent }} onClick={() => applyAndSave(mode, a.accent)} title={a.name}>
+              {a.accent === accent ? '✓' : ''}
+            </button>
+          ))}
         </div>
 
         <hr className="profile-sep" />

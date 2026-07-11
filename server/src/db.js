@@ -272,6 +272,9 @@ ensureColumn('tasks', 'status_reason', "TEXT NOT NULL DEFAULT ''");
 // 'active' gates access; deactivating revokes login without destroying data.
 ensureColumn('users', 'role', "TEXT NOT NULL DEFAULT 'member'");
 ensureColumn('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
+// Per-user appearance: colour mode ('light'|'dark'|'system') and accent hex.
+ensureColumn('users', 'theme', "TEXT NOT NULL DEFAULT 'light'");
+ensureColumn('users', 'accent', "TEXT NOT NULL DEFAULT '#4f46e5'");
 // Collabs are private group spaces (a specialised channel) with their own
 // owner/moderators and permission settings.
 ensureColumn('channels', 'is_collab', 'INTEGER NOT NULL DEFAULT 0');

@@ -7,8 +7,11 @@ export const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3a
 
 export function publicUser(u) {
   if (!u) return null;
-  const { id, name, email, avatar_color, title, role, active } = u;
-  return { id, name, email, avatar_color, title, role: role || 'member', active: active ?? 1 };
+  const { id, name, email, avatar_color, title, role, active, theme, accent } = u;
+  return {
+    id, name, email, avatar_color, title, role: role || 'member', active: active ?? 1,
+    theme: theme || 'light', accent: accent || '#4f46e5',
+  };
 }
 
 export function requireAdmin(req, res, next) {
@@ -72,7 +75,7 @@ export function register({ name, email, password, code }) {
 
 // Self-service profile edit: a user updates their own name, title and avatar
 // colour. Only the provided fields change.
-export function updateOwnProfile(userId, { name, title, avatar_color }) {
+export function updateOwnProfile(userId, { name, title, avatar_color, theme, accent }) {
   const sets = [], vals = [];
   if (name !== undefined) {
     if (!String(name).trim()) throw Object.assign(new Error('Name is required'), { status: 400 });
@@ -82,6 +85,14 @@ export function updateOwnProfile(userId, { name, title, avatar_color }) {
   if (avatar_color !== undefined) {
     if (!AVATAR_COLORS.includes(avatar_color)) throw Object.assign(new Error('Invalid avatar colour'), { status: 400 });
     sets.push('avatar_color = ?'); vals.push(avatar_color);
+  }
+  if (theme !== undefined) {
+    if (!['light', 'dark', 'system'].includes(theme)) throw Object.assign(new Error('Invalid theme'), { status: 400 });
+    sets.push('theme = ?'); vals.push(theme);
+  }
+  if (accent !== undefined) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(accent)) throw Object.assign(new Error('Invalid accent colour'), { status: 400 });
+    sets.push('accent = ?'); vals.push(accent);
   }
   if (sets.length) db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals, userId);
   return db.prepare('SELECT * FROM users WHERE id = ?').get(userId);

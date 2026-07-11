@@ -92,6 +92,13 @@ async function main() {
   check('password change needs the correct current password', wrongPw.status === 403);
   const shortPw = await req('POST', '/api/auth/password', { token: b, body: { current_password: 'secret123', new_password: '123' } });
   check('a too-short new password is rejected', shortPw.status === 400);
+  const theme = await req('PATCH', '/api/auth/me', { token: b, body: { theme: 'dark', accent: '#16a34a' } });
+  check('user can save their theme + accent', theme.status === 200 && theme.data.user.theme === 'dark' && theme.data.user.accent === '#16a34a');
+  const badTheme = await req('PATCH', '/api/auth/me', { token: b, body: { theme: 'neon' } });
+  check('an invalid theme mode is rejected', badTheme.status === 400);
+  const badAccent = await req('PATCH', '/api/auth/me', { token: b, body: { accent: 'red' } });
+  check('a non-hex accent is rejected', badAccent.status === 400);
+  await req('PATCH', '/api/auth/me', { token: b, body: { theme: 'light' } }); // restore
   const okPw = await req('POST', '/api/auth/password', { token: b, body: { current_password: 'secret123', new_password: 'newsecret1' } });
   check('user can change their own password', okPw.status === 200);
   const reLogin = await req('POST', '/api/auth/login', { body: { email: 'bob@smoke.test', password: 'newsecret1' } });

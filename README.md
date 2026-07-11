@@ -4,6 +4,9 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 
 ## Features
 
+**🎨 Appearance (per user)**
+- **Light / Dark / System** colour modes and a choice of **accent colours** (Indigo, Violet, Aubergine, Blue, Teal, Green, Amber, Rose) — set from your Profile, saved to your account and applied on every device you sign in from. A quick 🌙/☀️ toggle sits in the sidebar. Every surface, badge and control is theme-aware
+
 **📊 Dashboard (home)**
 - A role-aware home screen (the default landing view). **Members** see only their own work: **Urgent tasks**, **All my tasks** (each showing who allotted it), upcoming deadlines and their recent activity. **Admins** additionally see the whole firm: a task-board summary, **team workload** (open tasks per teammate) and firm-wide recent activity
 - An **Upcoming deadlines** strip with colour-coded T-minus badges; click any card or task to jump straight to it

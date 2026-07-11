@@ -17,6 +17,7 @@ import CallManager from './components/CallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
 import ProfileModal from './components/ProfileModal.jsx';
 import DashboardView from './components/DashboardView.jsx';
+import { applyTheme, saveLocalTheme } from './theme.js';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -121,6 +122,22 @@ export default function App() {
     setUser(user);
   }
 
+  // Apply (and remember) the signed-in user's saved theme.
+  useEffect(() => {
+    if (!user) return;
+    const t = { mode: user.theme || 'light', accent: user.accent || '#4f46e5' };
+    applyTheme(t);
+    saveLocalTheme(t);
+  }, [user?.theme, user?.accent]);
+
+  // Sidebar quick toggle between light and dark.
+  function toggleDarkMode() {
+    if (!user) return;
+    const mode = user.theme === 'dark' ? 'light' : 'dark';
+    setUser((u) => ({ ...u, theme: mode }));
+    api('/auth/me', { method: 'PATCH', body: { theme: mode } }).catch(() => {});
+  }
+
   function logout() {
     clearToken();
     disconnectSocket();
@@ -207,6 +224,8 @@ export default function App() {
         }}
         onLogout={logout}
         onEditProfile={() => setProfileOpen(true)}
+        darkMode={user.theme === 'dark'}
+        onToggleTheme={toggleDarkMode}
         onOpenSearch={() => setSearchOpen(true)}
         notifications={notifications}
         unreadCount={unreadCount}
