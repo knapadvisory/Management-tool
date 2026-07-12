@@ -7,7 +7,8 @@ import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 
 import db from './db.js';
-import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, signupCodeRequired, allowedSignupDomains, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, AVATAR_COLORS } from './auth.js';
+import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, workspaceSignupCodeRequired, allowedSignupDomains, createWorkspaceAdmin, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, AVATAR_COLORS } from './auth.js';
+import { createWorkspace, workspaceBySlug, workspaceById, publicWorkspace } from './workspaces.js';
 import channelsRouter from './routes/channels.js';
 import collabsRouter, { collabByInviteToken, addGuestToCollab, collabWithMeta } from './routes/collabs.js';
 import adminRouter from './routes/admin.js';
@@ -33,37 +34,62 @@ app.set('io', io);
 app.use(cors());
 app.use(express.json());
 
-// Public config the login screen reads before anyone is authenticated.
+// Public config the auth screens read before anyone is authenticated.
 app.get('/api/config', (req, res) => {
   res.json({
-    signup_code_required: signupCodeRequired(),
-    allowed_signup_domains: allowedSignupDomains(),
+    workspace_signup_code_required: workspaceSignupCodeRequired(),
     avatar_colors: AVATAR_COLORS,
   });
 });
 
-// --- Auth ---
-app.post('/api/auth/register', (req, res) => {
+// --- Workspace creation & joining ---
+// Create a brand-new workspace and its first admin (the "start a workspace" flow).
+app.post('/api/workspaces', (req, res) => {
   try {
-    const user = register(req.body);
-    io.emit('directory:changed'); // let connected clients pick up the new teammate
-    res.status(201).json({ token: signToken(user), user: publicUser(user) });
+    const { workspace_name, name, email, password, code } = req.body || {};
+    if (workspaceSignupCodeRequired() && (code || '').trim() !== process.env.WORKSPACE_SIGNUP_CODE.trim()) {
+      throw Object.assign(new Error('A valid workspace creation code is required'), { status: 403 });
+    }
+    const ws = createWorkspace({ name: workspace_name });
+    const user = createWorkspaceAdmin(ws, { name, email, password });
+    res.status(201).json({ token: signToken(user), user: publicUser(user), workspace: publicWorkspace(ws) });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }
 });
 
+// Public: look up a workspace by slug (for the join page header + domain hint).
+app.get('/api/workspaces/:slug', (req, res) => {
+  const ws = workspaceBySlug(req.params.slug);
+  if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+  res.json({ workspace: publicWorkspace(ws), allowed_signup_domains: allowedSignupDomains(ws) });
+});
+
+// Join an existing workspace as a member (the "your company invited you" flow).
+app.post('/api/workspaces/:slug/register', (req, res) => {
+  try {
+    const ws = workspaceBySlug(req.params.slug);
+    if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+    const user = register(ws, req.body);
+    io.to(`workspace:${ws.id}`).emit('directory:changed');
+    res.status(201).json({ token: signToken(user), user: publicUser(user), workspace: publicWorkspace(ws) });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
+// --- Auth ---
 app.post('/api/auth/login', (req, res) => {
   try {
     const user = login(req.body);
-    res.json({ token: signToken(user), user: publicUser(user) });
+    res.json({ token: signToken(user), user: publicUser(user), workspace: publicWorkspace(workspaceById(user.workspace_id)) });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }
 });
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
-  res.json({ user: publicUser(req.user) });
+  res.json({ user: publicUser(req.user), workspace: publicWorkspace(workspaceById(req.user.workspace_id)) });
 });
 
 // --- Public guest invites (no auth: anyone with the link) ---
@@ -81,7 +107,7 @@ app.post('/api/invite/:token/join', (req, res) => {
     if (!collab) return res.status(404).json({ error: 'This invite link is invalid or has been revoked.' });
     // A returning guest (same name + password) signs back into the same account.
     const returning = findReturningGuest({ channelId: collab.id, name: req.body?.name, password: req.body?.password });
-    const guest = returning || createGuest({ name: req.body?.name, password: req.body?.password });
+    const guest = returning || createGuest({ name: req.body?.name, password: req.body?.password, workspaceId: collab.workspace_id });
     addGuestToCollab(io, collab, guest.id);
     res.status(201).json({ token: signToken(guest), user: publicUser(guest) });
   } catch (e) {
@@ -93,7 +119,7 @@ app.post('/api/invite/:token/join', (req, res) => {
 app.patch('/api/auth/me', requireAuth, (req, res) => {
   try {
     const updated = updateOwnProfile(req.user.id, req.body || {});
-    io.emit('directory:changed'); // let teammates see the new name/colour
+    io.to(`workspace:${req.workspaceId}`).emit('directory:changed'); // teammates see the new name/colour
     res.json({ user: publicUser(updated) });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
@@ -110,9 +136,9 @@ app.post('/api/auth/password', requireAuth, (req, res) => {
   }
 });
 
-// --- Directory (active, non-guest teammates only) ---
+// --- Directory (active, non-guest teammates in this workspace only) ---
 app.get('/api/users', requireAuth, blockGuests, (req, res) => {
-  res.json({ users: db.prepare(`SELECT * FROM users WHERE active = 1 AND role != 'guest' ORDER BY name`).all().map(publicUser) });
+  res.json({ users: db.prepare(`SELECT * FROM users WHERE active = 1 AND role != 'guest' AND workspace_id = ? ORDER BY name`).all(req.workspaceId).map(publicUser) });
 });
 
 app.use('/api/admin', requireAuth, requireAdmin, adminRouter);

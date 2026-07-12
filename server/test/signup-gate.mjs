@@ -1,7 +1,7 @@
 /**
- * Signup-gate test: boots the server WITH a SIGNUP_CODE and verifies that
- * registration requires the correct code, while /api/config advertises it.
- * Also confirms the default (no code set) leaves registration open.
+ * Signup-gate test for the multi-tenant model:
+ *  - Workspace CREATION can be gated by a global WORKSPACE_SIGNUP_CODE.
+ *  - Joining a workspace is gated by that workspace's allowed email domains.
  */
 import { spawn } from 'child_process';
 import { mkdtempSync, rmSync } from 'fs';
@@ -27,33 +27,62 @@ async function waitUp(base) {
   }
   return false;
 }
-async function register(base, body) {
-  const res = await fetch(base + '/api/auth/register', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+async function jpost(base, url, body, token) {
+  const res = await fetch(base + url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
   });
-  return res.status;
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
+async function jpatch(base, url, body, token) {
+  const res = await fetch(base + url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})) };
 }
 
 async function main() {
-  // --- Gated instance ---
-  const gated = boot(4620, { SIGNUP_CODE: 'letmein' });
+  // --- Workspace creation gated by a global code ---
+  const gated = boot(4620, { WORKSPACE_SIGNUP_CODE: 'letmein' });
   const gBase = 'http://localhost:4620';
   check('gated server starts', await waitUp(gBase));
   const cfg = await (await fetch(gBase + '/api/config')).json();
-  check('config advertises code required', cfg.signup_code_required === true);
-  check('register without code is rejected', await register(gBase, { name: 'A', email: 'a@g.co', password: 'secret123' }) === 403);
-  check('register with wrong code is rejected', await register(gBase, { name: 'A', email: 'a@g.co', password: 'secret123', code: 'nope' }) === 403);
-  check('register with correct code succeeds', await register(gBase, { name: 'A', email: 'a@g.co', password: 'secret123', code: 'letmein' }) === 201);
+  check('config advertises workspace code required', cfg.workspace_signup_code_required === true);
+  check('create workspace without code is rejected',
+    (await jpost(gBase, '/api/workspaces', { workspace_name: 'X', name: 'A', email: 'a@x.co', password: 'secret123' })).status === 403);
+  check('create workspace with wrong code is rejected',
+    (await jpost(gBase, '/api/workspaces', { workspace_name: 'X', name: 'A', email: 'a@x.co', password: 'secret123', code: 'nope' })).status === 403);
+  check('create workspace with correct code succeeds',
+    (await jpost(gBase, '/api/workspaces', { workspace_name: 'X', name: 'A', email: 'a@x.co', password: 'secret123', code: 'letmein' })).status === 201);
   gated.proc.kill();
   rmSync(gated.dir, { recursive: true, force: true });
 
-  // --- Open instance (no code) ---
+  // --- Open creation + per-workspace domain-gated joining ---
   const open = boot(4621, {});
   const oBase = 'http://localhost:4621';
   check('open server starts', await waitUp(oBase));
   const cfg2 = await (await fetch(oBase + '/api/config')).json();
-  check('config advertises no code required', cfg2.signup_code_required === false);
-  check('register works without a code when open', await register(oBase, { name: 'B', email: 'b@o.co', password: 'secret123' }) === 201);
+  check('config advertises no workspace code required', cfg2.workspace_signup_code_required === false);
+
+  const ws = await jpost(oBase, '/api/workspaces', { workspace_name: 'Acme', name: 'Admin', email: 'admin@acme.com', password: 'secret123' });
+  check('open workspace creation succeeds', ws.status === 201);
+  const slug = ws.data.workspace.slug;
+  const adminToken = ws.data.token;
+
+  // With no domain policy, any email may join.
+  check('join with any email succeeds when open',
+    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Open', email: 'open@gmail.com', password: 'secret123' })).status === 201);
+
+  // Admin restricts joins to the work domain.
+  await jpatch(oBase, '/api/admin/settings', { allowed_signup_domains: 'acme.com' }, adminToken);
+  check('join with off-domain email is rejected',
+    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Bad', email: 'bad@gmail.com', password: 'secret123' })).status === 403);
+  check('join with work-domain email succeeds',
+    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Good', email: 'good@acme.com', password: 'secret123' })).status === 201);
+
   open.proc.kill();
   rmSync(open.dir, { recursive: true, force: true });
 }

@@ -16,9 +16,9 @@ router.get('/', (req, res) => {
     JOIN users u ON u.id = m.user_id
     JOIN channels c ON c.id = m.channel_id
     JOIN channel_members cm ON cm.channel_id = m.channel_id AND cm.user_id = ?
-    WHERE m.deleted_at IS NULL AND m.content LIKE ? ESCAPE '\\'
+    WHERE m.deleted_at IS NULL AND m.content LIKE ? ESCAPE '\\' AND c.workspace_id = ?
     ORDER BY m.id DESC LIMIT 50
-  `).all(req.user.id, like);
+  `).all(req.user.id, like, req.workspaceId);
 
   const results = rows.map((r) => {
     let label = `#${r.channel_name}`;

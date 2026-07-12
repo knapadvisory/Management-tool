@@ -30,11 +30,11 @@ const router = Router();
 // message:send (or task) links them by id.
 router.post('/', requireAuth, upload.array('files', 10), (req, res) => {
   const insert = db.prepare(`
-    INSERT INTO attachments (uploader_id, stored_name, original_name, mime_type, size)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO attachments (uploader_id, stored_name, original_name, mime_type, size, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
   const out = (req.files || []).map((f) => {
-    const info = insert.run(req.user.id, f.filename, f.originalname, f.mimetype, f.size);
+    const info = insert.run(req.user.id, f.filename, f.originalname, f.mimetype, f.size, req.workspaceId);
     return {
       id: info.lastInsertRowid,
       original_name: f.originalname,
@@ -62,15 +62,19 @@ router.get('/:id', (req, res) => {
   const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(req.params.id);
   if (!att) return res.status(404).json({ error: 'File not found' });
 
+  // The requester must belong to the same workspace the file lives in.
+  const myWorkspace = db.prepare('SELECT workspace_id FROM users WHERE id = ?').get(userId)?.workspace_id;
+  if (att.workspace_id && att.workspace_id !== myWorkspace) return res.status(403).json({ error: 'Not allowed' });
+
   if (att.message_id) {
     const msg = db.prepare('SELECT channel_id FROM messages WHERE id = ?').get(att.message_id);
     const member = msg && db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?')
       .get(msg.channel_id, userId);
     if (!member) return res.status(403).json({ error: 'Not allowed' });
   } else if (att.task_id) {
-    // Tasks are shared across the team, so any authenticated member may view.
+    // Tasks are shared across the workspace team (already scoped above).
   } else if (att.is_drive) {
-    // The shared Drive is team-wide; any authenticated member may view.
+    // The shared Drive is workspace-wide (already scoped above).
   } else if (att.uploader_id !== userId) {
     return res.status(403).json({ error: 'Not allowed' });
   }

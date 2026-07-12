@@ -32,12 +32,12 @@ function replaceTags(templateId, tags) {
 }
 
 router.get('/', (req, res) => {
-  const rows = db.prepare('SELECT * FROM task_templates ORDER BY name').all();
+  const rows = db.prepare('SELECT * FROM task_templates WHERE workspace_id = ? ORDER BY name').all(req.workspaceId);
   res.json({ templates: rows.map(templateWithDetail) });
 });
 
 router.get('/:id', (req, res) => {
-  const t = db.prepare('SELECT * FROM task_templates WHERE id = ?').get(req.params.id);
+  const t = db.prepare('SELECT * FROM task_templates WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!t) return res.status(404).json({ error: 'Template not found' });
   res.json(templateWithDetail(t));
 });
@@ -46,14 +46,14 @@ router.post('/', (req, res) => {
   const { name, description = '', default_priority = 'medium', default_workflow_id = null, steps = [], tags = [] } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Template name is required' });
   if (!PRIORITIES.includes(default_priority)) return res.status(400).json({ error: 'Invalid priority' });
-  if (default_workflow_id && !db.prepare('SELECT id FROM workflows WHERE id = ?').get(default_workflow_id)) {
+  if (default_workflow_id && !db.prepare('SELECT id FROM workflows WHERE id = ? AND workspace_id = ?').get(default_workflow_id, req.workspaceId)) {
     return res.status(400).json({ error: 'Workflow not found' });
   }
   const create = db.transaction(() => {
     const info = db.prepare(`
-      INSERT INTO task_templates (name, description, default_priority, default_workflow_id, created_by)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(name.trim(), description, default_priority, default_workflow_id, req.user.id);
+      INSERT INTO task_templates (name, description, default_priority, default_workflow_id, created_by, workspace_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(name.trim(), description, default_priority, default_workflow_id, req.user.id, req.workspaceId);
     replaceSteps(info.lastInsertRowid, steps);
     replaceTags(info.lastInsertRowid, tags);
     return info.lastInsertRowid;
@@ -64,7 +64,7 @@ router.post('/', (req, res) => {
 });
 
 router.patch('/:id', (req, res) => {
-  const t = db.prepare('SELECT * FROM task_templates WHERE id = ?').get(req.params.id);
+  const t = db.prepare('SELECT * FROM task_templates WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!t) return res.status(404).json({ error: 'Template not found' });
   const { name, description, default_priority, default_workflow_id, steps, tags } = req.body;
   if (default_priority !== undefined && !PRIORITIES.includes(default_priority)) {
@@ -92,7 +92,7 @@ router.patch('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const t = db.prepare('SELECT * FROM task_templates WHERE id = ?').get(req.params.id);
+  const t = db.prepare('SELECT * FROM task_templates WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!t) return res.status(404).json({ error: 'Template not found' });
   db.prepare('DELETE FROM task_templates WHERE id = ?').run(t.id);
   req.app.get('io')?.emit('templates:changed');

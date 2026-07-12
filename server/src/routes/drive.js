@@ -50,7 +50,7 @@ function serializeDriveFile(f) {
 
 // Parse a "shared_with" input (form field or JSON) into a list of valid,
 // distinct user ids.
-function parseUserIds(raw) {
+function parseUserIds(raw, workspaceId) {
   let ids = [];
   if (Array.isArray(raw)) ids = raw;
   else if (typeof raw === 'string' && raw.trim()) {
@@ -61,7 +61,7 @@ function parseUserIds(raw) {
   const out = [];
   for (const v of ids) {
     const n = Number(v);
-    if (Number.isInteger(n) && !seen.has(n) && db.prepare('SELECT 1 FROM users WHERE id = ? AND active = 1').get(n)) {
+    if (Number.isInteger(n) && !seen.has(n) && db.prepare('SELECT 1 FROM users WHERE id = ? AND active = 1 AND workspace_id = ?').get(n, workspaceId)) {
       seen.add(n); out.push(n);
     }
   }
@@ -86,11 +86,11 @@ function applyShares(io, att, userIds, actor) {
 
 // Parse a ?folder= param into a folder id (or null for the Drive root).
 // Returns { id } on success or { error } if it points nowhere.
-function resolveFolder(raw) {
+function resolveFolder(raw, workspaceId) {
   if (raw == null || raw === '' || raw === 'root') return { id: null };
   const id = Number(raw);
   if (!Number.isInteger(id)) return { error: 'Invalid folder' };
-  const folder = db.prepare('SELECT * FROM drive_folders WHERE id = ?').get(id);
+  const folder = db.prepare('SELECT * FROM drive_folders WHERE id = ? AND workspace_id = ?').get(id, workspaceId);
   if (!folder) return { error: 'Folder not found' };
   return { id, folder };
 }
@@ -135,37 +135,37 @@ router.get('/', (req, res) => {
       SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, a.uploader_id, a.drive_folder_id,
              u.name AS uploader_name, u.avatar_color AS uploader_color
       FROM attachments a JOIN users u ON u.id = a.uploader_id
-      WHERE a.is_drive = 1 AND a.archived_at IS NULL
+      WHERE a.is_drive = 1 AND a.archived_at IS NULL AND a.workspace_id = ?
       ORDER BY a.created_at DESC
-    `).all().map(serializeDriveFile)
+    `).all(req.workspaceId).map(serializeDriveFile)
       .filter((f) => f.original_name.toLowerCase().includes(q) || f.uploader_name.toLowerCase().includes(q));
     return res.json({ folder: null, path: [], folders: [], files, searching: true });
   }
 
-  const r = resolveFolder(req.query.folder);
+  const r = resolveFolder(req.query.folder, req.workspaceId);
   if (r.error) return res.status(404).json({ error: r.error });
 
   const folders = db.prepare(`
     SELECT df.id, df.name, df.parent_id, df.created_by, df.created_at, u.name AS created_by_name
     FROM drive_folders df JOIN users u ON u.id = df.created_by
-    WHERE df.parent_id IS ?
+    WHERE df.parent_id IS ? AND df.workspace_id = ?
     ORDER BY df.name COLLATE NOCASE
-  `).all(r.id).map((f) => ({ ...f, ...folderFileCount(f.id) }));
+  `).all(r.id, req.workspaceId).map((f) => ({ ...f, ...folderFileCount(f.id) }));
 
   const files = db.prepare(`
     SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, a.uploader_id, a.drive_folder_id,
            u.name AS uploader_name, u.avatar_color AS uploader_color
     FROM attachments a JOIN users u ON u.id = a.uploader_id
-    WHERE a.is_drive = 1 AND a.archived_at IS NULL AND a.drive_folder_id IS ?
+    WHERE a.is_drive = 1 AND a.archived_at IS NULL AND a.drive_folder_id IS ? AND a.workspace_id = ?
     ORDER BY a.created_at DESC
-  `).all(r.id).map(serializeDriveFile);
+  `).all(r.id, req.workspaceId).map(serializeDriveFile);
 
   res.json({ folder: r.folder || null, path: folderPath(r.id), folders, files, searching: false });
 });
 
 // Flat list of every folder (for the "move to folder" picker).
 router.get('/folders', (req, res) => {
-  const folders = db.prepare('SELECT id, name, parent_id FROM drive_folders ORDER BY name COLLATE NOCASE').all();
+  const folders = db.prepare('SELECT id, name, parent_id FROM drive_folders WHERE workspace_id = ? ORDER BY name COLLATE NOCASE').all(req.workspaceId);
   res.json({ folders });
 });
 
@@ -175,11 +175,11 @@ router.post('/folders', (req, res) => {
   if (!name) return res.status(400).json({ error: 'Folder name is required' });
   const parentId = req.body?.parent_id != null ? Number(req.body.parent_id) : null;
   if (parentId != null) {
-    if (!Number.isInteger(parentId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ?').get(parentId)) {
+    if (!Number.isInteger(parentId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ? AND workspace_id = ?').get(parentId, req.workspaceId)) {
       return res.status(404).json({ error: 'Parent folder not found' });
     }
   }
-  const info = db.prepare('INSERT INTO drive_folders (name, parent_id, created_by) VALUES (?, ?, ?)').run(name, parentId, req.user.id);
+  const info = db.prepare('INSERT INTO drive_folders (name, parent_id, created_by, workspace_id) VALUES (?, ?, ?, ?)').run(name, parentId, req.user.id, req.workspaceId);
   const folder = db.prepare('SELECT id, name, parent_id, created_by, created_at FROM drive_folders WHERE id = ?').get(info.lastInsertRowid);
   req.app.get('io')?.emit('drive:changed');
   res.status(201).json({ folder: { ...folder, files: 0, subs: 0 } });
@@ -188,7 +188,7 @@ router.post('/folders', (req, res) => {
 // Rename and/or move a folder (creator or admin). Accepts `name` (rename)
 // and/or `parent_id` (move — null moves it to the Drive root).
 router.patch('/folders/:id', (req, res) => {
-  const folder = db.prepare('SELECT * FROM drive_folders WHERE id = ?').get(req.params.id);
+  const folder = db.prepare('SELECT * FROM drive_folders WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!folder) return res.status(404).json({ error: 'Folder not found' });
   if (folder.created_by !== req.user.id && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Only the folder’s creator or an admin can change it' });
@@ -201,7 +201,7 @@ router.patch('/folders/:id', (req, res) => {
   if ('parent_id' in (req.body || {})) {
     let parentId = req.body.parent_id != null && req.body.parent_id !== '' ? Number(req.body.parent_id) : null;
     if (parentId != null) {
-      if (!Number.isInteger(parentId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ?').get(parentId)) {
+      if (!Number.isInteger(parentId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ? AND workspace_id = ?').get(parentId, req.workspaceId)) {
         return res.status(404).json({ error: 'Target folder not found' });
       }
       // Can't move a folder into itself or any of its own descendants.
@@ -219,7 +219,7 @@ router.patch('/folders/:id', (req, res) => {
 // folder's creator or an admin may do so. Files are archived (recoverable from
 // the admin Archive), not destroyed; folder rows are removed.
 router.delete('/folders/:id', (req, res) => {
-  const folder = db.prepare('SELECT * FROM drive_folders WHERE id = ?').get(req.params.id);
+  const folder = db.prepare('SELECT * FROM drive_folders WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!folder) return res.status(404).json({ error: 'Folder not found' });
   if (folder.created_by !== req.user.id && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Only the folder’s creator or an admin can delete it' });
@@ -245,16 +245,16 @@ router.delete('/folders/:id', (req, res) => {
 router.post('/', upload.array('files', 50), (req, res) => {
   let folderId = req.body?.folder_id != null && req.body.folder_id !== '' ? Number(req.body.folder_id) : null;
   if (folderId != null) {
-    if (!Number.isInteger(folderId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ?').get(folderId)) folderId = null;
+    if (!Number.isInteger(folderId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ? AND workspace_id = ?').get(folderId, req.workspaceId)) folderId = null;
   }
-  const shareIds = parseUserIds(req.body?.shared_with);
+  const shareIds = parseUserIds(req.body?.shared_with, req.workspaceId);
   const io = req.app.get('io');
   const insert = db.prepare(`
-    INSERT INTO attachments (uploader_id, stored_name, original_name, mime_type, size, is_drive, drive_folder_id)
-    VALUES (?, ?, ?, ?, ?, 1, ?)
+    INSERT INTO attachments (uploader_id, stored_name, original_name, mime_type, size, is_drive, drive_folder_id, workspace_id)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
   `);
   const created = (req.files || []).map((f) => {
-    const info = insert.run(req.user.id, f.filename, f.originalname, f.mimetype, f.size, folderId);
+    const info = insert.run(req.user.id, f.filename, f.originalname, f.mimetype, f.size, folderId, req.workspaceId);
     const row = db.prepare(`
       SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, a.uploader_id, a.drive_folder_id,
              u.name AS uploader_name, u.avatar_color AS uploader_color
@@ -270,12 +270,12 @@ router.post('/', upload.array('files', 50), (req, res) => {
 
 // Update who a Drive file is tagged / shared with (uploader or admin).
 router.patch('/:id/shares', (req, res) => {
-  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND is_drive = 1').get(req.params.id);
+  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND is_drive = 1 AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!att) return res.status(404).json({ error: 'File not found' });
   if (att.uploader_id !== req.user.id && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'You can only tag files you uploaded' });
   }
-  applyShares(req.app.get('io'), att, parseUserIds(req.body?.user_ids), req.user);
+  applyShares(req.app.get('io'), att, parseUserIds(req.body?.user_ids, req.workspaceId), req.user);
   req.app.get('io')?.emit('drive:changed');
   res.json({ ok: true, shared_with: sharedWith(att.id) });
 });
@@ -283,7 +283,7 @@ router.patch('/:id/shares', (req, res) => {
 // Move and/or rename a Drive file (uploader or admin). Accepts `folder_id`
 // (move) and/or `name` (rename).
 router.patch('/:id', (req, res) => {
-  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND is_drive = 1').get(req.params.id);
+  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND is_drive = 1 AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!att) return res.status(404).json({ error: 'File not found' });
   if (att.uploader_id !== req.user.id && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'You can only change files you uploaded' });
@@ -291,7 +291,7 @@ router.patch('/:id', (req, res) => {
   if ('folder_id' in (req.body || {})) {
     let folderId = req.body.folder_id != null && req.body.folder_id !== '' ? Number(req.body.folder_id) : null;
     if (folderId != null) {
-      if (!Number.isInteger(folderId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ?').get(folderId)) {
+      if (!Number.isInteger(folderId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ? AND workspace_id = ?').get(folderId, req.workspaceId)) {
         return res.status(404).json({ error: 'Target folder not found' });
       }
     }
@@ -309,11 +309,11 @@ router.patch('/:id', (req, res) => {
 // Copy a Drive file into a folder (root by default). Duplicates the stored
 // file on disk and creates a fresh attachment owned by the current user.
 router.post('/:id/copy', (req, res) => {
-  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND is_drive = 1 AND archived_at IS NULL').get(req.params.id);
+  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND is_drive = 1 AND archived_at IS NULL AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!att) return res.status(404).json({ error: 'File not found' });
   let folderId = req.body?.folder_id != null && req.body.folder_id !== '' ? Number(req.body.folder_id) : null;
   if (folderId != null) {
-    if (!Number.isInteger(folderId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ?').get(folderId)) folderId = null;
+    if (!Number.isInteger(folderId) || !db.prepare('SELECT 1 FROM drive_folders WHERE id = ? AND workspace_id = ?').get(folderId, req.workspaceId)) folderId = null;
   }
   const ext = path.extname(att.stored_name).slice(0, 10);
   const newStored = `${crypto.randomBytes(16).toString('hex')}${ext}`;
@@ -323,9 +323,9 @@ router.post('/:id/copy', (req, res) => {
     return res.status(500).json({ error: 'Could not copy the file' });
   }
   const info = db.prepare(`
-    INSERT INTO attachments (uploader_id, stored_name, original_name, mime_type, size, is_drive, drive_folder_id)
-    VALUES (?, ?, ?, ?, ?, 1, ?)
-  `).run(req.user.id, newStored, att.original_name, att.mime_type, att.size, folderId);
+    INSERT INTO attachments (uploader_id, stored_name, original_name, mime_type, size, is_drive, drive_folder_id, workspace_id)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+  `).run(req.user.id, newStored, att.original_name, att.mime_type, att.size, folderId, req.workspaceId);
   const row = db.prepare(`
     SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, a.uploader_id, a.drive_folder_id,
            u.name AS uploader_name, u.avatar_color AS uploader_color
@@ -338,7 +338,7 @@ router.post('/:id/copy', (req, res) => {
 // Delete a Drive file — you can only remove your own (like WhatsApp). It is
 // archived: hidden for everyone but kept in the admin archive for recovery.
 router.delete('/:id', (req, res) => {
-  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND is_drive = 1').get(req.params.id);
+  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND is_drive = 1 AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!att) return res.status(404).json({ error: 'File not found' });
   if (att.uploader_id !== req.user.id) {
     return res.status(403).json({ error: 'You can only delete files you uploaded' });

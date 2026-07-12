@@ -59,16 +59,20 @@ async function main() {
   await waitForServer();
 
   console.log('Auth');
-  const alice = await req('POST', '/api/auth/register', {
-    body: { name: 'Alice', email: 'alice@smoke.test', password: 'secret123' },
+  // Alice creates the workspace (and becomes its admin); Bob joins it.
+  const alice = await req('POST', '/api/workspaces', {
+    body: { workspace_name: 'Smoke Co', name: 'Alice', email: 'alice@smoke.test', password: 'secret123' },
   });
-  const bob = await req('POST', '/api/auth/register', {
+  const slug = alice.data.workspace?.slug;
+  const bob = await req('POST', `/api/workspaces/${slug}/register`, {
     body: { name: 'Bob', email: 'bob@smoke.test', password: 'secret123' },
   });
-  check('register returns token', alice.status === 201 && !!alice.data.token);
-  check('first registrant is super admin', alice.data.user.role === 'admin');
-  check('later registrant is a member', bob.data.user.role === 'member');
-  const dupe = await req('POST', '/api/auth/register', {
+  check('workspace creation returns token', alice.status === 201 && !!alice.data.token);
+  check('workspace creator is super admin', alice.data.user.role === 'admin');
+  check('workspace has a slug', !!slug);
+  check('joiner is a member', bob.status === 201 && bob.data.user.role === 'member');
+  check('members share the workspace', alice.data.user.workspace_id === bob.data.user.workspace_id);
+  const dupe = await req('POST', `/api/workspaces/${slug}/register`, {
     body: { name: 'Alice2', email: 'alice@smoke.test', password: 'secret123' },
   });
   check('duplicate email rejected', dupe.status === 409);

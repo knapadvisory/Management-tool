@@ -14,22 +14,22 @@ function projectWithMeta(p) {
 }
 
 router.get('/', (req, res) => {
-  res.json({ projects: db.prepare('SELECT * FROM projects ORDER BY name').all().map(projectWithMeta) });
+  res.json({ projects: db.prepare('SELECT * FROM projects WHERE workspace_id = ? ORDER BY name').all(req.workspaceId).map(projectWithMeta) });
 });
 
 router.post('/', (req, res) => {
   const { name, description = '', color } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' });
   const chosen = COLORS.includes(color) ? color : COLORS[Math.floor(Math.random() * COLORS.length)];
-  const info = db.prepare('INSERT INTO projects (name, description, color, created_by) VALUES (?, ?, ?, ?)')
-    .run(name.trim(), description, chosen, req.user.id);
+  const info = db.prepare('INSERT INTO projects (name, description, color, created_by, workspace_id) VALUES (?, ?, ?, ?, ?)')
+    .run(name.trim(), description, chosen, req.user.id, req.workspaceId);
   const project = projectWithMeta(db.prepare('SELECT * FROM projects WHERE id = ?').get(info.lastInsertRowid));
   req.app.get('io')?.emit('projects:changed');
   res.status(201).json(project);
 });
 
 router.patch('/:id', (req, res) => {
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  const project = db.prepare('SELECT * FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!project) return res.status(404).json({ error: 'Project not found' });
   const { name, description, color } = req.body;
   db.prepare('UPDATE projects SET name = COALESCE(?, name), description = COALESCE(?, description), color = COALESCE(?, color) WHERE id = ?')
@@ -39,7 +39,7 @@ router.patch('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  const project = db.prepare('SELECT * FROM projects WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!project) return res.status(404).json({ error: 'Project not found' });
   // Tasks keep existing; they just lose their project association.
   db.prepare('UPDATE tasks SET project_id = NULL WHERE project_id = ?').run(project.id);

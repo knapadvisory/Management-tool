@@ -4,7 +4,7 @@ import Avatar from './Avatar.jsx';
 import { t } from '../i18n.js';
 
 export default function Sidebar({
-  user, channels, joinable, users, onlineIds, view,
+  user, workspace, channels, joinable, users, onlineIds, view,
   onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onOpenSettings, darkMode, onToggleTheme, onOpenSearch,
   notifications = [], unreadCount = 0, onSelectNotification, onMarkAllRead,
 }) {
@@ -33,7 +33,7 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <span className="logo">TeamHub</span>
+        <span className="logo" title={workspace ? `${workspace.name} · TeamHub` : 'TeamHub'}>{workspace?.name || 'TeamHub'}</span>
         <div className="header-actions">
           <button className="icon-btn" title={t('action.search')} onClick={onOpenSearch}>🔍</button>
           <button className="icon-btn" title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={onToggleTheme}>{darkMode ? '☀️' : '🌙'}</button>

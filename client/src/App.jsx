@@ -18,6 +18,7 @@ import SettingsModal from './components/SettingsModal.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import GuestJoin from './components/GuestJoin.jsx';
 import GuestApp from './components/GuestApp.jsx';
+import JoinWorkspace from './components/JoinWorkspace.jsx';
 import { applyTheme, saveLocalTheme } from './theme.js';
 import { onLangChange } from './i18n.js';
 
@@ -26,9 +27,15 @@ const inviteToken = () => {
   const m = window.location.pathname.match(/^\/invite\/([a-f0-9]+)$/i);
   return m ? m[1] : null;
 };
+// A workspace join link looks like /join/<slug>.
+const joinSlug = () => {
+  const m = window.location.pathname.match(/^\/join\/([a-z0-9-]+)$/i);
+  return m ? m[1] : null;
+};
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [workspace, setWorkspace] = useState(null);
   const [booting, setBooting] = useState(!!getToken());
   const [channels, setChannels] = useState([]);
   const [joinable, setJoinable] = useState([]);
@@ -42,7 +49,6 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [taskToOpen, setTaskToOpen] = useState(null);
-  const [signupCodeRequired, setSignupCodeRequired] = useState(false);
   const [avatarColors, setAvatarColors] = useState([]);
   const [settings, setSettings] = useState(null); // null or { section }
   // Always-current pointer to selectNotification, so desktop-notification
@@ -81,10 +87,10 @@ export default function App() {
 
   // Restore session on load, and read public config (for the invite panel).
   useEffect(() => {
-    api('/config').then((c) => { setSignupCodeRequired(!!c.signup_code_required); setAvatarColors(c.avatar_colors || []); }).catch(() => {});
+    api('/config').then((c) => { setAvatarColors(c.avatar_colors || []); }).catch(() => {});
     if (!getToken()) return;
     api('/auth/me')
-      .then((d) => setUser(d.user))
+      .then((d) => { setUser(d.user); setWorkspace(d.workspace); })
       .catch(() => clearToken())
       .finally(() => setBooting(false));
   }, []);
@@ -132,9 +138,10 @@ export default function App() {
   // Keep the desktop-notification click handler pointed at the latest state.
   useEffect(() => { selectNotifRef.current = selectNotification; });
 
-  function handleAuth({ token, user }) {
+  function handleAuth({ token, user, workspace }) {
     setToken(token);
     setUser(user);
+    if (workspace) setWorkspace(workspace);
   }
 
   // Apply (and remember) the signed-in user's saved theme.
@@ -171,6 +178,7 @@ export default function App() {
     clearToken();
     disconnectSocket();
     setUser(null);
+    setWorkspace(null);
     setView(null);
     setChannels([]);
     setCollabs([]);
@@ -231,9 +239,11 @@ export default function App() {
   }
 
   if (booting) return <div className="boot">Loading…</div>;
-  // An invite link shows the guest join page when nobody's signed in yet.
+  // Invite / join links show their own landing pages when nobody's signed in.
   const invite = inviteToken();
+  const join = joinSlug();
   if (!user && invite) return <GuestJoin token={invite} onAuth={handleAuth} />;
+  if (!user && join) return <JoinWorkspace slug={join} onAuth={handleAuth} />;
   if (!user) return <Login onAuth={handleAuth} />;
 
   // External guests get a stripped-down, collab-only shell.
@@ -256,6 +266,7 @@ export default function App() {
     <div className="app">
       <Sidebar
         user={user}
+        workspace={workspace}
         channels={channels}
         joinable={joinable}
         users={users}
@@ -319,7 +330,7 @@ export default function App() {
         )}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'admin' && user.role === 'admin' && (
-          <AdminPanel user={user} signupCodeRequired={signupCodeRequired} />
+          <AdminPanel user={user} />
         )}
       </main>
       <CallManager user={user} />

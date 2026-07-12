@@ -23,9 +23,10 @@ function liteTask(t) {
 router.get('/', (req, res) => {
   const isAdmin = req.user.role === 'admin';
   const uid = req.user.id;
-  // Visibility clause reused across queries (no user input — safe to inline).
-  const scope = isAdmin ? '' :
-    ` AND (t.creator_id = ${uid} OR t.assignee_id = ${uid} OR EXISTS (SELECT 1 FROM task_watchers w WHERE w.task_id = t.id AND w.user_id = ${uid}))`;
+  const ws = Number(req.workspaceId); // integer from the JWT — safe to inline
+  // Every task query is scoped to the workspace first, then to visibility.
+  const scope = ` AND t.workspace_id = ${ws}` + (isAdmin ? '' :
+    ` AND (t.creator_id = ${uid} OR t.assignee_id = ${uid} OR EXISTS (SELECT 1 FROM task_watchers w WHERE w.task_id = t.id AND w.user_id = ${uid}))`);
   const OPEN = `t.status NOT IN ('completed','cancelled')`;
 
   const rows = (sql) => db.prepare(sql).all();
@@ -65,8 +66,8 @@ router.get('/', (req, res) => {
   if (isAdmin) {
     workload = db.prepare(
       `SELECT u.id, u.name, u.avatar_color, COUNT(t.id) AS count
-       FROM users u LEFT JOIN tasks t ON t.assignee_id = u.id AND t.status NOT IN ('completed','cancelled')
-       WHERE u.active = 1 GROUP BY u.id HAVING count > 0 ORDER BY count DESC`
+       FROM users u LEFT JOIN tasks t ON t.assignee_id = u.id AND t.status NOT IN ('completed','cancelled') AND t.workspace_id = ${ws}
+       WHERE u.active = 1 AND u.role != 'guest' AND u.workspace_id = ${ws} GROUP BY u.id HAVING count > 0 ORDER BY count DESC`
     ).all();
   }
 

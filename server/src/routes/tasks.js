@@ -12,6 +12,8 @@ const STATUS_LABEL = { in_progress: 'In Progress', completed: 'Completed', hold:
 const NEEDS_REASON = (s) => s === 'hold' || s === 'cancelled';
 
 const getUser = (id) => (id ? db.prepare('SELECT * FROM users WHERE id = ?').get(id) : null);
+// A user who exists AND belongs to the given workspace (for assignee validation).
+const wsUser = (id, ws) => (id ? db.prepare('SELECT * FROM users WHERE id = ? AND workspace_id = ?').get(id, ws) : null);
 
 // Accept an ISO datetime (the client sends UTC) and store it as a SQLite
 // "YYYY-MM-DD HH:MM:SS" UTC string, comparable to datetime('now'). null if unparseable.
@@ -88,7 +90,8 @@ function recipientsForTask(task) {
   const ids = new Set(db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task.id).map((r) => r.user_id));
   if (task.creator_id) ids.add(task.creator_id);
   if (task.assignee_id) ids.add(task.assignee_id);
-  for (const { id } of db.prepare(`SELECT id FROM users WHERE role = 'admin' AND active = 1`).all()) ids.add(id);
+  // Admins of the task's OWN workspace stay in sync (never other workspaces').
+  for (const { id } of db.prepare(`SELECT id FROM users WHERE role = 'admin' AND active = 1 AND workspace_id = ?`).all(task.workspace_id)) ids.add(id);
   return [...ids];
 }
 
@@ -109,10 +112,10 @@ function spawnNextOccurrence(req, task) {
   if (!firstStage) return null;
 
   const info = db.prepare(`
-    INSERT INTO tasks (title, description, workflow_id, project_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (title, description, workflow_id, project_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(task.title, task.description, task.workflow_id, task.project_id, firstStage.id,
-    task.assignee_id, task.creator_id, task.priority, newDue, task.recurrence);
+    task.assignee_id, task.creator_id, task.priority, newDue, task.recurrence, task.workspace_id);
   const newId = info.lastInsertRowid;
 
   for (const { tag } of db.prepare('SELECT tag FROM task_tags WHERE task_id = ?').all(task.id)) {
@@ -140,10 +143,18 @@ function spawnNextOccurrence(req, task) {
 }
 
 function loadTask(req, res) {
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!task) { res.status(404).json({ error: 'Task not found' }); return null; }
   if (!canSeeTask(req.user, task)) { res.status(403).json({ error: 'You do not have access to this task' }); return null; }
   return task;
+}
+
+// Lightweight guard for by-id child routes: confirm the task is in the
+// caller's workspace before mutating its children. Returns true if OK.
+function taskInWorkspace(req, res) {
+  if (db.prepare('SELECT 1 FROM tasks WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)) return true;
+  res.status(404).json({ error: 'Task not found' });
+  return false;
 }
 
 // --- Tasks list & CRUD ---
@@ -151,10 +162,11 @@ function loadTask(req, res) {
 router.get('/', (req, res) => {
   const { workflow_id, project_id, assignee_id, tag, overdue, watching } = req.query;
   let sql = 'SELECT DISTINCT t.* FROM tasks t';
-  const where = ['1=1'];
-  const params = [];
+  // Everything is scoped to the caller's workspace, first and always.
+  const where = ['t.workspace_id = ?'];
+  const params = [req.workspaceId];
   if (tag) { sql += ' JOIN task_tags tt ON tt.task_id = t.id'; where.push('tt.tag = ?'); params.push(tag); }
-  if (watching) { sql += ' JOIN task_watchers tw ON tw.task_id = t.id AND tw.user_id = ?'; params.push(req.user.id); }
+  if (watching) { where.push('EXISTS (SELECT 1 FROM task_watchers tw WHERE tw.task_id = t.id AND tw.user_id = ?)'); params.push(req.user.id); }
   if (workflow_id) { where.push('t.workflow_id = ?'); params.push(workflow_id); }
   if (project_id) { where.push('t.project_id = ?'); params.push(project_id); }
   if (assignee_id) { where.push('t.assignee_id = ?'); params.push(assignee_id); }
@@ -174,17 +186,17 @@ router.post('/', (req, res) => {
   if (!title?.trim()) return res.status(400).json({ error: 'Task title is required' });
   if (!PRIORITIES.includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
   if (!RECURRENCES.includes(recurrence)) return res.status(400).json({ error: 'Invalid recurrence' });
-  const wf = db.prepare('SELECT * FROM workflows WHERE id = ?').get(workflow_id);
+  const wf = db.prepare('SELECT * FROM workflows WHERE id = ? AND workspace_id = ?').get(workflow_id, req.workspaceId);
   if (!wf) return res.status(400).json({ error: 'Workflow not found' });
-  if (assignee_id && !getUser(assignee_id)) return res.status(400).json({ error: 'Assignee not found' });
-  if (project_id && !db.prepare('SELECT id FROM projects WHERE id = ?').get(project_id)) {
+  if (assignee_id && !wsUser(assignee_id, req.workspaceId)) return res.status(400).json({ error: 'Assignee not found' });
+  if (project_id && !db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)) {
     return res.status(400).json({ error: 'Project not found' });
   }
   const firstStage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
   const info = db.prepare(`
-    INSERT INTO tasks (title, description, workflow_id, project_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(title.trim(), description, wf.id, project_id, firstStage.id, assignee_id, req.user.id, priority, due_date, recurrence);
+    INSERT INTO tasks (title, description, workflow_id, project_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(title.trim(), description, wf.id, project_id, firstStage.id, assignee_id, req.user.id, priority, due_date, recurrence, req.workspaceId);
   const taskId = info.lastInsertRowid;
 
   const insReminder = db.prepare('INSERT INTO task_reminders (task_id, remind_at, created_by) VALUES (?, ?, ?)');
@@ -269,12 +281,12 @@ router.patch('/:id', (req, res) => {
     movedToDone = !!stage.is_done && !oldStage?.is_done;
   }
   if (assignee_id !== undefined && assignee_id !== task.assignee_id) {
-    if (assignee_id !== null && !getUser(assignee_id)) return res.status(400).json({ error: 'Assignee not found' });
+    if (assignee_id !== null && !wsUser(assignee_id, req.workspaceId)) return res.status(400).json({ error: 'Assignee not found' });
     const name = assignee_id ? getUser(assignee_id).name : null;
     logActivity(task.id, req.user.id, name ? `assigned it to ${name}` : 'removed the assignee');
     if (assignee_id) addWatcher(task.id, assignee_id);
   }
-  if (project_id !== undefined && project_id !== null && !db.prepare('SELECT id FROM projects WHERE id = ?').get(project_id)) {
+  if (project_id !== undefined && project_id !== null && !db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)) {
     return res.status(400).json({ error: 'Project not found' });
   }
 
@@ -408,6 +420,7 @@ router.post('/:id/reminders', (req, res) => {
 });
 
 router.delete('/:id/reminders/:reminderId', (req, res) => {
+  if (!taskInWorkspace(req, res)) return;
   db.prepare('DELETE FROM task_reminders WHERE id = ? AND task_id = ?').run(req.params.reminderId, req.params.id);
   emitChanged(req, req.params.id);
   res.json(db.prepare('SELECT id, remind_at, sent FROM task_reminders WHERE task_id = ? ORDER BY remind_at').all(req.params.id));
@@ -427,6 +440,7 @@ router.post('/:id/checklist', (req, res) => {
 });
 
 router.patch('/:id/checklist/:itemId', (req, res) => {
+  if (!taskInWorkspace(req, res)) return;
   const item = db.prepare('SELECT * FROM task_checklist WHERE id = ? AND task_id = ?').get(req.params.itemId, req.params.id);
   if (!item) return res.status(404).json({ error: 'Checklist item not found' });
   const { is_done, text } = req.body;
@@ -437,6 +451,7 @@ router.patch('/:id/checklist/:itemId', (req, res) => {
 });
 
 router.delete('/:id/checklist/:itemId', (req, res) => {
+  if (!taskInWorkspace(req, res)) return;
   db.prepare('DELETE FROM task_checklist WHERE id = ? AND task_id = ?').run(req.params.itemId, req.params.id);
   emitChanged(req, req.params.id);
   res.json(db.prepare('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id').all(req.params.id));
@@ -454,6 +469,7 @@ router.post('/:id/tags', (req, res) => {
 });
 
 router.delete('/:id/tags/:tag', (req, res) => {
+  if (!taskInWorkspace(req, res)) return;
   db.prepare('DELETE FROM task_tags WHERE task_id = ? AND tag = ?').run(req.params.id, decodeURIComponent(req.params.tag));
   res.json(emitChanged(req, req.params.id));
 });
@@ -468,6 +484,7 @@ router.post('/:id/watch', (req, res) => {
 });
 
 router.delete('/:id/watch', (req, res) => {
+  if (!taskInWorkspace(req, res)) return;
   db.prepare('DELETE FROM task_watchers WHERE task_id = ? AND user_id = ?').run(req.params.id, req.user.id);
   res.json(emitChanged(req, req.params.id));
 });
@@ -485,14 +502,18 @@ router.post('/:id/attachments', (req, res) => {
 });
 
 router.delete('/:id/attachments/:attId', (req, res) => {
+  if (!taskInWorkspace(req, res)) return;
   db.prepare('DELETE FROM attachments WHERE id = ? AND task_id = ?').run(req.params.attId, req.params.id);
   emitChanged(req, req.params.id);
   res.json(db.prepare('SELECT id, original_name, mime_type, size FROM attachments WHERE task_id = ? ORDER BY id').all(req.params.id));
 });
 
-// Distinct tags across all tasks, for filter menus.
+// Distinct tags across this workspace's tasks, for filter menus.
 router.get('/meta/tags', (req, res) => {
-  res.json({ tags: db.prepare('SELECT DISTINCT tag FROM task_tags ORDER BY tag').all().map((r) => r.tag) });
+  res.json({ tags: db.prepare(`
+    SELECT DISTINCT tt.tag FROM task_tags tt JOIN tasks t ON t.id = tt.task_id
+    WHERE t.workspace_id = ? ORDER BY tt.tag
+  `).all(req.workspaceId).map((r) => r.tag) });
 });
 
 export default router;

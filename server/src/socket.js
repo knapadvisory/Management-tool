@@ -6,6 +6,20 @@ import { createNotification } from './notifications.js';
 // userId -> Set of socket ids (a user can have multiple tabs open)
 const onlineUsers = new Map();
 
+// Presence is per-workspace: broadcast only the online users who belong to the
+// given workspace, and only to that workspace's room.
+function emitPresence(io, workspaceId) {
+  if (!workspaceId) return;
+  const onlineIds = [...onlineUsers.keys()];
+  let ids = [];
+  if (onlineIds.length) {
+    const placeholders = onlineIds.map(() => '?').join(',');
+    ids = db.prepare(`SELECT id FROM users WHERE workspace_id = ? AND id IN (${placeholders})`)
+      .all(workspaceId, ...onlineIds).map((r) => r.id);
+  }
+  io.to(`workspace:${workspaceId}`).emit('presence', { online_user_ids: ids });
+}
+
 export default function setupSocket(io) {
   io.use((socket, next) => {
     try {
@@ -24,12 +38,13 @@ export default function setupSocket(io) {
     const userId = socket.user.id;
 
     socket.join(`user:${userId}`);
+    socket.join(`workspace:${socket.user.workspace_id}`);
     const channels = db.prepare('SELECT channel_id FROM channel_members WHERE user_id = ?').all(userId);
     for (const { channel_id } of channels) socket.join(`channel:${channel_id}`);
 
     if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Set());
     onlineUsers.get(userId).add(socket.id);
-    io.emit('presence', { online_user_ids: [...onlineUsers.keys()] });
+    emitPresence(io, socket.user.workspace_id);
 
     socket.on('channel:subscribe', (channelId) => {
       const member = db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?')
@@ -46,7 +61,7 @@ export default function setupSocket(io) {
       if (!member) return ack?.({ error: 'Not a member of this channel' });
 
       // In a collab restricted to moderators, only owner/moderators may post.
-      const chan = db.prepare('SELECT is_collab, is_dm, who_can_post FROM channels WHERE id = ?').get(channel_id);
+      const chan = db.prepare('SELECT is_collab, is_dm, who_can_post, workspace_id FROM channels WHERE id = ?').get(channel_id);
       if (chan?.is_collab && chan.who_can_post === 'mods' && !['owner', 'moderator'].includes(member.role)) {
         return ack?.({ error: 'Only moderators can post in this collab' });
       }
@@ -57,8 +72,8 @@ export default function setupSocket(io) {
         if (!parent) return ack?.({ error: 'Thread parent not found' });
       }
 
-      const info = db.prepare('INSERT INTO messages (channel_id, user_id, content, parent_id) VALUES (?, ?, ?, ?)')
-        .run(channel_id, userId, content, parent_id);
+      const info = db.prepare('INSERT INTO messages (channel_id, user_id, content, parent_id, workspace_id) VALUES (?, ?, ?, ?, ?)')
+        .run(channel_id, userId, content, parent_id, chan?.workspace_id);
       const messageId = info.lastInsertRowid;
       linkAttachments(messageId, userId, attachment_ids);
       const notified = recordMentions(messageId, channel_id, mention_user_ids);
@@ -117,13 +132,13 @@ export default function setupSocket(io) {
 
     // --- Per-task real-time chat ---
     socket.on('task:chat:join', (taskId) => {
-      if (db.prepare('SELECT 1 FROM tasks WHERE id = ?').get(taskId)) socket.join(`taskchat:${taskId}`);
+      if (db.prepare('SELECT 1 FROM tasks WHERE id = ? AND workspace_id = ?').get(taskId, socket.user.workspace_id)) socket.join(`taskchat:${taskId}`);
     });
     socket.on('task:chat:leave', (taskId) => socket.leave(`taskchat:${taskId}`));
     socket.on('task:chat:send', ({ task_id, content }, ack) => {
       content = (content || '').trim();
       if (!content) return ack?.({ error: 'Empty message' });
-      const task = db.prepare('SELECT id, title FROM tasks WHERE id = ?').get(task_id);
+      const task = db.prepare('SELECT id, title FROM tasks WHERE id = ? AND workspace_id = ?').get(task_id, socket.user.workspace_id);
       if (!task) return ack?.({ error: 'Task not found' });
 
       const info = db.prepare('INSERT INTO task_messages (task_id, user_id, content) VALUES (?, ?, ?)')
@@ -178,7 +193,7 @@ export default function setupSocket(io) {
         sockets.delete(socket.id);
         if (sockets.size === 0) onlineUsers.delete(userId);
       }
-      io.emit('presence', { online_user_ids: [...onlineUsers.keys()] });
+      emitPresence(io, socket.user.workspace_id);
     });
   });
 }

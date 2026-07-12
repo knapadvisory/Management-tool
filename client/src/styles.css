@@ -1392,3 +1392,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .admin-policy-row input { flex: 1; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 14px; }
 .admin-policy-guests { margin-top: 10px; font-size: 13px; }
 .auth-hint { font-size: 12px; color: var(--text); opacity: .7; margin: -6px 0 4px; line-height: 1.4; }
+
+/* --- Workspace auth + admin invite --- */
+.auth-sub { font-size: 13px; text-align: center; margin: -6px 0 14px; line-height: 1.4; }
+.admin-policy-invite { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }

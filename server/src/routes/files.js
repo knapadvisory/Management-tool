@@ -25,9 +25,9 @@ router.get('/', (req, res) => {
     JOIN users u ON u.id = a.uploader_id
     JOIN messages m ON m.id = a.message_id
     JOIN channels c ON c.id = m.channel_id
-    WHERE a.message_id IS NOT NULL AND a.archived_at IS NULL
+    WHERE a.message_id IS NOT NULL AND a.archived_at IS NULL AND c.workspace_id = ?
       AND EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ?)
-  `).all(req.user.id).map((f) => ({
+  `).all(req.workspaceId, req.user.id).map((f) => ({
     id: f.id, original_name: f.original_name, mime_type: f.mime_type, size: f.size, created_at: f.created_at,
     uploader_id: f.uploader_id, uploader_name: f.uploader_name, uploader_color: f.uploader_color,
     context: f.is_dm ? 'Direct message' : f.is_collab ? `Collab: ${f.channel_name}` : `#${f.channel_name}`,
@@ -42,8 +42,8 @@ router.get('/', (req, res) => {
     FROM attachments a
     JOIN users u ON u.id = a.uploader_id
     JOIN tasks t ON t.id = a.task_id
-    WHERE a.task_id IS NOT NULL AND a.archived_at IS NULL
-  `).all()
+    WHERE a.task_id IS NOT NULL AND a.archived_at IS NULL AND t.workspace_id = ?
+  `).all(req.workspaceId)
     .filter((f) => isAdmin || f.creator_id === req.user.id || f.assignee_id === req.user.id || canSeeTask.get(f.task_id, req.user.id))
     .map((f) => ({
       id: f.id, original_name: f.original_name, mime_type: f.mime_type, size: f.size, created_at: f.created_at,
@@ -64,7 +64,7 @@ router.get('/', (req, res) => {
 // This archives it: it disappears from chat and Files for everyone, but the
 // admin can still see (and restore) it in the admin archive.
 router.delete('/:id', (req, res) => {
-  const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(req.params.id);
+  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!att) return res.status(404).json({ error: 'File not found' });
   if (att.uploader_id !== req.user.id) {
     return res.status(403).json({ error: 'You can only delete files you shared' });

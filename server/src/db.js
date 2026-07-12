@@ -12,6 +12,16 @@ db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 db.exec(`
+-- Each tenant is a workspace (a company). Every user, channel, task, file …
+-- belongs to exactly one workspace, and all queries are scoped to it.
+CREATE TABLE IF NOT EXISTS workspaces (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  allowed_signup_domains TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -293,37 +303,71 @@ ensureColumn('channels', 'guest_token', 'TEXT');
 // Per-channel membership role: 'owner' | 'moderator' | 'member'.
 ensureColumn('channel_members', 'role', "TEXT NOT NULL DEFAULT 'member'");
 
+// --- Multi-tenancy: every root entity belongs to a workspace ---
+// Added as plain columns (nullable at the DB level) and always set in code;
+// existing rows are backfilled into a default workspace just below.
+for (const table of ['users', 'channels', 'messages', 'attachments', 'drive_folders', 'workflows', 'tasks', 'projects', 'task_templates']) {
+  ensureColumn(table, 'workspace_id', 'INTEGER REFERENCES workspaces(id)');
+}
+
 // Indexes on migration-added columns must come after the columns exist,
 // otherwise upgrading an existing database fails on startup.
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
   CREATE INDEX IF NOT EXISTS idx_attachments_task ON attachments(task_id);
   CREATE INDEX IF NOT EXISTS idx_attachments_drive ON attachments(is_drive);
+  CREATE INDEX IF NOT EXISTS idx_users_workspace ON users(workspace_id);
+  CREATE INDEX IF NOT EXISTS idx_channels_workspace ON channels(workspace_id);
+  CREATE INDEX IF NOT EXISTS idx_tasks_workspace ON tasks(workspace_id);
+  CREATE INDEX IF NOT EXISTS idx_messages_workspace ON messages(workspace_id);
 `);
 
-// Ensure the organisation always has a super admin. If none exists yet (fresh
-// install, or a database created before roles existed), promote the earliest
-// account — the person who first registered the workspace.
+// Backfill: if a database predates workspaces, move all existing data into a
+// single default workspace so nothing is orphaned. Runs once.
+if (!db.prepare('SELECT 1 FROM workspaces LIMIT 1').get() && db.prepare('SELECT 1 FROM users LIMIT 1').get()) {
+  const legacyDomains = db.prepare(`SELECT value FROM app_settings WHERE key = 'allowed_signup_domains'`).get()?.value || '';
+  const migrate = db.transaction(() => {
+    const ws = db.prepare('INSERT INTO workspaces (name, slug, allowed_signup_domains) VALUES (?, ?, ?)')
+      .run('KNAP Advisory', 'knap', legacyDomains);
+    const id = ws.lastInsertRowid;
+    for (const table of ['users', 'channels', 'messages', 'attachments', 'drive_folders', 'workflows', 'tasks', 'projects', 'task_templates']) {
+      db.prepare(`UPDATE ${table} SET workspace_id = ? WHERE workspace_id IS NULL`).run(id);
+    }
+  });
+  migrate();
+}
+
+// Ensure the backfilled workspace has a super admin. If none exists yet
+// (a database created before roles existed), promote its earliest account.
 if (!db.prepare(`SELECT 1 FROM users WHERE role = 'admin' AND active = 1`).get()) {
   const first = db.prepare('SELECT id FROM users ORDER BY id LIMIT 1').get();
   if (first) db.prepare(`UPDATE users SET role = 'admin' WHERE id = ?`).run(first.id);
 }
 
-// Seed the shared #general channel and a default workflow on first run.
-const seed = db.transaction(() => {
-  if (!db.prepare(`SELECT id FROM channels WHERE name = 'general' AND is_dm = 0`).get()) {
-    db.prepare(`INSERT INTO channels (name, description) VALUES ('general', 'Company-wide announcements and chatter')`).run();
-  }
-  if (!db.prepare(`SELECT id FROM workflows LIMIT 1`).get()) {
-    const wf = db.prepare(`INSERT INTO workflows (name, description) VALUES ('Default', 'Standard task flow')`).run();
-    const stage = db.prepare(`INSERT INTO workflow_stages (workflow_id, name, position, is_done) VALUES (?, ?, ?, ?)`);
-    ['To Do', 'In Progress', 'Review'].forEach((name, i) => stage.run(wf.lastInsertRowid, name, i, 0));
-    stage.run(wf.lastInsertRowid, 'Done', 3, 1);
-  }
-});
-seed();
+// Give a freshly-created workspace its starter content: a #general channel and
+// a default task workflow. Called when a new workspace is provisioned.
+export function seedWorkspace(workspaceId) {
+  const t = db.transaction(() => {
+    if (!db.prepare(`SELECT id FROM channels WHERE name = 'general' AND is_dm = 0 AND workspace_id = ?`).get(workspaceId)) {
+      db.prepare(`INSERT INTO channels (name, description, workspace_id) VALUES ('general', 'Company-wide announcements and chatter', ?)`).run(workspaceId);
+    }
+    if (!db.prepare(`SELECT id FROM workflows WHERE workspace_id = ? LIMIT 1`).get(workspaceId)) {
+      const wf = db.prepare(`INSERT INTO workflows (name, description, workspace_id) VALUES ('Default', 'Standard task flow', ?)`).run(workspaceId);
+      const stage = db.prepare(`INSERT INTO workflow_stages (workflow_id, name, position, is_done) VALUES (?, ?, ?, ?)`);
+      ['To Do', 'In Progress', 'Review'].forEach((name, i) => stage.run(wf.lastInsertRowid, name, i, 0));
+      stage.run(wf.lastInsertRowid, 'Done', 3, 1);
+    }
+  });
+  t();
+}
 
-// --- Workspace settings (key/value) ---
+// Make sure the backfilled (legacy) workspace has its starter content wired to
+// its workspace_id — older installs seeded #general/workflow before workspaces
+// existed, and the backfill above stamped them; nothing to do if already set.
+const legacyWs = db.prepare('SELECT id FROM workspaces ORDER BY id LIMIT 1').get();
+if (legacyWs) seedWorkspace(legacyWs.id);
+
+// --- Global platform settings (key/value) — not per-workspace ---
 export function getSetting(key, fallback = null) {
   const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
   return row ? row.value : fallback;
@@ -333,12 +377,6 @@ export function setSetting(key, value) {
     INSERT INTO app_settings (key, value) VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(key, value ?? '');
-}
-
-// Seed the allowed signup domains from the env var on first run only, so an
-// admin can later change it from the UI without it being reset on restart.
-if (getSetting('allowed_signup_domains') === null) {
-  setSetting('allowed_signup_domains', (process.env.ALLOWED_EMAIL_DOMAINS || '').trim());
 }
 
 export default db;

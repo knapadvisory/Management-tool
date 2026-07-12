@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import db, { getSetting, setSetting } from '../db.js';
+import db from '../db.js';
 import { publicUser } from '../auth.js';
 import { serializeMessage } from '../messages.js';
 
@@ -14,10 +14,13 @@ const router = Router();
 const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3aed', '#f97316', '#0ea5e9', '#db2777'];
 
 // Every route here is already behind requireAuth + requireAdmin (see index.js).
+// An admin governs only their OWN workspace, so all lookups are scoped to it.
+const wsUser = (req) => db.prepare('SELECT * FROM users WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
 
-// Full roster including deactivated accounts, so the admin can supervise everyone.
+// Full roster (this workspace) including deactivated accounts, but not external
+// guests — those are managed per-collab, not here.
 router.get('/users', (req, res) => {
-  const users = db.prepare('SELECT * FROM users ORDER BY active DESC, name').all().map((u) => ({
+  const users = db.prepare(`SELECT * FROM users WHERE workspace_id = ? AND role != 'guest' ORDER BY active DESC, name`).all(req.workspaceId).map((u) => ({
     ...publicUser(u),
     created_at: u.created_at,
   }));
@@ -37,27 +40,27 @@ router.post('/users', (req, res) => {
   const chosenRole = role === 'admin' ? 'admin' : 'member';
   const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
   const info = db.prepare(
-    'INSERT INTO users (name, email, password_hash, avatar_color, title, role) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(name.trim(), normalizedEmail, bcrypt.hashSync(password, 10), color, title.trim(), chosenRole);
+    'INSERT INTO users (name, email, password_hash, avatar_color, title, role, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(name.trim(), normalizedEmail, bcrypt.hashSync(password, 10), color, title.trim(), chosenRole, req.workspaceId);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
 
-  // Everyone joins #general automatically.
-  const general = db.prepare(`SELECT id FROM channels WHERE name = 'general' AND is_dm = 0`).get();
+  // Everyone joins this workspace's #general automatically.
+  const general = db.prepare(`SELECT id FROM channels WHERE name = 'general' AND is_dm = 0 AND workspace_id = ?`).get(req.workspaceId);
   if (general) db.prepare('INSERT OR IGNORE INTO channel_members (channel_id, user_id) VALUES (?, ?)').run(general.id, user.id);
 
-  req.app.get('io')?.emit('directory:changed');
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
   res.status(201).json(publicUser(user));
 });
 
 // Change role and/or title. Guard against removing the last active admin.
 router.patch('/users/:id', (req, res) => {
-  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  const target = wsUser(req);
   if (!target) return res.status(404).json({ error: 'User not found' });
   const { role, title } = req.body;
 
   if (role && role !== target.role) {
     if (role !== 'admin' && role !== 'member') return res.status(400).json({ error: 'Invalid role' });
-    if (target.role === 'admin' && role === 'member' && lastActiveAdmin(target.id)) {
+    if (target.role === 'admin' && role === 'member' && lastActiveAdmin(target.id, req.workspaceId)) {
       return res.status(400).json({ error: 'Cannot demote the only remaining admin' });
     }
   }
@@ -70,30 +73,30 @@ router.patch('/users/:id', (req, res) => {
 
 // Deactivate ("delete") — reversible, preserves all their tasks/messages/history.
 router.post('/users/:id/deactivate', (req, res) => {
-  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  const target = wsUser(req);
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (target.id === req.user.id) return res.status(400).json({ error: 'You cannot deactivate your own account' });
-  if (target.role === 'admin' && lastActiveAdmin(target.id)) {
+  if (target.role === 'admin' && lastActiveAdmin(target.id, req.workspaceId)) {
     return res.status(400).json({ error: 'Cannot deactivate the only remaining admin' });
   }
   db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(target.id);
-  req.app.get('io')?.emit('directory:changed');
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
   // Boot any live sessions belonging to the deactivated user.
   req.app.get('io')?.to(`user:${target.id}`).emit('account:deactivated');
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(target.id)));
 });
 
 router.post('/users/:id/reactivate', (req, res) => {
-  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  const target = wsUser(req);
   if (!target) return res.status(404).json({ error: 'User not found' });
   db.prepare('UPDATE users SET active = 1 WHERE id = ?').run(target.id);
-  req.app.get('io')?.emit('directory:changed');
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(target.id)));
 });
 
 // Reset a teammate's password (e.g. they're locked out).
 router.post('/users/:id/reset-password', (req, res) => {
-  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  const target = wsUser(req);
   if (!target) return res.status(404).json({ error: 'User not found' });
   const { password } = req.body;
   if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
@@ -112,15 +115,15 @@ router.get('/files/archived', (req, res) => {
     FROM attachments a
     JOIN users up ON up.id = a.uploader_id
     LEFT JOIN users del ON del.id = a.archived_by
-    WHERE a.archived_at IS NOT NULL
+    WHERE a.archived_at IS NOT NULL AND a.workspace_id = ?
     ORDER BY a.archived_at DESC
-  `).all();
+  `).all(req.workspaceId);
   res.json({ files: rows });
 });
 
 // Restore an archived file back into chat / Files.
 router.post('/files/:id/restore', (req, res) => {
-  const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(req.params.id);
+  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!att) return res.status(404).json({ error: 'File not found' });
   db.prepare('UPDATE attachments SET archived_at = NULL, archived_by = NULL WHERE id = ?').run(att.id);
   if (att.message_id) {
@@ -133,39 +136,44 @@ router.post('/files/:id/restore', (req, res) => {
 
 // Permanently remove an archived file (from disk too).
 router.delete('/files/:id', (req, res) => {
-  const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(req.params.id);
+  const att = db.prepare('SELECT * FROM attachments WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!att) return res.status(404).json({ error: 'File not found' });
   db.prepare('DELETE FROM attachments WHERE id = ?').run(att.id);
   try { fs.unlinkSync(path.join(uploadDir, att.stored_name)); } catch { /* already gone */ }
   res.json({ ok: true });
 });
 
-// --- Workspace settings ---
+// --- Workspace settings (this admin's own workspace) ---
 
-// Current signup policy: which work-email domains may self-register.
+// Signup policy + the shareable join link for this workspace.
 router.get('/settings', (req, res) => {
+  const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.workspaceId);
   res.json({
-    allowed_signup_domains: getSetting('allowed_signup_domains', '') || '',
-    signup_code_required: !!(process.env.SIGNUP_CODE || '').trim(),
-    guest_count: db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'guest'`).get().n,
+    workspace: { id: ws.id, name: ws.name, slug: ws.slug },
+    allowed_signup_domains: ws.allowed_signup_domains || '',
+    guest_count: db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'guest' AND workspace_id = ?`).get(req.workspaceId).n,
   });
 });
 
-// Update the allowed signup domains (comma/space separated, '@' optional).
+// Update this workspace's allowed signup domains (comma/space separated).
 router.patch('/settings', (req, res) => {
-  const { allowed_signup_domains } = req.body;
+  const { allowed_signup_domains, workspace_name } = req.body;
   if (allowed_signup_domains !== undefined) {
     const cleaned = String(allowed_signup_domains)
       .split(/[\s,]+/).map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean).join(', ');
-    setSetting('allowed_signup_domains', cleaned);
+    db.prepare('UPDATE workspaces SET allowed_signup_domains = ? WHERE id = ?').run(cleaned, req.workspaceId);
   }
-  res.json({ allowed_signup_domains: getSetting('allowed_signup_domains', '') || '' });
+  if (workspace_name !== undefined && String(workspace_name).trim()) {
+    db.prepare('UPDATE workspaces SET name = ? WHERE id = ?').run(String(workspace_name).trim(), req.workspaceId);
+  }
+  const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.workspaceId);
+  res.json({ workspace: { id: ws.id, name: ws.name, slug: ws.slug }, allowed_signup_domains: ws.allowed_signup_domains || '' });
 });
 
-// True when `excludingId` is the only active admin left.
-function lastActiveAdmin(excludingId) {
-  const others = db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND id != ?`)
-    .get(excludingId).n;
+// True when `excludingId` is the only active admin left IN THIS WORKSPACE.
+function lastActiveAdmin(excludingId, workspaceId) {
+  const others = db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND workspace_id = ? AND id != ?`)
+    .get(workspaceId, excludingId).n;
   return others === 0;
 }
 

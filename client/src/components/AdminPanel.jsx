@@ -5,12 +5,11 @@ import ArchiveManager from './ArchiveManager.jsx';
 
 // Super-admin control room: manage the whole team — create, promote/demote,
 // deactivate/reactivate, reset passwords — and share the sign-up link.
-export default function AdminPanel({ user, signupCodeRequired }) {
+export default function AdminPanel({ user }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [archived, setArchived] = useState([]);
   const [showArchive, setShowArchive] = useState(false);
 
@@ -41,14 +40,6 @@ export default function AdminPanel({ user, signupCodeRequired }) {
     }
   }
 
-  const inviteLink = `${window.location.origin}/`;
-  function copyInvite() {
-    navigator.clipboard?.writeText(inviteLink).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {});
-  }
-
   if (loading) return <div className="admin-panel"><div className="admin-head"><h2>Team administration</h2></div><p className="muted">Loading…</p></div>;
 
   const active = members.filter((m) => m.active);
@@ -62,20 +53,6 @@ export default function AdminPanel({ user, signupCodeRequired }) {
           <p className="muted">Create teammates, set roles, and manage access. As super admin you can see every task and profile in the workspace.</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>＋ Add user</button>
-      </div>
-
-      <div className="admin-invite">
-        <div>
-          <strong>Invite link</strong>
-          <p className="muted">
-            Share this link so teammates create their own login.
-            {signupCodeRequired ? ' They will also need the sign-up access code you set at deploy time.' : ' Sign-up is currently open (no access code required).'}
-          </p>
-        </div>
-        <div className="admin-invite-row">
-          <input readOnly value={inviteLink} onFocus={(e) => e.target.select()} />
-          <button className="btn" onClick={copyInvite}>{copied ? 'Copied ✓' : 'Copy'}</button>
-        </div>
       </div>
 
       <SignupPolicy />
@@ -111,19 +88,22 @@ export default function AdminPanel({ user, signupCodeRequired }) {
   );
 }
 
-// Controls who may self-register as a full member vs. only join as a guest.
+// Workspace identity + who may join, plus the shareable employee join link.
 function SignupPolicy() {
   const [domains, setDomains] = useState('');
   const [guestCount, setGuestCount] = useState(0);
+  const [ws, setWs] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [err, setErr] = useState(null);
 
   useEffect(() => {
     api('/admin/settings').then((d) => {
       setDomains(d.allowed_signup_domains || '');
       setGuestCount(d.guest_count || 0);
+      setWs(d.workspace || null);
       setLoaded(true);
     }).catch((e) => { setErr(e.message); setLoaded(true); });
   }, []);
@@ -140,19 +120,34 @@ function SignupPolicy() {
 
   if (!loaded) return null;
   const restricted = domains.trim().length > 0;
+  const joinLink = ws ? `${window.location.origin}/join/${ws.slug}` : '';
+  function copyJoin() {
+    navigator.clipboard?.writeText(joinLink).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }).catch(() => {});
+  }
 
   return (
     <div className="admin-policy">
+      {ws && (
+        <div className="admin-policy-invite">
+          <div className="admin-policy-head"><strong>Invite your team to {ws.name}</strong></div>
+          <p className="muted">Share this link so employees create their own account in this workspace.</p>
+          <div className="admin-policy-row">
+            <input readOnly value={joinLink} onFocus={(e) => e.target.select()} />
+            <button className="btn btn-sm" onClick={copyJoin}>{copied ? 'Copied ✓' : 'Copy'}</button>
+          </div>
+        </div>
+      )}
+
       <div className="admin-policy-head">
-        <strong>Who can create an account</strong>
-        <span className={`policy-pill ${restricted ? 'on' : 'off'}`}>{restricted ? 'Work email only' : 'Open signup'}</span>
+        <strong>Who can join</strong>
+        <span className={`policy-pill ${restricted ? 'on' : 'off'}`}>{restricted ? 'Work email only' : 'Open'}</span>
       </div>
       <p className="muted">
-        List the work-email domains allowed to self-register (comma separated). Anyone with a matching email can sign up as a member;
+        List the work-email domains allowed to join (comma separated). Anyone with a matching email can register as a member;
         everyone else must be invited into a collab as a <strong>guest</strong>, or created here by you. Leave empty to allow any email.
       </p>
       <div className="admin-policy-row">
-        <input placeholder="knapadvisory.com, partner.com" value={domains} onChange={(e) => setDomains(e.target.value)} />
+        <input placeholder="acme.com, partner.com" value={domains} onChange={(e) => setDomains(e.target.value)} />
         <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}</button>
       </div>
       <p className="muted admin-policy-guests">👤 External guests currently in the workspace: <strong>{guestCount}</strong></p>

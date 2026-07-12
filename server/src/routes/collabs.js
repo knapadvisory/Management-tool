@@ -41,7 +41,7 @@ export function collabWithMeta(collab, userId) {
 }
 
 function loadCollab(req, res) {
-  const c = db.prepare('SELECT * FROM channels WHERE id = ? AND is_collab = 1').get(req.params.id);
+  const c = db.prepare('SELECT * FROM channels WHERE id = ? AND is_collab = 1 AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!c) { res.status(404).json({ error: 'Collab not found' }); return null; }
   return c;
 }
@@ -60,8 +60,8 @@ export function canManageCollab(collab, user) {
 router.get('/', (req, res) => {
   const rows = db.prepare(`
     SELECT c.* FROM channels c JOIN channel_members cm ON cm.channel_id = c.id
-    WHERE c.is_collab = 1 AND cm.user_id = ? ORDER BY c.id DESC
-  `).all(req.user.id);
+    WHERE c.is_collab = 1 AND cm.user_id = ? AND c.workspace_id = ? ORDER BY c.id DESC
+  `).all(req.user.id, req.workspaceId);
   res.json({ collabs: rows.map((c) => collabWithMeta(c, req.user.id)) });
 });
 
@@ -84,9 +84,9 @@ router.post('/', blockGuest, (req, res) => {
     return res.status(400).json({ error: 'Invalid permission setting' });
   }
   const info = db.prepare(`
-    INSERT INTO channels (name, description, is_dm, is_private, is_collab, created_by, history_visible, who_can_invite, who_can_post)
-    VALUES (?, ?, 0, 1, 1, ?, ?, ?, ?)
-  `).run(name.trim(), description, req.user.id, history_visible ? 1 : 0, who_can_invite, who_can_post);
+    INSERT INTO channels (name, description, is_dm, is_private, is_collab, created_by, history_visible, who_can_invite, who_can_post, workspace_id)
+    VALUES (?, ?, 0, 1, 1, ?, ?, ?, ?, ?)
+  `).run(name.trim(), description, req.user.id, history_visible ? 1 : 0, who_can_invite, who_can_post, req.workspaceId);
   const collabId = info.lastInsertRowid;
 
   const add = db.prepare('INSERT OR IGNORE INTO channel_members (channel_id, user_id, role) VALUES (?, ?, ?)');
@@ -94,7 +94,8 @@ router.post('/', blockGuest, (req, res) => {
   const mods = new Set((moderator_ids || []).map(Number));
   for (const uid of new Set([...member_ids, ...moderator_ids].map(Number))) {
     if (uid === req.user.id) continue;
-    if (db.prepare('SELECT 1 FROM users WHERE id = ? AND active = 1').get(uid)) {
+    // Only teammates in the same workspace can be added.
+    if (db.prepare('SELECT 1 FROM users WHERE id = ? AND active = 1 AND workspace_id = ?').get(uid, req.workspaceId)) {
       add.run(collabId, uid, mods.has(uid) ? 'moderator' : 'member');
     }
   }
@@ -184,7 +185,7 @@ router.post('/:id/members', blockGuest, (req, res) => {
   const { user_ids = [] } = req.body;
   const add = db.prepare('INSERT OR IGNORE INTO channel_members (channel_id, user_id, role) VALUES (?, ?, ?)');
   for (const uid of user_ids.map(Number)) {
-    if (db.prepare('SELECT 1 FROM users WHERE id = ? AND active = 1').get(uid)) add.run(collab.id, uid, 'member');
+    if (db.prepare('SELECT 1 FROM users WHERE id = ? AND active = 1 AND workspace_id = ?').get(uid, req.workspaceId)) add.run(collab.id, uid, 'member');
   }
   notifyMembers(req, collab);
   res.status(201).json(collabWithMeta(collab, req.user.id));
