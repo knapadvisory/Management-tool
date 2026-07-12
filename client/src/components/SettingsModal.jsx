@@ -4,6 +4,7 @@ import Avatar from './Avatar.jsx';
 import { ACCENTS, applyTheme, saveLocalTheme } from '../theme.js';
 import { notificationsSupported, notificationPermission, requestNotificationPermission, desktopEnabled, setDesktopEnabled } from '../desktopNotify.js';
 import { getPrefs, setPref } from '../prefs.js';
+import { LANGUAGES, timeZones } from '../i18nData.js';
 
 const SECTIONS = [
   { key: 'profile', label: 'Profile', icon: '👤' },
@@ -197,17 +198,25 @@ function MessagesPanel() {
 }
 
 function LanguagePanel() {
+  const [locale, setLocale] = usePref('locale');
+  const [timezone, setTimezone] = usePref('timezone');
   const [spellcheck, setSpellcheck] = usePref('spellcheck');
-  const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'your device setting'; } })();
+  const deviceTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'device setting'; } })();
+  const zones = timeZones();
   return (
     <div>
       <h3 className="settings-title">Language &amp; region</h3>
       <label className="profile-label">Language</label>
-      <select className="profile-input" disabled value="en"><option value="en">English</option></select>
-      <p className="muted settings-hint">More languages aren’t available yet.</p>
+      <select className="profile-input" value={locale} onChange={(e) => setLocale(e.target.value)}>
+        {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+      </select>
+      <p className="muted settings-hint">Sets how dates, times and numbers are formatted. The app’s text stays in English for now.</p>
       <label className="profile-label" style={{ marginTop: 12 }}>Time zone</label>
-      <input className="profile-input" value={tz} disabled />
-      <p className="muted settings-hint">Times are shown in your device’s time zone.</p>
+      <select className="profile-input" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+        <option value="auto">Automatic — {deviceTz}</option>
+        {zones.map((z) => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}
+      </select>
+      <p className="muted settings-hint">Times across the app (including the clock) are shown in this zone.</p>
       <hr className="profile-sep" />
       <div className="settings-toggles">
         <Toggle checked={spellcheck} onChange={setSpellcheck} label="Spellcheck" hint="Check spelling as you type in the message box." />

@@ -1274,3 +1274,18 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .people-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .people-view .files-tabs { flex: 0 0 auto; }
 .people-view-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Live clock (dashboard header) */
+.dash-head-right { display: flex; align-items: center; gap: 16px; }
+.clock { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+.clock-time { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.clock-date { font-size: 12px; }
+@media (max-width: 900px) { .dash-head-right { align-self: flex-start; } }
+
+/* Archive manager (admin) */
+.archive-mgr { margin-top: 8px; }
+.archive-controls { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.archive-controls .files-search { flex: 1; min-width: 200px; }
+.archive-table th { cursor: pointer; }
+.archive-table th:nth-child(4), .archive-table td:nth-child(4) { white-space: nowrap; }
+.archive-row-actions { display: flex; gap: 6px; white-space: nowrap; }

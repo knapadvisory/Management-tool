@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../api.js';
-import { formatBytes, formatDateTime } from '../format.js';
 import Avatar from './Avatar.jsx';
+import ArchiveManager from './ArchiveManager.jsx';
 
 // Super-admin control room: manage the whole team — create, promote/demote,
 // deactivate/reactivate, reset passwords — and share the sign-up link.
@@ -30,13 +30,6 @@ export default function AdminPanel({ user, signupCodeRequired }) {
   }, []);
 
   useEffect(() => { refresh(); loadArchived(); }, [refresh, loadArchived]);
-
-  async function restoreFile(id) { await api(`/admin/files/${id}/restore`, { method: 'POST' }).catch((e) => setError(e.message)); loadArchived(); }
-  async function purgeFile(id) {
-    if (!confirm('Permanently delete this file? This cannot be undone.')) return;
-    await api(`/admin/files/${id}`, { method: 'DELETE' }).catch((e) => setError(e.message));
-    loadArchived();
-  }
 
   async function act(fn) {
     setError(null);
@@ -107,25 +100,8 @@ export default function AdminPanel({ user, signupCodeRequired }) {
         <button className="admin-archive-toggle" onClick={() => setShowArchive((s) => !s)}>
           🗄 Archive — deleted files · {archived.length} <span>{showArchive ? '▲' : '▼'}</span>
         </button>
-        <p className="muted admin-archive-note">Files teammates deleted from their chats are hidden for everyone but kept here. Restore to bring one back, or delete it permanently.</p>
-        {showArchive && (
-          <div className="admin-archive-list">
-            {archived.length === 0 && <div className="empty-hint">No deleted files.</div>}
-            {archived.map((f) => (
-              <div key={f.id} className="archive-row">
-                <span className="file-icon sm">📄</span>
-                <div className="archive-main">
-                  <div className="archive-name">{f.original_name}</div>
-                  <div className="muted archive-sub">
-                    Shared by {f.uploader_name} · deleted by {f.deleted_by_name || '—'} · {formatDateTime(f.archived_at)} · {formatBytes(f.size)}
-                  </div>
-                </div>
-                <button className="btn btn-sm" onClick={() => restoreFile(f.id)}>Restore</button>
-                <button className="btn btn-sm btn-danger" onClick={() => purgeFile(f.id)}>Delete</button>
-              </div>
-            ))}
-          </div>
-        )}
+        <p className="muted admin-archive-note">Files teammates deleted from their chats are hidden for everyone but kept here. Search, select multiple, then restore or delete them permanently.</p>
+        {showArchive && <ArchiveManager files={archived} onReload={loadArchived} />}
       </div>
 
       {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} onCreated={refresh} />}

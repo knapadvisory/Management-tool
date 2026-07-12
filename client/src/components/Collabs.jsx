@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getSocket } from '../socket.js';
-import { clock24 } from '../prefs.js';
+import { localeArg, dateOpts } from '../prefs.js';
 import ChatView from './ChatView.jsx';
 import CollabForm from './CollabForm.jsx';
 import CollabSettings from './CollabSettings.jsx';
@@ -11,8 +11,8 @@ function shortTime(value) {
   if (Number.isNaN(d.getTime())) return '';
   const now = new Date();
   return d.toDateString() === now.toDateString()
-    ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: !clock24() })
-    : d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+    ? d.toLocaleTimeString(localeArg(), dateOpts({ hour: 'numeric', minute: '2-digit' }))
+    : d.toLocaleDateString(localeArg(), dateOpts({ day: 'numeric', month: 'short' }));
 }
 
 // Bitrix-style "Collabs": private group spaces with their own membership and

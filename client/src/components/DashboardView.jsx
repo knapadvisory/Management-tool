@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
 import TaskModal from './TaskModal.jsx';
+import Clock from './Clock.jsx';
 
 const PRIO = {
   urgent: { label: 'URGENT', cls: 'p-urgent' },
@@ -96,12 +97,15 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
           <h1 className="dash-title">{greeting}, {(user.name || '').split(' ')[0]}</h1>
           <p className="dash-sub">{today} · {subParts.join(' · ')}</p>
         </div>
-        <button className="btn btn-primary" onClick={onOpenTasks}>Open tasks →</button>
+        <div className="dash-head-right">
+          <Clock />
+          <button className="btn btn-primary" onClick={onOpenTasks}>Open tasks →</button>
+        </div>
       </header>
 
       {data.upcoming.length > 0 && (
         <section className="dash-block">
-          <div className="dash-block-head"><h2>Upcoming deadlines</h2><button className="dash-link" onClick={onOpenTasks}>All tasks →</button></div>
+          <div className="dash-block-head"><h2>Upcoming deadlines</h2></div>
           <div className="deadline-strip">
             {data.upcoming.map((t) => {
               const b = dueBadge(t.due_date);

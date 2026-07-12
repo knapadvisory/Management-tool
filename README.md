@@ -6,6 +6,8 @@ A self-hosted internal collaboration tool inspired by **Slack** (messaging, call
 
 **🎨 Appearance (per user)**
 - A **Settings** hub (⚙️ in the sidebar, or click your name) — a Slack-style Preferences window with a left rail of categories: **Profile** (name, title, avatar), **Appearance** (15 theme colours + mode), **Notifications** (desktop alerts), **Messages & media** (message density, 24-hour clock, typing indicators), **Language & region** (time zone, spellcheck), **Accessibility** (reduce motion, underline links) and **Account & password**. Preferences apply instantly and are remembered on your device
+- A **live clock** on the Home screen (respects the 24-hour, language and time-zone settings), and **Language & region** settings — a locale that drives date/number formatting and a full **time-zone** picker applied everywhere times are shown
+- The admin **Archive** of deleted files is a searchable, sortable manager with **multi-select** and bulk **Restore / Delete permanently**
 - **Light / Dark / System** colour modes and a choice of **theme colours** (Indigo, Violet, Aubergine, Blue, Teal, Green, Amber, Rose, Slate) — each recolours the **whole app**, including the sidebar (Slack-style), buttons, links and highlights. Set from your Profile, saved to your account and applied on every device you sign in from. A quick 🌙/☀️ toggle sits in the sidebar; every surface, badge and control is theme-aware
 
 **📊 Dashboard (home)**

@@ -1,6 +1,6 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { clock24 } from './prefs.js';
+import { localeArg, dateOpts } from './prefs.js';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -37,7 +37,7 @@ export function formatDateTime(value) {
   if (!value) return '';
   const d = new Date(/[TZ]/.test(value) ? value : value.replace(' ', 'T') + 'Z');
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: !clock24() });
+  return d.toLocaleString(localeArg(), dateOpts({ day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }));
 }
 
 export function formatBytes(bytes) {

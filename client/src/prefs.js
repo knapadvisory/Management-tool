@@ -11,6 +11,8 @@ const DEFAULTS = {
   reduceMotion: false,      // disable transitions/animations
   spellcheck: true,         // browser spellcheck in the composer
   enterToSend: true,        // Enter sends (vs. Enter = newline, Ctrl+Enter sends)
+  locale: 'auto',           // date/number formatting locale ('auto' = device)
+  timezone: 'auto',         // IANA time zone for displayed times ('auto' = device)
 };
 
 let cache = null;
@@ -40,3 +42,13 @@ export function applyPrefs() {
 }
 
 export const clock24 = () => getPrefs().clock24;
+// Locale for toLocale* (undefined = device default). Time zone likewise.
+export const localeArg = () => { const l = getPrefs().locale; return l && l !== 'auto' ? l : undefined; };
+export const timeZoneArg = () => { const z = getPrefs().timezone; return z && z !== 'auto' ? z : undefined; };
+// Shared options object for date/time formatting that respects all three prefs.
+export function dateOpts(extra = {}) {
+  const o = { ...extra, hour12: !clock24() };
+  const z = timeZoneArg();
+  if (z) o.timeZone = z;
+  return o;
+}
