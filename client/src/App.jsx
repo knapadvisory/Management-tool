@@ -17,6 +17,7 @@ import SearchModal from './components/SearchModal.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import { applyTheme, saveLocalTheme } from './theme.js';
+import { onLangChange } from './i18n.js';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -128,6 +129,10 @@ export default function App() {
     applyTheme(t);
     saveLocalTheme(t);
   }, [user?.theme, user?.accent]);
+
+  // Re-render the whole app when the interface language changes.
+  const [, setLangTick] = useState(0);
+  useEffect(() => onLangChange(() => setLangTick((n) => n + 1)), []);
 
   // Ctrl/Cmd+K opens search from anywhere (like Slack's quick switcher).
   useEffect(() => {

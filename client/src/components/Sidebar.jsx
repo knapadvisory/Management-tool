@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
+import { t } from '../i18n.js';
 
 export default function Sidebar({
   user, channels, joinable, users, onlineIds, view,
@@ -34,10 +35,10 @@ export default function Sidebar({
       <div className="sidebar-header">
         <span className="logo">TeamHub</span>
         <div className="header-actions">
-          <button className="icon-btn" title="Search messages" onClick={onOpenSearch}>🔍</button>
+          <button className="icon-btn" title={t('action.search')} onClick={onOpenSearch}>🔍</button>
           <button className="icon-btn" title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={onToggleTheme}>{darkMode ? '☀️' : '🌙'}</button>
-          <button className="icon-btn" title="Settings" onClick={() => onOpenSettings('appearance')}>⚙️</button>
-          <button className="icon-btn" title="Sign out" onClick={onLogout}>⏻</button>
+          <button className="icon-btn" title={t('action.settings')} onClick={() => onOpenSettings('appearance')}>⚙️</button>
+          <button className="icon-btn" title={t('action.signout')} onClick={onLogout}>⏻</button>
         </div>
       </div>
 
@@ -52,58 +53,58 @@ export default function Sidebar({
           className={`nav-item ${view?.type === 'dashboard' ? 'active' : ''}`}
           onClick={() => onSelectView('dashboard')}
         >
-          <span className="nav-logo">🏠</span> Home
+          <span className="nav-logo">🏠</span> {t('nav.home')}
         </button>
         <button
           className={`nav-item ${view?.type === 'messenger' ? 'active' : ''}`}
           onClick={() => onSelectView('messenger')}
         >
-          <span className="nav-logo">💬</span> DMs
+          <span className="nav-logo">💬</span> {t('nav.dms')}
         </button>
         <button
           className={`nav-item ${(view?.type === 'team' || view?.type === 'collabs') ? 'active' : ''}`}
           onClick={() => onSelectView('team')}
         >
-          <span className="nav-logo">👥</span> People
+          <span className="nav-logo">👥</span> {t('nav.people')}
         </button>
         <button
           className={`nav-item ${view?.type === 'activity' ? 'active' : ''}`}
           onClick={() => onSelectView('activity')}
         >
-          <span className="nav-logo">🔔</span> Activity
+          <span className="nav-logo">🔔</span> {t('nav.activity')}
           {unreadCount > 0 && <span className="nav-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
         </button>
         <button
           className={`nav-item ${view?.type === 'files' ? 'active' : ''}`}
           onClick={() => onSelectView('files')}
         >
-          <span className="nav-logo">🗂️</span> Files
+          <span className="nav-logo">🗂️</span> {t('nav.files')}
         </button>
         <button
           className={`nav-item ${view?.type === 'tasks' ? 'active' : ''}`}
           onClick={() => onSelectView('tasks')}
         >
-          ☑ Tasks
+          ☑ {t('nav.tasks')}
         </button>
         <button
           className={`nav-item ${view?.type === 'workflows' ? 'active' : ''}`}
           onClick={() => onSelectView('workflows')}
         >
-          ⚙ Workflows
+          ⚙ {t('nav.workflows')}
         </button>
         {user.role === 'admin' && (
           <button
             className={`nav-item ${view?.type === 'admin' ? 'active' : ''}`}
             onClick={() => onSelectView('admin')}
           >
-            👑 Admin
+            👑 {t('nav.admin')}
           </button>
         )}
       </nav>
 
       <div className="sidebar-section">
         <div className="section-title">
-          <span>Channels</span>
+          <span>{t('sidebar.channels')}</span>
           <button className="icon-btn" title="Create channel" onClick={() => setShowCreate((s) => !s)}>＋</button>
         </div>
         {showCreate && (

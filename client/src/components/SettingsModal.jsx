@@ -5,16 +5,17 @@ import { ACCENTS, applyTheme, saveLocalTheme } from '../theme.js';
 import { notificationsSupported, notificationPermission, requestNotificationPermission, desktopEnabled, setDesktopEnabled } from '../desktopNotify.js';
 import { getPrefs, setPref } from '../prefs.js';
 import { LANGUAGES, timeZones } from '../i18nData.js';
+import { t, notifyLangChange } from '../i18n.js';
 
 const SECTIONS = [
-  { key: 'profile', label: 'Profile', icon: '👤' },
-  { key: 'appearance', label: 'Appearance', icon: '🎨' },
-  { key: 'notifications', label: 'Notifications', icon: '🔔' },
-  { key: 'messages', label: 'Messages & media', icon: '💬' },
-  { key: 'language', label: 'Language & region', icon: '🌐' },
-  { key: 'accessibility', label: 'Accessibility', icon: '♿' },
-  { key: 'advanced', label: 'Advanced', icon: '⚙️' },
-  { key: 'account', label: 'Account & password', icon: '🔒' },
+  { key: 'profile', tkey: 'settings.profile', icon: '👤' },
+  { key: 'appearance', tkey: 'settings.appearance', icon: '🎨' },
+  { key: 'notifications', tkey: 'settings.notifications', icon: '🔔' },
+  { key: 'messages', tkey: 'settings.messages', icon: '💬' },
+  { key: 'language', tkey: 'settings.language', icon: '🌐' },
+  { key: 'accessibility', tkey: 'settings.accessibility', icon: '♿' },
+  { key: 'advanced', tkey: 'settings.advanced', icon: '⚙️' },
+  { key: 'account', tkey: 'settings.account', icon: '🔒' },
 ];
 
 // A Slack-style Preferences hub: a left rail of categories and a panel per
@@ -25,12 +26,12 @@ export default function SettingsModal({ user, colors = [], initialSection = 'pro
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header"><strong>Settings</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="modal-header"><strong>{t('settings.title')}</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div className="settings-body">
           <nav className="settings-nav">
             {SECTIONS.map((s) => (
               <button key={s.key} className={`settings-nav-item ${section === s.key ? 'active' : ''}`} onClick={() => setSection(s.key)}>
-                <span className="settings-nav-icon">{s.icon}</span> {s.label}
+                <span className="settings-nav-icon">{s.icon}</span> {t(s.tkey)}
               </button>
             ))}
           </nav>
@@ -207,10 +208,10 @@ function LanguagePanel() {
     <div>
       <h3 className="settings-title">Language &amp; region</h3>
       <label className="profile-label">Language</label>
-      <select className="profile-input" value={locale} onChange={(e) => setLocale(e.target.value)}>
+      <select className="profile-input" value={locale} onChange={(e) => { setLocale(e.target.value); notifyLangChange(); }}>
         {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
       </select>
-      <p className="muted settings-hint">Sets how dates, times and numbers are formatted. The app’s text stays in English for now.</p>
+      <p className="muted settings-hint">Translates the main interface (menus, tabs, settings) and sets date/number formatting. Deeper screens stay in English.</p>
       <label className="profile-label" style={{ marginTop: 12 }}>Time zone</label>
       <select className="profile-input" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
         <option value="auto">Automatic — {deviceTz}</option>

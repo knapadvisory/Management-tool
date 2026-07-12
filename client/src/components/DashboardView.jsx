@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
 import TaskModal from './TaskModal.jsx';
 import Clock from './Clock.jsx';
+import { t } from '../i18n.js';
 
 const PRIO = {
   urgent: { label: 'URGENT', cls: 'p-urgent' },
@@ -99,13 +100,13 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
         </div>
         <div className="dash-head-right">
           <Clock />
-          <button className="btn btn-primary" onClick={onOpenTasks}>Open tasks →</button>
+          <button className="btn btn-primary" onClick={onOpenTasks}>{t('dash.opentasks')} →</button>
         </div>
       </header>
 
       {data.upcoming.length > 0 && (
         <section className="dash-block">
-          <div className="dash-block-head"><h2>Upcoming deadlines</h2></div>
+          <div className="dash-block-head"><h2>{t('dash.upcoming')}</h2></div>
           <div className="deadline-strip">
             {data.upcoming.map((t) => {
               const b = dueBadge(t.due_date);
@@ -126,7 +127,7 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
         <div className="dash-main">
           {isAdmin ? (
             <section className="dash-panel">
-              <div className="dash-block-head"><h2>Task board</h2><button className="dash-link" onClick={onOpenTasks}>Open board →</button></div>
+              <div className="dash-block-head"><h2>{t('dash.taskboard')}</h2><button className="dash-link" onClick={onOpenTasks}>Open board →</button></div>
               <div className="board-summary">
                 {data.board.map((col) => (
                   <button key={col.stage} className="board-col" onClick={() => openList(col.stage, (t) => t.stage?.name === col.stage && OPEN(t))}>
@@ -143,13 +144,13 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
             </section>
           ) : (
             <section className="dash-panel">
-              <div className="dash-block-head"><h2>Urgent tasks</h2><span className="pill-count">{data.urgent.length}</span></div>
+              <div className="dash-block-head"><h2>{t('dash.urgent')}</h2><span className="pill-count">{data.urgent.length}</span></div>
               <TaskList tasks={data.urgent} onOpenTask={openTask} empty="Nothing urgent — you’re on top of it 🎉" detailed />
             </section>
           )}
 
           <section className="dash-panel">
-            <div className="dash-block-head"><h2>{isAdmin ? 'All open tasks' : 'All my tasks'}</h2><span className="pill-count">{data.all_tasks.length}</span></div>
+            <div className="dash-block-head"><h2>{t('dash.allopen')}</h2><span className="pill-count">{data.all_tasks.length}</span></div>
             <TaskList tasks={data.all_tasks} onOpenTask={openTask} empty="No open tasks." detailed showAssignee={isAdmin} showBy={!isAdmin} />
           </section>
         </div>
@@ -157,7 +158,7 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
         <aside className="dash-side">
           {isAdmin && (
             <section className="dash-panel">
-              <div className="dash-block-head"><h2>Team workload</h2></div>
+              <div className="dash-block-head"><h2>{t('dash.workload')}</h2></div>
               <div className="workload">
                 {data.workload.length === 0 && <p className="muted" style={{ padding: 8 }}>No assigned tasks.</p>}
                 {data.workload.map((w) => {
@@ -177,7 +178,7 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
           )}
 
           <section className="dash-panel">
-            <div className="dash-block-head"><h2>Recent activity</h2></div>
+            <div className="dash-block-head"><h2>{t('dash.activity')}</h2></div>
             <div className="dash-activity">
               {data.activity.length === 0 && <p className="muted" style={{ padding: 8 }}>No recent activity.</p>}
               {data.activity.slice(0, 5).map((a) => (
@@ -191,7 +192,7 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
               ))}
             </div>
             {data.activity.length > 0 && (
-              <button className="dash-seeall" onClick={onOpenActivity}>See all activity →</button>
+              <button className="dash-seeall" onClick={onOpenActivity}>{t('dash.seeall')} →</button>
             )}
           </section>
         </aside>

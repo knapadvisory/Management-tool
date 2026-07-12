@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, fileUrl, uploadToDrive } from '../api.js';
 import { getSocket } from '../socket.js';
 import { formatBytes, formatDateTime } from '../format.js';
+import { t } from '../i18n.js';
 import Avatar from './Avatar.jsx';
 import FilePreviewModal from './FilePreviewModal.jsx';
 
@@ -368,11 +369,11 @@ export default function FilesView({ user, users = [], initialMode = 'files' }) {
       onContextMenu={isDrive && !searching ? (e) => openMenu(e, 'bg', null) : undefined}
     >
       <div className="files-tabs">
-        <button className={`files-tab ${!isDrive ? 'active' : ''}`} onClick={() => switchMode('files')}>🗂️ Shared files</button>
-        <button className={`files-tab ${isDrive ? 'active' : ''}`} onClick={() => switchMode('drive')}>💾 Drive</button>
+        <button className={`files-tab ${!isDrive ? 'active' : ''}`} onClick={() => switchMode('files')}>🗂️ {t('files.shared')}</button>
+        <button className={`files-tab ${isDrive ? 'active' : ''}`} onClick={() => switchMode('drive')}>💾 {t('files.drive')}</button>
       </div>
       <header className="files-head">
-        <h2>{isDrive ? 'Drive' : 'Shared files'}</h2>
+        <h2>{isDrive ? t('files.drive') : t('files.shared')}</h2>
         <div className="files-controls">
           <input className="files-search" placeholder={isDrive ? 'Search the Drive…' : 'Search files, people or places…'} value={query} onChange={(e) => setQuery(e.target.value)} />
           <label className="files-sort">
