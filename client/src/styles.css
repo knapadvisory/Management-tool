@@ -1297,11 +1297,13 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .day-divider { display: flex; align-items: center; justify-content: center; margin: 16px 0 10px; }
 .day-divider span { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); padding: 3px 12px; border-radius: 20px; }
 
-.message { padding: 1px 18px; }
+.message { display: flex; padding: 1px 18px; margin-top: 6px; border-radius: 0; }
+.message.grouped { margin-top: 1px; }
 .message:hover { background: transparent; }
+.message:not(.own) { justify-content: flex-start; }
+.message.own { justify-content: flex-end; text-align: right; }
 .message-inner { max-width: min(80%, 720px); }
 .message.own .message-inner { flex-direction: row-reverse; }
-.message.own { text-align: right; }
 .message.own .message-meta { flex-direction: row-reverse; }
 
 .message-body { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
