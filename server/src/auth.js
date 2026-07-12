@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import db from './db.js';
 
 export const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
@@ -16,6 +17,13 @@ export function publicUser(u) {
 
 export function requireAdmin(req, res, next) {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  next();
+}
+
+// External guests are scoped to their collab chats only — they may not reach
+// tasks, projects, the directory, files, the dashboard, or any internal area.
+export function blockGuests(req, res, next) {
+  if (req.user?.role === 'guest') return res.status(403).json({ error: 'This area is not available to guests' });
   next();
 }
 
@@ -108,6 +116,31 @@ export function changeOwnPassword(userId, current, next) {
     throw Object.assign(new Error('New password must be at least 6 characters'), { status: 400 });
   }
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(next, 10), userId);
+}
+
+// Create an external guest account (used when someone joins via a collab
+// invite link). Guests have no real email, so we mint a synthetic unique one.
+export function createGuest({ name, password }) {
+  if (!name?.trim() || !password || password.length < 6) {
+    throw Object.assign(new Error('A name and a password of 6+ characters are required'), { status: 400 });
+  }
+  const email = `guest+${crypto.randomBytes(8).toString('hex')}@teamhub.guest`;
+  const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+  const info = db.prepare('INSERT INTO users (name, email, password_hash, avatar_color, role) VALUES (?, ?, ?, ?, ?)')
+    .run(name.trim(), email, bcrypt.hashSync(password, 10), color, 'guest');
+  return db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
+}
+
+// A returning guest signs back in with the same name + password they chose
+// when they first joined. We match against the guest members already in the
+// collab so a repeat join doesn't mint a duplicate account.
+export function findReturningGuest({ channelId, name, password }) {
+  if (!name?.trim() || !password) return null;
+  const candidates = db.prepare(`
+    SELECT u.* FROM channel_members cm JOIN users u ON u.id = cm.user_id
+    WHERE cm.channel_id = ? AND u.role = 'guest' AND LOWER(u.name) = LOWER(?)
+  `).all(channelId, name.trim());
+  return candidates.find((u) => u.active && bcrypt.compareSync(password, u.password_hash)) || null;
 }
 
 export function login({ email, password }) {

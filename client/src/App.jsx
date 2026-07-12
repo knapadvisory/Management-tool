@@ -16,8 +16,16 @@ import CallManager from './components/CallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import DashboardView from './components/DashboardView.jsx';
+import GuestJoin from './components/GuestJoin.jsx';
+import GuestApp from './components/GuestApp.jsx';
 import { applyTheme, saveLocalTheme } from './theme.js';
 import { onLangChange } from './i18n.js';
+
+// A guest invite link looks like /invite/<token>.
+const inviteToken = () => {
+  const m = window.location.pathname.match(/^\/invite\/([a-f0-9]+)$/i);
+  return m ? m[1] : null;
+};
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -54,7 +62,8 @@ export default function App() {
   }, []);
 
   const refreshUsers = useCallback(async () => {
-    const data = await api('/users');
+    // Guests have no directory access — skip silently.
+    const data = await api('/users').catch(() => ({ users: [] }));
     setUsers(data.users);
   }, []);
 
@@ -79,6 +88,8 @@ export default function App() {
       .catch(() => clearToken())
       .finally(() => setBooting(false));
   }, []);
+
+  const isGuest = user?.role === 'guest';
 
   // After login: connect socket, load directory + channels.
   useEffect(() => {
@@ -105,11 +116,15 @@ export default function App() {
       }
     });
 
-    refreshUsers();
     refreshNotifications();
     refreshCollabs();
-    setView((v) => v || { type: 'dashboard' });
-    refreshChannels();
+    // Guests are scoped to their collab chats — skip team-wide loads and the
+    // dashboard entirely (GuestApp drives its own layout).
+    if (!isGuest) {
+      refreshUsers();
+      setView((v) => v || { type: 'dashboard' });
+      refreshChannels();
+    }
 
     return () => disconnectSocket();
   }, [user, refreshChannels, refreshUsers, refreshNotifications, refreshCollabs, showToast]);
@@ -216,7 +231,26 @@ export default function App() {
   }
 
   if (booting) return <div className="boot">Loading…</div>;
+  // An invite link shows the guest join page when nobody's signed in yet.
+  const invite = inviteToken();
+  if (!user && invite) return <GuestJoin token={invite} onAuth={handleAuth} />;
   if (!user) return <Login onAuth={handleAuth} />;
+
+  // External guests get a stripped-down, collab-only shell.
+  if (isGuest) {
+    return (
+      <>
+        <GuestApp user={user} collabs={collabs} onlineIds={onlineIds} onLogout={logout} onRefresh={refreshCollabs} />
+        {settings && (
+          <SettingsModal
+            user={user} colors={avatarColors} initialSection={settings.section}
+            onClose={() => setSettings(null)} onSaved={(u) => setUser(u)}
+          />
+        )}
+        {toast && <div className="toast">{toast}</div>}
+      </>
+    );
+  }
 
   return (
     <div className="app">

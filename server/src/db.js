@@ -281,6 +281,8 @@ ensureColumn('channels', 'is_collab', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('channels', 'history_visible', 'INTEGER NOT NULL DEFAULT 1');
 ensureColumn('channels', 'who_can_invite', "TEXT NOT NULL DEFAULT 'all'"); // 'all' | 'mods'
 ensureColumn('channels', 'who_can_post', "TEXT NOT NULL DEFAULT 'all'"); // 'all' | 'mods'
+// A per-collab invite link that lets an outside guest join just that collab.
+ensureColumn('channels', 'guest_token', 'TEXT');
 // Per-channel membership role: 'owner' | 'moderator' | 'member'.
 ensureColumn('channel_members', 'role', "TEXT NOT NULL DEFAULT 'member'");
 

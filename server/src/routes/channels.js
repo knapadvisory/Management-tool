@@ -31,8 +31,13 @@ function channelWithMeta(channel, userId) {
   return out;
 }
 
+// Guests live only in their collab chats — they get no public/DM channels
+// and cannot create, join, or open new ones.
+const isGuest = (req) => req.user?.role === 'guest';
+
 // Channels the current user belongs to, plus public channels they can join.
 router.get('/', (req, res) => {
+  if (isGuest(req)) return res.json({ channels: [], joinable: [] });
   const mine = db.prepare(`
     SELECT c.* FROM channels c JOIN channel_members cm ON cm.channel_id = c.id
     WHERE cm.user_id = ? AND c.is_collab = 0 ORDER BY c.is_dm, c.name
@@ -50,6 +55,7 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', (req, res) => {
+  if (isGuest(req)) return res.status(403).json({ error: 'Guests cannot create channels' });
   const { name, description = '', is_private = false, member_ids = [] } = req.body;
   const clean = (name || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
   if (!clean) return res.status(400).json({ error: 'Channel name is required' });
@@ -66,6 +72,7 @@ router.post('/', (req, res) => {
 });
 
 router.post('/:id/join', (req, res) => {
+  if (isGuest(req)) return res.status(403).json({ error: 'Guests cannot join channels' });
   const channel = db.prepare('SELECT * FROM channels WHERE id = ?').get(req.params.id);
   if (!channel || channel.is_dm) return res.status(404).json({ error: 'Channel not found' });
   if (channel.is_private) return res.status(403).json({ error: 'This channel is private' });
@@ -174,6 +181,7 @@ function broadcastReactions(req, msg) {
 
 // Open (or find) a DM channel with another user.
 router.post('/dm/:userId', (req, res) => {
+  if (isGuest(req)) return res.status(403).json({ error: 'Guests cannot start direct messages' });
   const otherId = Number(req.params.userId);
   const other = db.prepare('SELECT * FROM users WHERE id = ?').get(otherId);
   if (!other) return res.status(404).json({ error: 'User not found' });

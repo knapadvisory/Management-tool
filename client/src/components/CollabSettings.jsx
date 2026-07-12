@@ -15,11 +15,44 @@ export default function CollabSettings({ collab, user, users, onClose, onChanged
   const [moderatorIds, setModeratorIds] = useState(collab.members.filter((m) => m.channel_role === 'moderator').map((m) => m.id));
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [guestToken, setGuestToken] = useState(collab.guest_token || null);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const members = collab.members;
   const memberIds = new Set(members.map((m) => m.id));
   const addable = users.filter((u) => !memberIds.has(u.id));
   const isOwner = user.role === 'admin' || collab.owner_id === user.id;
+  // Only managers can mint or revoke the guest link. The server returns
+  // guest_token only to them, so falling back to my_role covers moderators.
+  const canManageInvite = user.role === 'admin' || collab.owner_id === user.id || collab.my_role === 'moderator';
+  const inviteUrl = guestToken ? `${window.location.origin}/invite/${guestToken}` : '';
+
+  async function generateInvite() {
+    setInviteBusy(true); setError(null);
+    try {
+      const updated = await api(`/collabs/${collab.id}/invite`, { method: 'POST' });
+      setGuestToken(updated.guest_token || null);
+      onChanged?.();
+    } catch (e) { setError(e.message); }
+    setInviteBusy(false);
+  }
+  async function revokeInvite() {
+    if (!window.confirm('Revoke this invite link? Anyone holding it can no longer join. Existing guests keep access.')) return;
+    setInviteBusy(true); setError(null);
+    try {
+      await api(`/collabs/${collab.id}/invite`, { method: 'DELETE' });
+      setGuestToken(null);
+      onChanged?.();
+    } catch (e) { setError(e.message); }
+    setInviteBusy(false);
+  }
+  function copyInvite() {
+    navigator.clipboard?.writeText(inviteUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    });
+  }
 
   function toggleMod(id) {
     if (id === ownerId) return;
@@ -100,6 +133,29 @@ export default function CollabSettings({ collab, user, users, onClose, onChanged
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {canManageInvite && (
+          <div className="guest-invite">
+            <span className="field-label">🔗 External guests</span>
+            <p className="muted guest-invite-hint">Share a link so people outside the team can join this collab's chat. Guests see only this conversation — nothing else in TeamHub.</p>
+            {guestToken ? (
+              <>
+                <div className="guest-invite-row">
+                  <input readOnly value={inviteUrl} onClick={(e) => e.target.select()} />
+                  <button type="button" className="btn btn-sm" onClick={copyInvite}>{copied ? '✓ Copied' : 'Copy'}</button>
+                </div>
+                <div className="guest-invite-actions">
+                  <button type="button" className="btn btn-sm" disabled={inviteBusy} onClick={generateInvite}>Reset link</button>
+                  <button type="button" className="btn btn-sm btn-danger" disabled={inviteBusy} onClick={revokeInvite}>Revoke</button>
+                </div>
+              </>
+            ) : (
+              <button type="button" className="btn btn-sm" disabled={inviteBusy} onClick={generateInvite}>
+                {inviteBusy ? 'Creating…' : 'Create invite link'}
+              </button>
+            )}
           </div>
         )}
 

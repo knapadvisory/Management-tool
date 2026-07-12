@@ -7,9 +7,9 @@ import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 
 import db from './db.js';
-import { register, login, signToken, requireAuth, requireAdmin, publicUser, signupCodeRequired, updateOwnProfile, changeOwnPassword, AVATAR_COLORS } from './auth.js';
+import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, signupCodeRequired, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, AVATAR_COLORS } from './auth.js';
 import channelsRouter from './routes/channels.js';
-import collabsRouter from './routes/collabs.js';
+import collabsRouter, { collabByInviteToken, addGuestToCollab, collabWithMeta } from './routes/collabs.js';
 import adminRouter from './routes/admin.js';
 import tasksRouter from './routes/tasks.js';
 import workflowsRouter from './routes/workflows.js';
@@ -62,6 +62,29 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
+// --- Public guest invites (no auth: anyone with the link) ---
+// Preview: does this invite link point at a real collab?
+app.get('/api/invite/:token', (req, res) => {
+  const collab = collabByInviteToken(req.params.token);
+  if (!collab) return res.status(404).json({ error: 'This invite link is invalid or has been revoked.' });
+  res.json({ collab_name: collab.name, description: collab.description || '' });
+});
+
+// Join: create a guest account and add it to the invited collab.
+app.post('/api/invite/:token/join', (req, res) => {
+  try {
+    const collab = collabByInviteToken(req.params.token);
+    if (!collab) return res.status(404).json({ error: 'This invite link is invalid or has been revoked.' });
+    // A returning guest (same name + password) signs back into the same account.
+    const returning = findReturningGuest({ channelId: collab.id, name: req.body?.name, password: req.body?.password });
+    const guest = returning || createGuest({ name: req.body?.name, password: req.body?.password });
+    addGuestToCollab(io, collab, guest.id);
+    res.status(201).json({ token: signToken(guest), user: publicUser(guest) });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
 // Self-service profile: update your own name / title / avatar colour.
 app.patch('/api/auth/me', requireAuth, (req, res) => {
   try {
@@ -83,24 +106,24 @@ app.post('/api/auth/password', requireAuth, (req, res) => {
   }
 });
 
-// --- Directory (active teammates only) ---
-app.get('/api/users', requireAuth, (req, res) => {
-  res.json({ users: db.prepare('SELECT * FROM users WHERE active = 1 ORDER BY name').all().map(publicUser) });
+// --- Directory (active, non-guest teammates only) ---
+app.get('/api/users', requireAuth, blockGuests, (req, res) => {
+  res.json({ users: db.prepare(`SELECT * FROM users WHERE active = 1 AND role != 'guest' ORDER BY name`).all().map(publicUser) });
 });
 
 app.use('/api/admin', requireAuth, requireAdmin, adminRouter);
 app.use('/api/collabs', requireAuth, collabsRouter);
 app.use('/api/channels', requireAuth, channelsRouter);
-app.use('/api/tasks', requireAuth, tasksRouter);
-app.use('/api/workflows', requireAuth, workflowsRouter);
-app.use('/api/projects', requireAuth, projectsRouter);
-app.use('/api/templates', requireAuth, templatesRouter);
+app.use('/api/tasks', requireAuth, blockGuests, tasksRouter);
+app.use('/api/workflows', requireAuth, blockGuests, workflowsRouter);
+app.use('/api/projects', requireAuth, blockGuests, projectsRouter);
+app.use('/api/templates', requireAuth, blockGuests, templatesRouter);
 app.use('/api/notifications', requireAuth, notificationsRouter);
 app.use('/api/uploads', uploadsRouter); // POST is guarded inside; GET uses a query-param token
-app.use('/api/search', requireAuth, searchRouter);
-app.use('/api/files', requireAuth, filesRouter);
-app.use('/api/drive', requireAuth, driveRouter);
-app.use('/api/dashboard', requireAuth, dashboardRouter);
+app.use('/api/search', requireAuth, blockGuests, searchRouter);
+app.use('/api/files', requireAuth, blockGuests, filesRouter);
+app.use('/api/drive', requireAuth, blockGuests, driveRouter);
+app.use('/api/dashboard', requireAuth, blockGuests, dashboardRouter);
 
 // Serve the built client in production.
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');

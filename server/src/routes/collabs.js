@@ -1,8 +1,15 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
 
 const router = Router();
+
+// Guests may only read/post in their own collabs — never create or manage.
+function blockGuest(req, res, next) {
+  if (req.user?.role === 'guest') return res.status(403).json({ error: 'Guests cannot manage collabs' });
+  next();
+}
 const INVITE = ['all', 'mods'];
 const POST = ['all', 'mods'];
 
@@ -17,13 +24,17 @@ export function collabWithMeta(collab, userId) {
     FROM messages m JOIN users u ON u.id = m.user_id
     WHERE m.channel_id = ? AND m.parent_id IS NULL ORDER BY m.id DESC LIMIT 1
   `).get(collab.id);
+  const myRole = memberRole(collab.id, userId) || (collab.created_by === userId ? 'owner' : null);
   return {
     ...collab,
     is_dm: 0,
     display_name: collab.name,
     members,
     owner_id: collab.created_by,
-    my_role: memberRole(collab.id, userId) || (collab.created_by === userId ? 'owner' : null),
+    my_role: myRole,
+    // Only managers see the raw invite token (anyone with it can join).
+    guest_token: ['owner', 'moderator'].includes(myRole) ? (collab.guest_token || null) : undefined,
+    has_guests: members.some((m) => m.role === 'guest'),
     last_message: last ? { content: last.deleted_at ? '(message deleted)' : last.content, created_at: last.created_at, user_name: last.user_name } : null,
     last_activity: last ? last.created_at : collab.created_at,
   };
@@ -63,7 +74,7 @@ router.get('/:id', (req, res) => {
   res.json({ collab: collabWithMeta(collab, req.user.id) });
 });
 
-router.post('/', (req, res) => {
+router.post('/', blockGuest, (req, res) => {
   const {
     name, description = '', member_ids = [], moderator_ids = [],
     history_visible = true, who_can_invite = 'all', who_can_post = 'all',
@@ -94,7 +105,7 @@ router.post('/', (req, res) => {
 });
 
 // Update settings / description / owner / moderators (managers only).
-router.patch('/:id', (req, res) => {
+router.patch('/:id', blockGuest, (req, res) => {
   const collab = loadCollab(req, res);
   if (!collab) return;
   if (!canManageCollab(collab, req.user)) return res.status(403).json({ error: 'Only the owner or a moderator can change this collab' });
@@ -143,8 +154,29 @@ router.patch('/:id', (req, res) => {
   res.json(collabWithMeta(updated, req.user.id));
 });
 
+// Generate (or rotate) the guest invite link — managers only.
+router.post('/:id/invite', blockGuest, (req, res) => {
+  const collab = loadCollab(req, res);
+  if (!collab) return;
+  if (!canManageCollab(collab, req.user)) return res.status(403).json({ error: 'Only the owner or a moderator can invite guests' });
+  const token = crypto.randomBytes(16).toString('hex');
+  db.prepare('UPDATE channels SET guest_token = ? WHERE id = ?').run(token, collab.id);
+  const updated = db.prepare('SELECT * FROM channels WHERE id = ?').get(collab.id);
+  res.status(201).json(collabWithMeta(updated, req.user.id));
+});
+
+// Revoke the guest invite link — managers only. Existing guests keep access.
+router.delete('/:id/invite', blockGuest, (req, res) => {
+  const collab = loadCollab(req, res);
+  if (!collab) return;
+  if (!canManageCollab(collab, req.user)) return res.status(403).json({ error: 'Only the owner or a moderator can revoke invites' });
+  db.prepare('UPDATE channels SET guest_token = NULL WHERE id = ?').run(collab.id);
+  const updated = db.prepare('SELECT * FROM channels WHERE id = ?').get(collab.id);
+  res.json(collabWithMeta(updated, req.user.id));
+});
+
 // Add members (respects who_can_invite).
-router.post('/:id/members', (req, res) => {
+router.post('/:id/members', blockGuest, (req, res) => {
   const collab = loadCollab(req, res);
   if (!collab) return;
   const canInvite = canManageCollab(collab, req.user) || (collab.who_can_invite === 'all' && isMember(collab.id, req.user.id));
@@ -171,6 +203,21 @@ router.delete('/:id/members/:userId', (req, res) => {
   req.app.get('io')?.to(`user:${targetId}`).emit('collabs:changed');
   res.json(collabWithMeta(collab, req.user.id));
 });
+
+// Look up a collab by its guest invite token (public — used by the join page).
+export function collabByInviteToken(token) {
+  if (!token) return null;
+  return db.prepare('SELECT * FROM channels WHERE guest_token = ? AND is_collab = 1').get(token) || null;
+}
+
+// Add a freshly-created guest to a collab as a plain member, and nudge the room.
+export function addGuestToCollab(io, collab, userId) {
+  db.prepare('INSERT OR IGNORE INTO channel_members (channel_id, user_id, role) VALUES (?, ?, ?)').run(collab.id, userId, 'guest');
+  if (!io) return;
+  for (const { user_id } of db.prepare('SELECT user_id FROM channel_members WHERE channel_id = ?').all(collab.id)) {
+    io.to(`user:${user_id}`).emit('collabs:changed');
+  }
+}
 
 // Nudge every current member to refresh (and pick up new membership/rooms).
 function notifyMembers(req, collab) {
