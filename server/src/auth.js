@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import db from './db.js';
+import db, { getSetting } from './db.js';
 
 export const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 export const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3aed', '#f97316', '#0ea5e9', '#db2777'];
@@ -54,12 +54,33 @@ export function requireAuth(req, res, next) {
 // public link can be shared safely with only the people who have it.
 export const signupCodeRequired = () => !!(process.env.SIGNUP_CODE || '').trim();
 
+// The admin can restrict self-signup to one or more work email domains
+// (comma/space separated, stored without the '@'). Empty = anyone may register
+// (still gated by the access code, if one is set). Personal addresses that
+// don't match can only get in as guests via a collab invite.
+export function allowedSignupDomains() {
+  return (getSetting('allowed_signup_domains', '') || '')
+    .split(/[\s,]+/).map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
+}
+export function emailDomainAllowed(email) {
+  const domains = allowedSignupDomains();
+  if (!domains.length) return true; // no restriction configured
+  const at = (email || '').trim().toLowerCase().split('@')[1] || '';
+  return domains.includes(at);
+}
+
 export function register({ name, email, password, code }) {
   if (signupCodeRequired() && (code || '').trim() !== process.env.SIGNUP_CODE.trim()) {
     throw Object.assign(new Error('Invalid or missing access code'), { status: 403 });
   }
   if (!name?.trim() || !email?.trim() || !password || password.length < 6) {
     throw Object.assign(new Error('Name, email and a password of 6+ characters are required'), { status: 400 });
+  }
+  if (!emailDomainAllowed(email)) {
+    const domains = allowedSignupDomains();
+    throw Object.assign(new Error(
+      `Please sign up with your work email (${domains.map((d) => '@' + d).join(' or ')}). If you're an external collaborator, ask a team member to invite you to a collab instead.`
+    ), { status: 403 });
   }
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.trim().toLowerCase());
   if (existing) throw Object.assign(new Error('An account with this email already exists'), { status: 409 });

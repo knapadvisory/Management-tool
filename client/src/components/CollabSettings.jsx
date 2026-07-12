@@ -109,7 +109,7 @@ export default function CollabSettings({ collab, user, users, onClose, onChanged
           {members.map((m) => (
             <div key={m.id} className="member-row">
               <Avatar user={m} size={26} />
-              <span className="member-name">{m.name}</span>
+              <span className="member-name">{m.name}{m.role === 'guest' && <span className="guest-badge">Guest</span>}</span>
               <span className="member-role">{roleLabel(m)}</span>
               {m.id !== ownerId && (
                 <>

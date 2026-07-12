@@ -237,6 +237,13 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, id);
+
+-- Simple key/value store for workspace-wide settings the admin controls
+-- (e.g. which email domains may self-register as members).
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `);
 
 // Add columns to tables created before these features existed.
@@ -315,5 +322,23 @@ const seed = db.transaction(() => {
   }
 });
 seed();
+
+// --- Workspace settings (key/value) ---
+export function getSetting(key, fallback = null) {
+  const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
+  return row ? row.value : fallback;
+}
+export function setSetting(key, value) {
+  db.prepare(`
+    INSERT INTO app_settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(key, value ?? '');
+}
+
+// Seed the allowed signup domains from the env var on first run only, so an
+// admin can later change it from the UI without it being reset on restart.
+if (getSetting('allowed_signup_domains') === null) {
+  setSetting('allowed_signup_domains', (process.env.ALLOWED_EMAIL_DOMAINS || '').trim());
+}
 
 export default db;

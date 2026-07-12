@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import db from '../db.js';
+import db, { getSetting, setSetting } from '../db.js';
 import { publicUser } from '../auth.js';
 import { serializeMessage } from '../messages.js';
 
@@ -138,6 +138,28 @@ router.delete('/files/:id', (req, res) => {
   db.prepare('DELETE FROM attachments WHERE id = ?').run(att.id);
   try { fs.unlinkSync(path.join(uploadDir, att.stored_name)); } catch { /* already gone */ }
   res.json({ ok: true });
+});
+
+// --- Workspace settings ---
+
+// Current signup policy: which work-email domains may self-register.
+router.get('/settings', (req, res) => {
+  res.json({
+    allowed_signup_domains: getSetting('allowed_signup_domains', '') || '',
+    signup_code_required: !!(process.env.SIGNUP_CODE || '').trim(),
+    guest_count: db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'guest'`).get().n,
+  });
+});
+
+// Update the allowed signup domains (comma/space separated, '@' optional).
+router.patch('/settings', (req, res) => {
+  const { allowed_signup_domains } = req.body;
+  if (allowed_signup_domains !== undefined) {
+    const cleaned = String(allowed_signup_domains)
+      .split(/[\s,]+/).map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean).join(', ');
+    setSetting('allowed_signup_domains', cleaned);
+  }
+  res.json({ allowed_signup_domains: getSetting('allowed_signup_domains', '') || '' });
 });
 
 // True when `excludingId` is the only active admin left.

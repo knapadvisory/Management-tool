@@ -193,7 +193,10 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
               <div key={m.id} className="chat-info-member">
                 <Avatar user={m} size={30} online={onlineIds.includes(m.id)} />
                 <div className="chat-info-member-meta">
-                  <span className="chat-info-member-name">{m.name}{m.id === user.id ? ' (you)' : ''}</span>
+                  <span className="chat-info-member-name">
+                    {m.name}{m.id === user.id ? ' (you)' : ''}
+                    {m.role === 'guest' && <span className="guest-badge">Guest</span>}
+                  </span>
                   {(m.title || m.channel_role) && <span className="muted">{m.title || (m.channel_role !== 'member' ? m.channel_role : '')}</span>}
                 </div>
               </div>

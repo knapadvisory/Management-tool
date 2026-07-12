@@ -133,6 +133,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
         {!grouped && (
           <div className="message-meta">
             <strong>{isMine ? 'You' : message.user_name}</strong>
+            {message.user_role === 'guest' && <span className="guest-badge">Guest</span>}
             <span className="message-time">{formatTime(message.created_at)}</span>
           </div>
         )}

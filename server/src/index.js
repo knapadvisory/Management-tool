@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 
 import db from './db.js';
-import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, signupCodeRequired, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, AVATAR_COLORS } from './auth.js';
+import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, signupCodeRequired, allowedSignupDomains, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, AVATAR_COLORS } from './auth.js';
 import channelsRouter from './routes/channels.js';
 import collabsRouter, { collabByInviteToken, addGuestToCollab, collabWithMeta } from './routes/collabs.js';
 import adminRouter from './routes/admin.js';
@@ -35,7 +35,11 @@ app.use(express.json());
 
 // Public config the login screen reads before anyone is authenticated.
 app.get('/api/config', (req, res) => {
-  res.json({ signup_code_required: signupCodeRequired(), avatar_colors: AVATAR_COLORS });
+  res.json({
+    signup_code_required: signupCodeRequired(),
+    allowed_signup_domains: allowedSignupDomains(),
+    avatar_colors: AVATAR_COLORS,
+  });
 });
 
 // --- Auth ---

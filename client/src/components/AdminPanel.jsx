@@ -78,6 +78,8 @@ export default function AdminPanel({ user, signupCodeRequired }) {
         </div>
       </div>
 
+      <SignupPolicy />
+
       {error && <div className="form-error">{error}</div>}
 
       <div className="admin-list">
@@ -105,6 +107,56 @@ export default function AdminPanel({ user, signupCodeRequired }) {
       </div>
 
       {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} onCreated={refresh} />}
+    </div>
+  );
+}
+
+// Controls who may self-register as a full member vs. only join as a guest.
+function SignupPolicy() {
+  const [domains, setDomains] = useState('');
+  const [guestCount, setGuestCount] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    api('/admin/settings').then((d) => {
+      setDomains(d.allowed_signup_domains || '');
+      setGuestCount(d.guest_count || 0);
+      setLoaded(true);
+    }).catch((e) => { setErr(e.message); setLoaded(true); });
+  }, []);
+
+  async function save() {
+    setSaving(true); setErr(null); setSaved(false);
+    try {
+      const d = await api('/admin/settings', { method: 'PATCH', body: { allowed_signup_domains: domains } });
+      setDomains(d.allowed_signup_domains || '');
+      setSaved(true); setTimeout(() => setSaved(false), 2000);
+    } catch (e) { setErr(e.message); }
+    setSaving(false);
+  }
+
+  if (!loaded) return null;
+  const restricted = domains.trim().length > 0;
+
+  return (
+    <div className="admin-policy">
+      <div className="admin-policy-head">
+        <strong>Who can create an account</strong>
+        <span className={`policy-pill ${restricted ? 'on' : 'off'}`}>{restricted ? 'Work email only' : 'Open signup'}</span>
+      </div>
+      <p className="muted">
+        List the work-email domains allowed to self-register (comma separated). Anyone with a matching email can sign up as a member;
+        everyone else must be invited into a collab as a <strong>guest</strong>, or created here by you. Leave empty to allow any email.
+      </p>
+      <div className="admin-policy-row">
+        <input placeholder="knapadvisory.com, partner.com" value={domains} onChange={(e) => setDomains(e.target.value)} />
+        <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}</button>
+      </div>
+      <p className="muted admin-policy-guests">👤 External guests currently in the workspace: <strong>{guestCount}</strong></p>
+      {err && <div className="form-error">{err}</div>}
     </div>
   );
 }

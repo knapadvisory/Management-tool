@@ -8,9 +8,13 @@ export default function Login({ onAuth }) {
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
   const [codeRequired, setCodeRequired] = useState(false);
+  const [domains, setDomains] = useState([]);
 
   useEffect(() => {
-    api('/config').then((c) => setCodeRequired(!!c.signup_code_required)).catch(() => {});
+    api('/config').then((c) => {
+      setCodeRequired(!!c.signup_code_required);
+      setDomains(c.allowed_signup_domains || []);
+    }).catch(() => {});
   }, []);
 
   async function submit(e) {
@@ -51,7 +55,10 @@ export default function Login({ onAuth }) {
           {!isLogin && (
             <input className="auth-input" placeholder="Full name" value={form.name} onChange={set('name')} required />
           )}
-          <input className="auth-input" type="email" placeholder="Email" value={form.email} onChange={set('email')} required />
+          <input className="auth-input" type="email" placeholder={!isLogin && domains.length ? `Work email (${domains.map((d) => '@' + d).join(' / ')})` : 'Email'} value={form.email} onChange={set('email')} required />
+          {!isLogin && domains.length > 0 && (
+            <p className="auth-hint">Use your work email. External collaborators join via a collab invite link instead.</p>
+          )}
           <input className="auth-input" type="password" placeholder="Password" value={form.password} onChange={set('password')} required minLength={6} />
           {!isLogin && codeRequired && (
             <input className="auth-input" placeholder="Access code (from your admin)" value={form.code} onChange={set('code')} required />

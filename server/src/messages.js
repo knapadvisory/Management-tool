@@ -7,7 +7,7 @@ import db from './db.js';
  */
 export function serializeMessage(id, currentUserId = null) {
   const m = db.prepare(`
-    SELECT m.*, u.name AS user_name, u.avatar_color
+    SELECT m.*, u.name AS user_name, u.avatar_color, u.role AS user_role
     FROM messages m JOIN users u ON u.id = m.user_id
     WHERE m.id = ?
   `).get(id);
@@ -44,6 +44,7 @@ export function serializeMessage(id, currentUserId = null) {
     channel_id: m.channel_id,
     user_id: m.user_id,
     user_name: m.user_name,
+    user_role: m.user_role,
     avatar_color: m.avatar_color,
     content: deleted ? '' : m.content,
     parent_id: m.parent_id,
