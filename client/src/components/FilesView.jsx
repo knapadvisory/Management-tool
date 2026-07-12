@@ -368,11 +368,11 @@ export default function FilesView({ user, users = [], initialMode = 'files' }) {
       onContextMenu={isDrive && !searching ? (e) => openMenu(e, 'bg', null) : undefined}
     >
       <div className="files-tabs">
-        <button className={`files-tab ${!isDrive ? 'active' : ''}`} onClick={() => switchMode('files')}>🗂️ All files</button>
+        <button className={`files-tab ${!isDrive ? 'active' : ''}`} onClick={() => switchMode('files')}>🗂️ Shared files</button>
         <button className={`files-tab ${isDrive ? 'active' : ''}`} onClick={() => switchMode('drive')}>💾 Drive</button>
       </div>
       <header className="files-head">
-        <h2>{isDrive ? 'Drive' : 'All files'}</h2>
+        <h2>{isDrive ? 'Drive' : 'Shared files'}</h2>
         <div className="files-controls">
           <input className="files-search" placeholder={isDrive ? 'Search the Drive…' : 'Search files, people or places…'} value={query} onChange={(e) => setQuery(e.target.value)} />
           <label className="files-sort">

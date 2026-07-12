@@ -48,7 +48,7 @@ body {
   background: var(--bg);
 }
 
-button { cursor: pointer; font: inherit; color: inherit; }
+button { cursor: pointer; font: inherit; color: inherit; background: none; }
 input, select, textarea { font: inherit; background: var(--surface); color: var(--text); border-color: var(--border); }
 input::placeholder, textarea::placeholder { color: var(--muted); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -509,6 +509,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .attach-file {
   display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: var(--text);
   border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; max-width: 300px;
+  background: var(--surface);
 }
 .attach-file:hover { background: var(--surface-2); }
 .attach-file-icon { font-size: 20px; }
@@ -1268,3 +1269,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .settings-shortcuts { list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .settings-shortcuts li { display: flex; align-items: center; gap: 8px; }
 .settings-panel kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; background: var(--surface-2); font-size: 11px; font-family: inherit; }
+
+/* Combined People (Team + Collabs) view */
+.people-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.people-view .files-tabs { flex: 0 0 auto; }
+.people-view-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }

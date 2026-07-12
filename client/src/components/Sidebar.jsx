@@ -61,16 +61,10 @@ export default function Sidebar({
           <span className="nav-logo">💬</span> DMs
         </button>
         <button
-          className={`nav-item ${view?.type === 'team' ? 'active' : ''}`}
+          className={`nav-item ${(view?.type === 'team' || view?.type === 'collabs') ? 'active' : ''}`}
           onClick={() => onSelectView('team')}
         >
-          <span className="nav-logo">👤</span> Team
-        </button>
-        <button
-          className={`nav-item ${view?.type === 'collabs' ? 'active' : ''}`}
-          onClick={() => onSelectView('collabs')}
-        >
-          👥 Collabs
+          <span className="nav-logo">👥</span> People
         </button>
         <button
           className={`nav-item ${view?.type === 'activity' ? 'active' : ''}`}

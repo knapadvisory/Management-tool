@@ -9,8 +9,7 @@ import TasksBoard from './components/TasksBoard.jsx';
 import WorkflowsView from './components/WorkflowsView.jsx';
 import AdminPanel from './components/AdminPanel.jsx';
 import Messenger from './components/Messenger.jsx';
-import Collabs from './components/Collabs.jsx';
-import TeamDirectory from './components/TeamDirectory.jsx';
+import PeopleView from './components/PeopleView.jsx';
 import ActivityView from './components/ActivityView.jsx';
 import FilesView from './components/FilesView.jsx';
 import CallManager from './components/CallManager.jsx';
@@ -260,11 +259,13 @@ export default function App() {
         {view?.type === 'messenger' && (
           <Messenger user={user} users={users} channels={channels} onlineIds={onlineIds} onEnsureDm={ensureDm} />
         )}
-        {view?.type === 'collabs' && (
-          <Collabs user={user} users={users} collabs={collabs} onlineIds={onlineIds} onRefresh={refreshCollabs} />
-        )}
-        {view?.type === 'team' && (
-          <TeamDirectory user={user} users={users} onlineIds={onlineIds} onMessage={openDm} />
+        {(view?.type === 'team' || view?.type === 'collabs') && (
+          <PeopleView
+            key={view.type}
+            user={user} users={users} onlineIds={onlineIds} collabs={collabs}
+            onMessage={openDm} onRefresh={refreshCollabs}
+            initialTab={view.type === 'collabs' ? 'collabs' : 'team'}
+          />
         )}
         {view?.type === 'activity' && (
           <ActivityView
