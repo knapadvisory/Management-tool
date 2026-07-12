@@ -24,10 +24,11 @@ export default function ArchiveManager({ files, onReload }) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState({ key: 'deleted', dir: -1 });
   const [selected, setSelected] = useState(() => new Set());
+  const [hidden, setHidden] = useState(() => new Set()); // optimistically removed
   const [busy, setBusy] = useState(false);
 
   const q = query.trim().toLowerCase();
-  const filtered = files.filter((f) =>
+  const filtered = files.filter((f) => !hidden.has(f.id)).filter((f) =>
     !q || f.original_name.toLowerCase().includes(q) ||
     (f.uploader_name || '').toLowerCase().includes(q) ||
     (f.deleted_by_name || '').toLowerCase().includes(q));
@@ -49,16 +50,19 @@ export default function ArchiveManager({ files, onReload }) {
   const selectedFiles = sorted.filter((f) => selected.has(f.id));
 
   async function run(ids, kind) {
+    if (!ids.length) return;
+    // Remove the rows immediately, then process the requests in parallel.
+    setHidden((h) => { const n = new Set(h); ids.forEach((id) => n.add(id)); return n; });
+    setSelected((s) => { const n = new Set(s); ids.forEach((id) => n.delete(id)); return n; });
     setBusy(true);
-    for (const id of ids) {
-      try {
-        if (kind === 'restore') await api(`/admin/files/${id}/restore`, { method: 'POST' });
-        else await api(`/admin/files/${id}`, { method: 'DELETE' });
-      } catch { /* skip */ }
-    }
+    await Promise.allSettled(ids.map((id) =>
+      kind === 'restore'
+        ? api(`/admin/files/${id}/restore`, { method: 'POST' })
+        : api(`/admin/files/${id}`, { method: 'DELETE' })));
     setBusy(false);
-    setSelected(new Set());
-    onReload();
+    await onReload();
+    // The refreshed list no longer contains these ids, so drop them from hidden.
+    setHidden((h) => { const n = new Set(h); ids.forEach((id) => n.delete(id)); return n; });
   }
 
   const restoreSelected = () => run([...selected], 'restore');
