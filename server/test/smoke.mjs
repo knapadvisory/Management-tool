@@ -59,19 +59,37 @@ async function main() {
   await waitForServer();
 
   console.log('Auth');
-  // Alice creates the workspace (and becomes its admin); Bob joins it.
+  // Alice creates the workspace (and becomes its admin); Bob requests to join.
   const alice = await req('POST', '/api/workspaces', {
     body: { workspace_name: 'Smoke Co', name: 'Alice', email: 'alice@smoke.test', password: 'secret123' },
   });
   const slug = alice.data.workspace?.slug;
-  const bob = await req('POST', `/api/workspaces/${slug}/register`, {
+  const a = alice.data.token;
+  const bobReq = await req('POST', `/api/workspaces/${slug}/register`, {
     body: { name: 'Bob', email: 'bob@smoke.test', password: 'secret123' },
   });
   check('workspace creation returns token', alice.status === 201 && !!alice.data.token);
   check('workspace creator is super admin', alice.data.user.role === 'admin');
   check('workspace has a slug', !!slug);
-  check('joiner is a member', bob.status === 201 && bob.data.user.role === 'member');
-  check('members share the workspace', alice.data.user.workspace_id === bob.data.user.workspace_id);
+  check('join request is pending (no token)', bobReq.status === 201 && bobReq.data.pending === true && !bobReq.data.token);
+
+  // Bob cannot log in until approved.
+  const preApprove = await req('POST', '/api/auth/login', { body: { email: 'bob@smoke.test', password: 'secret123' } });
+  check('unapproved member cannot log in', preApprove.status === 403);
+
+  // Alice sees the pending request and approves it.
+  const pending = await req('GET', '/api/admin/users/pending', { token: a });
+  check('admin sees the pending request', pending.data.users.some((u) => u.email === 'bob@smoke.test'));
+  const bobId = pending.data.users.find((u) => u.email === 'bob@smoke.test').id;
+  const approve = await req('POST', `/api/admin/users/${bobId}/approve`, { token: a });
+  check('admin can approve the request', approve.status === 200);
+
+  // Now Bob can log in.
+  const bobLogin = await req('POST', '/api/auth/login', { body: { email: 'bob@smoke.test', password: 'secret123' } });
+  check('approved member can log in', bobLogin.status === 200 && !!bobLogin.data.token);
+  check('members share the workspace', alice.data.user.workspace_id === bobLogin.data.user.workspace_id);
+  const b = bobLogin.data.token;
+
   const dupe = await req('POST', `/api/workspaces/${slug}/register`, {
     body: { name: 'Alice2', email: 'alice@smoke.test', password: 'secret123' },
   });
@@ -80,9 +98,6 @@ async function main() {
     body: { email: 'alice@smoke.test', password: 'wrong' },
   });
   check('wrong password rejected', badLogin.status === 401);
-  const a = alice.data.token;
-  const b = bob.data.token;
-  const bobId = bob.data.user.id;
 
   console.log('Self-service profile');
   const cfg = await req('GET', '/api/config');

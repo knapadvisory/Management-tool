@@ -8,9 +8,9 @@ export const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3a
 
 export function publicUser(u) {
   if (!u) return null;
-  const { id, name, email, avatar_color, title, role, active, theme, accent, workspace_id } = u;
+  const { id, name, email, avatar_color, title, role, active, approved, theme, accent, workspace_id } = u;
   return {
-    id, name, email, avatar_color, title, role: role || 'member', active: active ?? 1,
+    id, name, email, avatar_color, title, role: role || 'member', active: active ?? 1, approved: approved ?? 1,
     theme: theme || 'light', accent: accent || '#4f46e5', workspace_id,
   };
 }
@@ -86,10 +86,11 @@ export function register(workspace, { name, email, password }) {
   if (existing) throw Object.assign(new Error('An account with this email already exists'), { status: 409 });
 
   const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
-  const info = db.prepare('INSERT INTO users (name, email, password_hash, avatar_color, role, workspace_id) VALUES (?, ?, ?, ?, ?, ?)')
+  // Self-registered members start unapproved — an admin must let them in.
+  const info = db.prepare('INSERT INTO users (name, email, password_hash, avatar_color, role, workspace_id, approved) VALUES (?, ?, ?, ?, ?, ?, 0)')
     .run(name.trim(), email.trim().toLowerCase(), bcrypt.hashSync(password, 10), color, 'member', workspace.id);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
-  joinGeneral(workspace.id, user.id);
+  // They join #general only once approved (see approveUser), so nothing to do here.
   return user;
 }
 
@@ -110,7 +111,7 @@ export function createWorkspaceAdmin(workspace, { name, email, password }) {
 }
 
 // Add a user to their workspace's #general channel.
-function joinGeneral(workspaceId, userId) {
+export function joinGeneral(workspaceId, userId) {
   const general = db.prepare(`SELECT id FROM channels WHERE name = 'general' AND is_dm = 0 AND workspace_id = ?`).get(workspaceId);
   if (general) db.prepare('INSERT OR IGNORE INTO channel_members (channel_id, user_id) VALUES (?, ?)').run(general.id, userId);
 }
@@ -181,6 +182,9 @@ export function login({ email, password }) {
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get((email || '').trim().toLowerCase());
   if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {
     throw Object.assign(new Error('Invalid email or password'), { status: 401 });
+  }
+  if (!user.approved) {
+    throw Object.assign(new Error('Your account is still awaiting approval from your workspace admin.'), { status: 403 });
   }
   if (!user.active) {
     throw Object.assign(new Error('This account has been deactivated. Contact your administrator.'), { status: 403 });

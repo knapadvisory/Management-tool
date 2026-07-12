@@ -289,6 +289,10 @@ ensureColumn('tasks', 'status_reason', "TEXT NOT NULL DEFAULT ''");
 // 'active' gates access; deactivating revokes login without destroying data.
 ensureColumn('users', 'role', "TEXT NOT NULL DEFAULT 'member'");
 ensureColumn('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
+// Members who self-register via a workspace join link start unapproved and
+// cannot log in until an admin approves them. Existing rows default to 1 so
+// current accounts (and admin-created / guest ones) stay usable.
+ensureColumn('users', 'approved', 'INTEGER NOT NULL DEFAULT 1');
 // Per-user appearance: colour mode ('light'|'dark'|'system') and accent hex.
 ensureColumn('users', 'theme', "TEXT NOT NULL DEFAULT 'light'");
 ensureColumn('users', 'accent', "TEXT NOT NULL DEFAULT '#4f46e5'");

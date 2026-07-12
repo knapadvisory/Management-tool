@@ -4,7 +4,8 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import db from '../db.js';
-import { publicUser } from '../auth.js';
+import { publicUser, joinGeneral } from '../auth.js';
+import { createNotification } from '../notifications.js';
 import { serializeMessage } from '../messages.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -17,14 +18,41 @@ const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3aed', '#
 // An admin governs only their OWN workspace, so all lookups are scoped to it.
 const wsUser = (req) => db.prepare('SELECT * FROM users WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
 
-// Full roster (this workspace) including deactivated accounts, but not external
-// guests — those are managed per-collab, not here.
+// Full roster (this workspace) of approved accounts including deactivated ones,
+// but not external guests (managed per-collab) or pending join requests.
 router.get('/users', (req, res) => {
-  const users = db.prepare(`SELECT * FROM users WHERE workspace_id = ? AND role != 'guest' ORDER BY active DESC, name`).all(req.workspaceId).map((u) => ({
+  const users = db.prepare(`SELECT * FROM users WHERE workspace_id = ? AND role != 'guest' AND approved = 1 ORDER BY active DESC, name`).all(req.workspaceId).map((u) => ({
     ...publicUser(u),
     created_at: u.created_at,
   }));
   res.json({ users });
+});
+
+// People who self-registered via the join link and are awaiting approval.
+router.get('/users/pending', (req, res) => {
+  const users = db.prepare(`SELECT * FROM users WHERE workspace_id = ? AND approved = 0 AND role != 'guest' ORDER BY created_at`).all(req.workspaceId)
+    .map((u) => ({ ...publicUser(u), created_at: u.created_at }));
+  res.json({ users });
+});
+
+// Approve a pending join request: the member can now sign in and is added to #general.
+router.post('/users/:id/approve', (req, res) => {
+  const target = db.prepare('SELECT * FROM users WHERE id = ? AND workspace_id = ? AND approved = 0').get(req.params.id, req.workspaceId);
+  if (!target) return res.status(404).json({ error: 'Pending request not found' });
+  db.prepare('UPDATE users SET approved = 1 WHERE id = ?').run(target.id);
+  joinGeneral(req.workspaceId, target.id);
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('approvals:changed');
+  res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(target.id)));
+});
+
+// Reject (and remove) a pending join request.
+router.post('/users/:id/reject', (req, res) => {
+  const target = db.prepare('SELECT * FROM users WHERE id = ? AND workspace_id = ? AND approved = 0').get(req.params.id, req.workspaceId);
+  if (!target) return res.status(404).json({ error: 'Pending request not found' });
+  db.prepare('DELETE FROM users WHERE id = ?').run(target.id);
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('approvals:changed');
+  res.json({ ok: true });
 });
 
 // Create a teammate directly (no access code needed — the admin is vouching).

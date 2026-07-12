@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../api.js';
+import { getSocket } from '../socket.js';
 import Avatar from './Avatar.jsx';
 import ArchiveManager from './ArchiveManager.jsx';
 
@@ -55,6 +56,8 @@ export default function AdminPanel({ user }) {
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>＋ Add user</button>
       </div>
 
+      <PendingApprovals onChanged={refresh} />
+
       <SignupPolicy />
 
       {error && <div className="form-error">{error}</div>}
@@ -84,6 +87,57 @@ export default function AdminPanel({ user }) {
       </div>
 
       {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} onCreated={refresh} />}
+    </div>
+  );
+}
+
+// Employees who self-registered via the join link and need admin approval
+// before they can sign in.
+function PendingApprovals({ onChanged }) {
+  const [pending, setPending] = useState([]);
+  const [busy, setBusy] = useState(null);
+
+  const load = useCallback(() => {
+    api('/admin/users/pending').then((d) => setPending(d.users)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    load();
+    const socket = getSocket();
+    socket?.on('approvals:changed', load);
+    return () => socket?.off('approvals:changed', load);
+  }, [load]);
+
+  async function act(id, action) {
+    setBusy(id);
+    try {
+      await api(`/admin/users/${id}/${action}`, { method: 'POST' });
+      setPending((p) => p.filter((u) => u.id !== id));
+      if (action === 'approve') onChanged?.();
+    } catch { /* surfaced on next load */ }
+    setBusy(null);
+  }
+
+  if (!pending.length) return null;
+
+  return (
+    <div className="admin-approvals">
+      <div className="admin-approvals-head">
+        <strong>⏳ Pending approvals</strong>
+        <span className="approvals-count">{pending.length}</span>
+      </div>
+      <p className="muted">These people asked to join. They can't sign in until you approve them.</p>
+      {pending.map((u) => (
+        <div key={u.id} className="approval-row">
+          <Avatar user={u} size={32} />
+          <div className="approval-meta">
+            <span className="approval-name">{u.name}</span>
+            <span className="muted approval-email">{u.email}</span>
+          </div>
+          <button className="btn btn-sm btn-primary" disabled={busy === u.id} onClick={() => act(u.id, 'approve')}>Approve</button>
+          <button className="btn btn-sm btn-danger" disabled={busy === u.id} onClick={() => act(u.id, 'reject')}>Reject</button>
+        </div>
+      ))}
     </div>
   );
 }

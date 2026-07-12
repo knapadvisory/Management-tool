@@ -88,6 +88,25 @@ async function main() {
   const globexDash = (await api('GET', '/api/dashboard', { token: G })).data;
   check('Globex dashboard workload excludes Acme users', !(globexDash.workload || []).some((w) => w.id === acmeBob.id));
 
+  console.log('Approval isolation');
+  // An employee requests to join Acme (pending, no token).
+  const joinReq = await api('POST', '/api/workspaces/acme/register', { body: { name: 'Pat', email: 'pat@acme.com', password: 'secret123' } });
+  const acmeSlug = acme.workspace.slug;
+  const req2 = await api('POST', `/api/workspaces/${acmeSlug}/register`, { body: { name: 'Pat', email: 'pat2@acme.com', password: 'secret123' } });
+  check('join request is pending (no token)', req2.status === 201 && req2.data.pending === true);
+  check('pending member cannot log in', (await api('POST', '/api/auth/login', { body: { email: 'pat2@acme.com', password: 'secret123' } })).status === 403);
+  const acmePending = (await api('GET', '/api/admin/users/pending', { token: A })).data.users;
+  const patId = acmePending.find((u) => u.email === 'pat2@acme.com')?.id;
+  check('Acme admin sees its own pending request', !!patId);
+  check('Globex admin cannot see Acme pending requests',
+    !(await api('GET', '/api/admin/users/pending', { token: G })).data.users.some((u) => u.email === 'pat2@acme.com'));
+  check('Globex admin cannot approve an Acme pending user',
+    (await api('POST', `/api/admin/users/${patId}/approve`, { token: G })).status === 404);
+  check('Acme admin can approve its own pending user',
+    (await api('POST', `/api/admin/users/${patId}/approve`, { token: A })).status === 200);
+  check('approved member can now log in',
+    (await api('POST', '/api/auth/login', { body: { email: 'pat2@acme.com', password: 'secret123' } })).status === 200);
+
   console.log('Admin isolation');
   check('Globex admin cannot reset an Acme user password',
     (await api('POST', `/api/admin/users/${acmeBob.id}/reset-password`, { token: G, body: { password: 'hacked123' } })).status === 404);

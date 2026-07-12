@@ -9,6 +9,7 @@ export default function JoinWorkspace({ slug, onAuth }) {
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [busy, setBusy] = useState(false);
   const [joinError, setJoinError] = useState(null);
+  const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
     api(`/workspaces/${slug}`)
@@ -21,6 +22,8 @@ export default function JoinWorkspace({ slug, onAuth }) {
     setJoinError(null); setBusy(true);
     try {
       const data = await api(`/workspaces/${slug}/register`, { method: 'POST', body: form });
+      // New members must be approved by an admin before they can sign in.
+      if (data.pending) { setSubmitted(true); return; }
       window.history.replaceState({}, '', '/');
       onAuth(data);
     } catch (err) {
@@ -41,7 +44,14 @@ export default function JoinWorkspace({ slug, onAuth }) {
 
       <main className="auth-main">
         <form className="auth-card" onSubmit={submit}>
-          {state.loading ? (
+          {submitted ? (
+            <>
+              <div className="join-pending-icon">⏳</div>
+              <h1 className="auth-title">Request sent</h1>
+              <p className="muted auth-sub">Your request to join <strong>{state.workspace?.name}</strong> is waiting for an admin to approve it. You'll be able to sign in as soon as they do.</p>
+              <button type="button" className="auth-primary" onClick={() => { window.history.replaceState({}, '', '/'); window.location.reload(); }}>Back to sign in</button>
+            </>
+          ) : state.loading ? (
             <p className="muted">Loading…</p>
           ) : state.error ? (
             <>

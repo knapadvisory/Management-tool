@@ -1396,3 +1396,14 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 /* --- Workspace auth + admin invite --- */
 .auth-sub { font-size: 13px; text-align: center; margin: -6px 0 14px; line-height: 1.4; }
 .admin-policy-invite { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+
+/* --- Admin: pending join approvals --- */
+.admin-approvals { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 18px; background: color-mix(in srgb, #f97316 8%, var(--surface)); }
+.admin-approvals-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.admin-approvals-head strong { font-size: 15px; }
+.approvals-count { background: #f97316; color: #fff; font-size: 12px; font-weight: 700; border-radius: 10px; padding: 0 8px; line-height: 18px; }
+.approval-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+.approval-meta { flex: 1; display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.approval-name { font-weight: 600; font-size: 14px; }
+.approval-email { font-size: 12.5px; }
+.join-pending-icon { font-size: 44px; text-align: center; margin-bottom: 6px; }

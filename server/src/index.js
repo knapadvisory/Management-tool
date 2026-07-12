@@ -24,6 +24,7 @@ import driveRouter from './routes/drive.js';
 import dashboardRouter from './routes/dashboard.js';
 import setupSocket from './socket.js';
 import { startReminderScheduler } from './reminders.js';
+import { createNotification } from './notifications.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -66,13 +67,19 @@ app.get('/api/workspaces/:slug', (req, res) => {
 });
 
 // Join an existing workspace as a member (the "your company invited you" flow).
+// The account is created unapproved: an admin must approve it before the
+// person can sign in. We tell the workspace's admins there's a request waiting.
 app.post('/api/workspaces/:slug/register', (req, res) => {
   try {
     const ws = workspaceBySlug(req.params.slug);
     if (!ws) return res.status(404).json({ error: 'Workspace not found' });
     const user = register(ws, req.body);
-    io.to(`workspace:${ws.id}`).emit('directory:changed');
-    res.status(201).json({ token: signToken(user), user: publicUser(user), workspace: publicWorkspace(ws) });
+    const admins = db.prepare(`SELECT id FROM users WHERE workspace_id = ? AND role = 'admin' AND active = 1`).all(ws.id);
+    for (const { id } of admins) {
+      createNotification(io, { user_id: id, type: 'join_request', actor_id: user.id, text: `${user.name} requested to join ${ws.name}` });
+    }
+    io.to(`workspace:${ws.id}`).emit('approvals:changed');
+    res.status(201).json({ pending: true, workspace: publicWorkspace(ws) });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }
