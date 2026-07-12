@@ -110,7 +110,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
 
   if (message.is_deleted) {
     return (
-      <div className={`message deleted-row ${grouped ? 'grouped' : ''}`}>
+      <div className={`message deleted-row ${grouped ? 'grouped' : ''} ${isMine ? 'own' : ''}`}>
         <div className="message-inner">
           <span className="msg-gutter" />
           <div className="message-body">
@@ -122,7 +122,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
   }
 
   return (
-    <div className={`message ${grouped ? 'grouped' : ''}`}>
+    <div className={`message ${grouped ? 'grouped' : ''} ${isMine ? 'own' : ''}`}>
       <div className="message-inner">
       {grouped ? (
         <span className="msg-gutter"><span className="gutter-time">{formatTime(message.created_at)}</span></span>
@@ -132,11 +132,12 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
       <div className="message-body">
         {!grouped && (
           <div className="message-meta">
-            <strong>{message.user_name}</strong>
+            <strong>{isMine ? 'You' : message.user_name}</strong>
             <span className="message-time">{formatTime(message.created_at)}</span>
           </div>
         )}
 
+        <div className="message-bubble">
         {editing ? (
           <div className="edit-box">
             <textarea value={draft} rows={2} autoFocus onChange={(e) => setDraft(e.target.value)}
@@ -160,6 +161,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
             {message.attachments.map((a) => <AttachmentView key={a.id} att={a} onOpen={() => setPreviewAtt(a)} />)}
           </div>
         )}
+        </div>
 
         {message.reactions.length > 0 && (
           <div className="reactions">
