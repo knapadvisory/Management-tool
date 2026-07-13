@@ -367,7 +367,7 @@ function SignupPolicy() {
         when approving. It never blocks anyone; you always approve each person yourself. Leave empty to skip the sorting.
       </p>
       <div className="admin-policy-row">
-        <input placeholder="knapadvisory.com" value={domains} onChange={(e) => setDomains(e.target.value)} />
+        <input placeholder="yourcompany.com" value={domains} onChange={(e) => setDomains(e.target.value)} />
         <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}</button>
       </div>
       <p className="muted admin-policy-guests">👤 External guests currently in the workspace: <strong>{guestCount}</strong></p>

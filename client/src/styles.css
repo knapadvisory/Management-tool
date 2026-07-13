@@ -117,10 +117,11 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   display: flex; flex-direction: column; overflow-y: auto; padding-bottom: 16px;
 }
 .sidebar-header {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 14px 16px; border-bottom: 1px solid var(--text);
 }
-.logo { font-weight: 800; font-size: 18px; color: #fff; }
+.logo { font-weight: 800; font-size: 18px; color: #fff; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.header-actions { flex-shrink: 0; }
 .sidebar-me { display: flex; align-items: center; gap: 8px; padding: 10px 16px; width: 100%; background: none; border: none; cursor: pointer; text-align: left; border-radius: 8px; }
 .sidebar-me:hover { background: rgba(255,255,255,.08); }
 .me-name { font-weight: 600; color: #fff; font-size: 14px; }

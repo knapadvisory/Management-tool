@@ -254,7 +254,7 @@ export default function App() {
         {settings && (
           <SettingsModal
             user={user} colors={avatarColors} initialSection={settings.section}
-            onClose={() => setSettings(null)} onSaved={(u) => setUser(u)}
+            onClose={() => setSettings(null)} onSaved={(u) => setUser(u)} onLogout={logout}
           />
         )}
         {toast && <div className="toast">{toast}</div>}
@@ -348,7 +348,7 @@ export default function App() {
         <SettingsModal
           user={user} colors={avatarColors} initialSection={settings.section}
           onClose={() => setSettings(null)}
-          onSaved={(u) => setUser(u)}
+          onSaved={(u) => setUser(u)} onLogout={logout}
         />
       )}
       {toast && <div className="toast">{toast}</div>}

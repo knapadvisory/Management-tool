@@ -20,7 +20,7 @@ const SECTIONS = [
 
 // A Slack-style Preferences hub: a left rail of categories and a panel per
 // category. Extensible — add an entry to SECTIONS and a case below.
-export default function SettingsModal({ user, colors = [], initialSection = 'profile', onClose, onSaved }) {
+export default function SettingsModal({ user, colors = [], initialSection = 'profile', onClose, onSaved, onLogout }) {
   const [section, setSection] = useState(SECTIONS.some((s) => s.key === initialSection) ? initialSection : 'profile');
 
   return (
@@ -43,7 +43,7 @@ export default function SettingsModal({ user, colors = [], initialSection = 'pro
             {section === 'language' && <LanguagePanel />}
             {section === 'accessibility' && <AccessibilityPanel />}
             {section === 'advanced' && <AdvancedPanel />}
-            {section === 'account' && <AccountPanel user={user} />}
+            {section === 'account' && <AccountPanel user={user} onLogout={onLogout} />}
           </div>
         </div>
       </div>
@@ -269,7 +269,7 @@ function AdvancedPanel() {
   );
 }
 
-function AccountPanel({ user }) {
+function AccountPanel({ user, onLogout }) {
   const [cur, setCur] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -301,6 +301,10 @@ function AccountPanel({ user }) {
       <input className="profile-input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
       {msg && <p className={msg.err ? 'form-error' : 'form-ok'}>{msg.text}</p>}
       <div className="editor-actions"><button className="btn" disabled={saving || !cur || !next} onClick={save}>{saving ? 'Saving…' : 'Change password'}</button></div>
+      <hr className="profile-sep" />
+      <div className="profile-section-title">Session</div>
+      <p className="muted" style={{ margin: '0 0 10px' }}>Signed in as {user.email}.</p>
+      <button className="btn btn-danger" onClick={onLogout}>⏻ Sign out</button>
     </div>
   );
 }
