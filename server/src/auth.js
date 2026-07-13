@@ -71,17 +71,13 @@ export function emailDomainAllowed(workspace, email) {
 }
 
 // Register a new MEMBER into an existing workspace (the "join your company"
-// flow). Gated by that workspace's email-domain policy.
+// flow). Anyone may register with a work OR personal email — the workspace's
+// listed domains only classify the request (work vs personal) for the admin's
+// approval queue; every new member still needs admin approval to get in.
 export function register(workspace, { name, email, password }) {
   if (!workspace) throw Object.assign(new Error('Workspace not found'), { status: 404 });
   if (!name?.trim() || !email?.trim() || !password || password.length < 6) {
     throw Object.assign(new Error('Name, email and a password of 6+ characters are required'), { status: 400 });
-  }
-  if (!emailDomainAllowed(workspace, email)) {
-    const domains = allowedSignupDomains(workspace);
-    throw Object.assign(new Error(
-      `Please join with your work email (${domains.map((d) => '@' + d).join(' or ')}). If you're an external collaborator, ask a team member to invite you to a collab instead.`
-    ), { status: 403 });
   }
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.trim().toLowerCase());
   if (existing) throw Object.assign(new Error('An account with this email already exists'), { status: 409 });

@@ -116,10 +116,11 @@ export default function AdminPanel({ user }) {
 // before they can sign in.
 function PendingApprovals({ onChanged }) {
   const [pending, setPending] = useState([]);
+  const [categorized, setCategorized] = useState(false);
   const [busy, setBusy] = useState(null);
 
   const load = useCallback(() => {
-    api('/admin/users/pending').then((d) => setPending(d.users)).catch(() => {});
+    api('/admin/users/pending').then((d) => { setPending(d.users); setCategorized(!!d.categorized); }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -141,6 +142,21 @@ function PendingApprovals({ onChanged }) {
 
   if (!pending.length) return null;
 
+  const row = (u) => (
+    <div key={u.id} className="approval-row">
+      <Avatar user={u} size={32} />
+      <div className="approval-meta">
+        <span className="approval-name">{u.name}</span>
+        <span className="muted approval-email">{u.email}</span>
+      </div>
+      <button className="btn btn-sm btn-primary" disabled={busy === u.id} onClick={() => act(u.id, 'approve')}>Approve</button>
+      <button className="btn btn-sm btn-danger" disabled={busy === u.id} onClick={() => act(u.id, 'reject')}>Reject</button>
+    </div>
+  );
+
+  const work = pending.filter((u) => u.work_email === true);
+  const personal = pending.filter((u) => u.work_email !== true);
+
   return (
     <div className="admin-approvals">
       <div className="admin-approvals-head">
@@ -148,17 +164,16 @@ function PendingApprovals({ onChanged }) {
         <span className="approvals-count">{pending.length}</span>
       </div>
       <p className="muted">These people asked to join. They can't sign in until you approve them.</p>
-      {pending.map((u) => (
-        <div key={u.id} className="approval-row">
-          <Avatar user={u} size={32} />
-          <div className="approval-meta">
-            <span className="approval-name">{u.name}</span>
-            <span className="muted approval-email">{u.email}</span>
-          </div>
-          <button className="btn btn-sm btn-primary" disabled={busy === u.id} onClick={() => act(u.id, 'approve')}>Approve</button>
-          <button className="btn btn-sm btn-danger" disabled={busy === u.id} onClick={() => act(u.id, 'reject')}>Reject</button>
-        </div>
-      ))}
+      {categorized ? (
+        <>
+          <div className="approval-group-title">✅ Work email · {work.length}</div>
+          {work.length ? work.map(row) : <p className="muted approval-empty">None.</p>}
+          <div className="approval-group-title">👤 Personal / other email · {personal.length}</div>
+          {personal.length ? personal.map(row) : <p className="muted approval-empty">None.</p>}
+        </>
+      ) : (
+        pending.map(row)
+      )}
     </div>
   );
 }
@@ -214,15 +229,16 @@ function SignupPolicy() {
       )}
 
       <div className="admin-policy-head">
-        <strong>Who can join</strong>
-        <span className={`policy-pill ${restricted ? 'on' : 'off'}`}>{restricted ? 'Work email only' : 'Open'}</span>
+        <strong>Your work email domains</strong>
+        <span className={`policy-pill ${restricted ? 'on' : 'off'}`}>{restricted ? 'Sorting on' : 'Off'}</span>
       </div>
       <p className="muted">
-        List the work-email domains allowed to join (comma separated). Anyone with a matching email can register as a member;
-        everyone else must be invited into a collab as a <strong>guest</strong>, or created here by you. Leave empty to allow any email.
+        List your company's email domains (comma separated). Everyone can register with a work <em>or</em> personal email —
+        this just <strong>sorts</strong> join requests into "Work email" and "Personal email" groups so you can tell them apart
+        when approving. It never blocks anyone; you always approve each person yourself. Leave empty to skip the sorting.
       </p>
       <div className="admin-policy-row">
-        <input placeholder="acme.com, partner.com" value={domains} onChange={(e) => setDomains(e.target.value)} />
+        <input placeholder="knapadvisory.com" value={domains} onChange={(e) => setDomains(e.target.value)} />
         <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}</button>
       </div>
       <p className="muted admin-policy-guests">👤 External guests currently in the workspace: <strong>{guestCount}</strong></p>

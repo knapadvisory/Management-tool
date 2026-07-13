@@ -34,7 +34,7 @@ export default function JoinWorkspace({ slug, onAuth }) {
   }
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const domainHint = state.domains.length ? `Use your work email (${state.domains.map((d) => '@' + d).join(' / ')})` : 'Email';
+  const domainHint = state.domains.length ? 'Work email if you have one, otherwise personal' : 'Email';
 
   return (
     <div className="auth-page">

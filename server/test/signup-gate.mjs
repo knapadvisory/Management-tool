@@ -72,16 +72,20 @@ async function main() {
   const slug = ws.data.workspace.slug;
   const adminToken = ws.data.token;
 
-  // With no domain policy, any email may join.
-  check('join with any email succeeds when open',
-    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Open', email: 'open@gmail.com', password: 'secret123' })).status === 201);
+  // Anyone may register (work OR personal) — it always lands as pending.
+  check('join with a personal email succeeds (pending)',
+    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Open', email: 'open@gmail.com', password: 'secret123' })).data.pending === true);
 
-  // Admin restricts joins to the work domain.
+  // With work domains set, requests are sorted work vs personal (never blocked).
   await jpatch(oBase, '/api/admin/settings', { allowed_signup_domains: 'acme.com' }, adminToken);
-  check('join with off-domain email is rejected',
-    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Bad', email: 'bad@gmail.com', password: 'secret123' })).status === 403);
-  check('join with work-domain email succeeds',
-    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Good', email: 'good@acme.com', password: 'secret123' })).status === 201);
+  check('off-domain email still allowed (not blocked)',
+    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Perso', email: 'perso@gmail.com', password: 'secret123' })).status === 201);
+  check('work-domain email allowed',
+    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Worky', email: 'worky@acme.com', password: 'secret123' })).status === 201);
+  const pend = await (await fetch(oBase + '/api/admin/users/pending', { headers: { Authorization: 'Bearer ' + adminToken } })).json();
+  check('pending list is categorized', pend.categorized === true);
+  check('work-domain request flagged work_email', pend.users.find((u) => u.email === 'worky@acme.com')?.work_email === true);
+  check('personal request flagged not-work', pend.users.find((u) => u.email === 'perso@gmail.com')?.work_email === false);
 
   open.proc.kill();
   rmSync(open.dir, { recursive: true, force: true });

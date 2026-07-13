@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import db from '../db.js';
-import { publicUser, joinGeneral } from '../auth.js';
+import { publicUser, joinGeneral, emailDomainAllowed, allowedSignupDomains } from '../auth.js';
 import { createNotification } from '../notifications.js';
 import { serializeMessage } from '../messages.js';
 
@@ -42,10 +42,14 @@ router.get('/users/deleted', (req, res) => {
 });
 
 // People who self-registered via the join link and are awaiting approval.
+// Each is flagged work_email (their domain matches a listed work domain) vs
+// personal, so the admin can review the two groups separately.
 router.get('/users/pending', (req, res) => {
+  const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.workspaceId);
+  const hasDomains = allowedSignupDomains(ws).length > 0;
   const users = db.prepare(`SELECT * FROM users WHERE workspace_id = ? AND approved = 0 AND role != 'guest' ORDER BY created_at`).all(req.workspaceId)
-    .map((u) => ({ ...publicUser(u), created_at: u.created_at }));
-  res.json({ users });
+    .map((u) => ({ ...publicUser(u), created_at: u.created_at, work_email: hasDomains ? emailDomainAllowed(ws, u.email) : null }));
+  res.json({ users, categorized: hasDomains });
 });
 
 // Approve a pending join request: the member can now sign in and is added to #general.
