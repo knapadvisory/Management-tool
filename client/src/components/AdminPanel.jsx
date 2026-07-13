@@ -67,6 +67,8 @@ export default function AdminPanel({ user }) {
 
       <PlatformCodes />
 
+      <PlatformCompanies />
+
       <PlatformBackups />
 
       {error && <div className="form-error">{error}</div>}
@@ -305,6 +307,53 @@ function PlatformCodes() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Platform owner (KNAP) only: every company/workspace on this server, with a
+// guarded permanent-remove.
+function PlatformCompanies() {
+  const [isPlatform, setIsPlatform] = useState(false);
+  const [list, setList] = useState([]);
+  const [busy, setBusy] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const load = useCallback(() => { api('/platform/workspaces').then((d) => setList(d.workspaces)).catch(() => {}); }, []);
+  useEffect(() => {
+    api('/platform/me').then((d) => { setIsPlatform(!!d.platform_admin); if (d.platform_admin) load(); }).catch(() => {});
+  }, [load]);
+
+  async function remove(w) {
+    const typed = window.prompt(
+      `This PERMANENTLY deletes "${w.name}" and ALL its data — ${w.members} member(s), every chat, task and file. A backup is taken automatically first, but this cannot be undone.\n\nType the company name exactly to confirm:`
+    );
+    if (typed === null) return;
+    setBusy(w.id); setErr(null);
+    try { await api(`/platform/workspaces/${w.id}`, { method: 'DELETE', body: { confirm_name: typed } }); load(); }
+    catch (e) { setErr(e.message); }
+    setBusy(null);
+  }
+
+  if (!isPlatform) return null;
+  return (
+    <div className="admin-policy admin-platform">
+      <div className="admin-policy-head"><strong>🏬 Companies on this server</strong></div>
+      <p className="muted">Every workspace using TeamHub. Removing one permanently deletes that company and all of its data (a backup is taken automatically first).</p>
+      {err && <div className="form-error">{err}</div>}
+      <div className="code-list">
+        {list.map((w) => (
+          <div key={w.id} className="code-row">
+            <span className="code-label" style={{ minWidth: 0, flex: 1 }}>
+              {w.name}{w.is_platform && <span className="role-badge admin" style={{ marginLeft: 6 }}>You</span>}
+            </span>
+            <span className="code-status muted">{w.members} member{w.members === 1 ? '' : 's'}</span>
+            {!w.is_platform && (
+              <button className="btn btn-sm btn-danger" disabled={busy === w.id} onClick={() => remove(w)}>{busy === w.id ? 'Removing…' : 'Remove'}</button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

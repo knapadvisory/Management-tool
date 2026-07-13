@@ -8,8 +8,8 @@ import { Server } from 'socket.io';
 
 import db from './db.js';
 import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, workspaceSignupCodeRequired, allowedSignupDomains, createWorkspaceAdmin, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, AVATAR_COLORS } from './auth.js';
-import { createWorkspace, workspaceBySlug, workspaceById, publicWorkspace } from './workspaces.js';
-import { isPlatformAdmin, findUsableCompanyCode, consumeCompanyCode, createCompanyCode, listCompanyCodes, revokeCompanyCode, findUsableInvite, consumeInvite } from './codes.js';
+import { createWorkspace, workspaceBySlug, workspaceById, publicWorkspace, deleteWorkspace } from './workspaces.js';
+import { isPlatformAdmin, PLATFORM_WORKSPACE_ID, findUsableCompanyCode, consumeCompanyCode, createCompanyCode, listCompanyCodes, revokeCompanyCode, findUsableInvite, consumeInvite } from './codes.js';
 import channelsRouter from './routes/channels.js';
 import collabsRouter, { collabByInviteToken, addGuestToCollab, collabWithMeta } from './routes/collabs.js';
 import adminRouter from './routes/admin.js';
@@ -135,6 +135,36 @@ app.delete('/api/platform/company-codes/:id', requireAuth, requirePlatformAdmin,
 // Tell the client whether the signed-in user is the platform owner.
 app.get('/api/platform/me', requireAuth, (req, res) => {
   res.json({ platform_admin: isPlatformAdmin(req.user) });
+});
+
+// --- Companies (workspaces) — platform admin only ---
+app.get('/api/platform/workspaces', requireAuth, requirePlatformAdmin, (req, res) => {
+  const rows = db.prepare('SELECT id, name, slug, created_at FROM workspaces ORDER BY id').all().map((w) => ({
+    ...w,
+    is_platform: w.id === PLATFORM_WORKSPACE_ID,
+    members: db.prepare(`SELECT COUNT(*) AS n FROM users WHERE workspace_id = ? AND role != 'guest'`).get(w.id).n,
+  }));
+  res.json({ workspaces: rows });
+});
+
+// Permanently remove a company/workspace. Guarded: not the platform workspace,
+// name must be typed to confirm, and a fresh backup is taken first.
+app.delete('/api/platform/workspaces/:id', requireAuth, requirePlatformAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const ws = workspaceById(id);
+  if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+  if (id === PLATFORM_WORKSPACE_ID) return res.status(400).json({ error: 'The platform workspace cannot be deleted here.' });
+  if ((req.body?.confirm_name || '').trim() !== ws.name) {
+    return res.status(400).json({ error: `To confirm, type the company name exactly: ${ws.name}` });
+  }
+  try {
+    await runBackup(); // always leave a recovery point before an irreversible delete
+  } catch (e) {
+    return res.status(500).json({ error: `Backup before deletion failed — aborted for safety (${e.message}).` });
+  }
+  io.to(`workspace:${id}`).emit('account:deactivated'); // sign out any live sessions
+  const filesRemoved = deleteWorkspace(id);
+  res.json({ ok: true, files_removed: filesRemoved });
 });
 
 // --- Backups (platform admin only) ---
