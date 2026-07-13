@@ -321,6 +321,10 @@ ensureColumn('tasks', 'recurrence', "TEXT NOT NULL DEFAULT 'none'");
 // mandatory reason in status_reason.
 ensureColumn('tasks', 'status', "TEXT NOT NULL DEFAULT 'in_progress'");
 ensureColumn('tasks', 'status_reason', "TEXT NOT NULL DEFAULT ''");
+// completed_at is stamped when a task becomes "done" (completed status or a
+// done stage); archived_at hides finished tasks from the active board/list.
+ensureColumn('tasks', 'completed_at', 'TEXT');
+ensureColumn('tasks', 'archived_at', 'TEXT');
 // Org roles: 'admin' (super admin — full oversight + user management) or 'member'.
 // 'active' gates access; deactivating revokes login without destroying data.
 ensureColumn('users', 'role', "TEXT NOT NULL DEFAULT 'member'");
@@ -391,6 +395,14 @@ if (!db.prepare(`SELECT 1 FROM users WHERE role = 'admin' AND active = 1`).get()
   const first = db.prepare('SELECT id FROM users ORDER BY id LIMIT 1').get();
   if (first) db.prepare(`UPDATE users SET role = 'admin' WHERE id = ?`).run(first.id);
 }
+
+// Backfill completed_at for tasks that are already "done" (so the 7-day
+// auto-archive can act on them), using their last-updated time as an estimate.
+db.prepare(`
+  UPDATE tasks SET completed_at = updated_at
+  WHERE completed_at IS NULL
+    AND (status = 'completed' OR stage_id IN (SELECT id FROM workflow_stages WHERE is_done = 1))
+`).run();
 
 // Give a freshly-created workspace its starter content: a #general channel and
 // a default task workflow. Called when a new workspace is provisioned.

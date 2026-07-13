@@ -84,6 +84,11 @@ function canSeeTask(user, task) {
   return !!db.prepare('SELECT 1 FROM task_watchers WHERE task_id = ? AND user_id = ?').get(task.id, user.id);
 }
 
+// Anyone involved in a task may archive/unarchive it; admins may archive any.
+function canArchiveTask(user, task) {
+  return user.role === 'admin' || task.creator_id === user.id || task.assignee_id === user.id;
+}
+
 // Who should receive live updates about a task: the people involved in it
 // plus every active admin (so admins' boards stay in sync for supervision).
 function recipientsForTask(task) {
@@ -165,6 +170,8 @@ router.get('/', (req, res) => {
   // Everything is scoped to the caller's workspace, first and always.
   const where = ['t.workspace_id = ?'];
   const params = [req.workspaceId];
+  // Archived tasks are hidden from the active board/list unless asked for.
+  where.push(req.query.archived ? 't.archived_at IS NOT NULL' : 't.archived_at IS NULL');
   if (tag) { sql += ' JOIN task_tags tt ON tt.task_id = t.id'; where.push('tt.tag = ?'); params.push(tag); }
   if (watching) { where.push('EXISTS (SELECT 1 FROM task_watchers tw WHERE tw.task_id = t.id AND tw.user_id = ?)'); params.push(req.user.id); }
   if (workflow_id) { where.push('t.workflow_id = ?'); params.push(workflow_id); }
@@ -347,6 +354,13 @@ router.patch('/:id', (req, res) => {
     task.id
   );
 
+  // Keep completed_at accurate: stamp it when the task becomes "done"
+  // (completed status or a done stage); clear it (and any archive) if reopened.
+  const now = db.prepare('SELECT t.status, t.completed_at, s.is_done FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id WHERE t.id = ?').get(task.id);
+  const isDoneNow = now.status === 'completed' || !!now.is_done;
+  if (isDoneNow && !now.completed_at) db.prepare(`UPDATE tasks SET completed_at = datetime('now') WHERE id = ?`).run(task.id);
+  else if (!isDoneNow && now.completed_at) db.prepare('UPDATE tasks SET completed_at = NULL, archived_at = NULL WHERE id = ?').run(task.id);
+
   const updated = emitChanged(req, task.id);
   if (assignee_id && assignee_id !== task.assignee_id && assignee_id !== req.user.id) {
     const io = req.app.get('io');
@@ -373,6 +387,59 @@ router.delete('/:id', (req, res) => {
   const io = req.app.get('io');
   if (io) for (const uid of recipients) io.to(`user:${uid}`).emit('task:deleted', { task_id: task.id, workflow_id: task.workflow_id });
   res.json({ ok: true });
+});
+
+// --- Archive ---
+
+// Move a single done task out of the active board into the archive.
+router.post('/:id/archive', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  if (!canArchiveTask(req.user, task)) {
+    return res.status(403).json({ error: 'Only the task creator, assignee, or an admin can archive this task.' });
+  }
+  if (!task.completed_at) {
+    return res.status(400).json({ error: 'Only completed tasks can be archived.' });
+  }
+  if (task.archived_at) return res.json(taskWithMeta(db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id)));
+  db.prepare(`UPDATE tasks SET archived_at = datetime('now') WHERE id = ?`).run(task.id);
+  logActivity(task.id, req.user.id, 'archived this task');
+  res.json(emitChanged(req, task.id));
+});
+
+// Restore an archived task back to the active board.
+router.post('/:id/unarchive', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  if (!canArchiveTask(req.user, task)) {
+    return res.status(403).json({ error: 'Only the task creator, assignee, or an admin can restore this task.' });
+  }
+  if (!task.archived_at) return res.json(taskWithMeta(db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id)));
+  db.prepare('UPDATE tasks SET archived_at = NULL WHERE id = ?').run(task.id);
+  logActivity(task.id, req.user.id, 'restored this task from the archive');
+  res.json(emitChanged(req, task.id));
+});
+
+// Bulk-archive every done task the caller is allowed to archive. Admins clear
+// the whole workspace's done column; others clear only their own done tasks.
+router.post('/archive/done', (req, res) => {
+  let sql = `SELECT * FROM tasks WHERE workspace_id = ? AND archived_at IS NULL AND completed_at IS NOT NULL`;
+  const params = [req.workspaceId];
+  if (req.user.role !== 'admin') {
+    sql += ' AND (creator_id = ? OR assignee_id = ?)';
+    params.push(req.user.id, req.user.id);
+  }
+  const tasks = db.prepare(sql).all(...params);
+  const stamp = db.prepare(`UPDATE tasks SET archived_at = datetime('now') WHERE id = ?`);
+  const archive = db.transaction((rows) => {
+    for (const t of rows) {
+      stamp.run(t.id);
+      logActivity(t.id, req.user.id, 'archived this task');
+    }
+  });
+  archive(tasks);
+  for (const t of tasks) emitChanged(req, t.id);
+  res.json({ archived: tasks.length });
 });
 
 // --- Comments ---

@@ -50,3 +50,23 @@ export function startReminderScheduler(io) {
   timer.unref?.(); // don't keep the process alive just for the scheduler
   return timer;
 }
+
+// Tasks that have been "done" for more than 7 days are auto-archived so the
+// Done column doesn't grow without bound. Users can still archive sooner by
+// hand, or restore anything from the archive. Runs hourly (background sweep).
+export function autoArchiveDone() {
+  const info = db.prepare(`
+    UPDATE tasks SET archived_at = datetime('now')
+    WHERE archived_at IS NULL
+      AND completed_at IS NOT NULL
+      AND completed_at <= datetime('now', '-7 days')
+  `).run();
+  return info.changes;
+}
+
+export function startAutoArchiveScheduler() {
+  autoArchiveDone();
+  const timer = setInterval(autoArchiveDone, 60 * 60 * 1000);
+  timer.unref?.();
+  return timer;
+}

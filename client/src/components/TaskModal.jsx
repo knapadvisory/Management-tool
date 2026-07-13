@@ -114,9 +114,19 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
     onClose();
   }
 
+  async function archive() {
+    await api(`/tasks/${taskId}/archive`, { method: 'POST' });
+    onClose();
+  }
+  async function unarchive() {
+    await api(`/tasks/${taskId}/unarchive`, { method: 'POST' });
+    onClose();
+  }
+
   if (!task) return null;
   const workflow = workflows.find((w) => w.id === task.workflow_id) || workflows[0];
   const watching = watchers.some((w) => w.id === user.id);
+  const canArchive = user.role === 'admin' || task.creator?.id === user.id || task.assignee?.id === user.id;
   const doneCount = checklist.filter((i) => i.is_done).length;
   const progress = checklist.length ? Math.round((doneCount / checklist.length) * 100) : 0;
 
@@ -278,9 +288,14 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
 
         <div className="modal-footer">
           <span className="muted">Created by {task.creator?.name}</span>
-          {user.role === 'admin'
-            ? <button className="btn btn-danger" onClick={remove}>Delete task</button>
-            : <span className="muted">Only an admin can delete a task</span>}
+          <div className="footer-actions">
+            {canArchive && (task.archived_at
+              ? <button className="btn btn-sm" onClick={unarchive}>♻ Restore</button>
+              : !!task.completed_at && <button className="btn btn-sm" onClick={archive} title="Move this completed task to the archive">🗄 Archive</button>)}
+            {user.role === 'admin'
+              ? <button className="btn btn-danger" onClick={remove}>Delete task</button>
+              : <span className="muted">Only an admin can delete a task</span>}
+          </div>
         </div>
     </div>
   );

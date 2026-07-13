@@ -54,7 +54,7 @@ router.get('/', (req, res) => {
      FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id
      WHERE ${OPEN}${scope} GROUP BY s.id ORDER BY s.position`
   );
-  const doneCount = one(`SELECT COUNT(*) AS n FROM tasks t WHERE t.status = 'completed'${scope}`).n;
+  const doneCount = one(`SELECT COUNT(*) AS n FROM tasks t WHERE t.status = 'completed' AND t.archived_at IS NULL${scope}`).n;
 
   // All in-scope open tasks (for the member "all tasks" list / admin overview).
   const allTasks = rows(

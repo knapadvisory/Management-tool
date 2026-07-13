@@ -25,7 +25,7 @@ import filesRouter from './routes/files.js';
 import driveRouter from './routes/drive.js';
 import dashboardRouter from './routes/dashboard.js';
 import setupSocket from './socket.js';
-import { startReminderScheduler } from './reminders.js';
+import { startReminderScheduler, startAutoArchiveScheduler } from './reminders.js';
 import { createNotification } from './notifications.js';
 import { startBackupScheduler, runBackup, backupStatus, latestDbPath } from './backup.js';
 
@@ -323,6 +323,7 @@ if (fs.existsSync(clientDist)) {
 
 setupSocket(io);
 startReminderScheduler(io);
+startAutoArchiveScheduler();
 startBackupScheduler();
 
 const PORT = process.env.PORT || 3001;

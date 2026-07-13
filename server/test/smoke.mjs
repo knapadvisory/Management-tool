@@ -393,6 +393,39 @@ async function main() {
   const afterS = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
   check('completing via status spawns the next occurrence', afterS === beforeS + 1);
 
+  console.log('Task archive');
+  // A completed task can be archived out of the active board and restored.
+  const arTask = await req('POST', '/api/tasks', { token: a, body: { title: 'Archive me', workflow_id: wf.data.id, assignee_id: bobId } });
+  const arId = arTask.data.id;
+  const arNotDone = await req('POST', `/api/tasks/${arId}/archive`, { token: a });
+  check('an unfinished task cannot be archived', arNotDone.status === 400);
+  await req('PATCH', `/api/tasks/${arId}`, { token: b, body: { status: 'completed' } });
+  const arCompleted = await req('GET', `/api/tasks/${arId}`, { token: a });
+  check('completing a task stamps completed_at', !!arCompleted.data.task.completed_at);
+  // A member who is neither creator nor assignee cannot archive it.
+  const carolArchive = await req('POST', `/api/tasks/${arId}/archive`, { token: carolTok });
+  check('an uninvolved member cannot archive the task', carolArchive.status === 403);
+  const arArchived = await req('POST', `/api/tasks/${arId}/archive`, { token: b });
+  check('the assignee can archive their completed task', arArchived.status === 200 && !!arArchived.data.archived_at);
+  const activeList = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
+  check('archived task is hidden from the active list', !activeList.data.tasks.some((t) => t.id === arId));
+  const archivedList = await req('GET', `/api/tasks?workflow_id=${wf.data.id}&archived=1`, { token: a });
+  check('archived task appears in the archived list', archivedList.data.tasks.some((t) => t.id === arId));
+  const arRestored = await req('POST', `/api/tasks/${arId}/unarchive`, { token: b });
+  check('the assignee can restore the task', arRestored.status === 200 && !arRestored.data.archived_at);
+  const activeAgain = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
+  check('restored task returns to the active list', activeAgain.data.tasks.some((t) => t.id === arId));
+  // Reopening a done task clears completed_at (so the 7-day clock resets).
+  await req('PATCH', `/api/tasks/${arId}`, { token: b, body: { status: 'in_progress' } });
+  const arReopened = await req('GET', `/api/tasks/${arId}`, { token: a });
+  check('reopening a task clears completed_at', !arReopened.data.task.completed_at);
+  // Bulk archive: admin clears every completed task in the workspace.
+  await req('PATCH', `/api/tasks/${arId}`, { token: b, body: { status: 'completed' } });
+  const bulk = await req('POST', '/api/tasks/archive/done', { token: a });
+  check('bulk archive reports how many were archived', bulk.status === 200 && bulk.data.archived >= 1);
+  const afterBulk = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
+  check('no completed tasks remain active after bulk archive', !afterBulk.data.tasks.some((t) => t.status === 'completed'));
+
   console.log('Collabs');
   const collab = await req('POST', '/api/collabs', {
     token: a,

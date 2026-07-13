@@ -27,13 +27,17 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
   const [showProjects, setShowProjects] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [dragTaskId, setDragTaskId] = useState(null);
+  const [archivedView, setArchivedView] = useState(false);
 
   const allBoards = workflowId === 'all';
   const workflow = workflows.find((w) => w.id === workflowId);
 
-  const loadTasks = useCallback(async (wfId) => {
+  const loadTasks = useCallback(async (wfId, archived = false) => {
     if (!wfId) return;
-    const d = await api(wfId === 'all' ? '/tasks' : `/tasks?workflow_id=${wfId}`);
+    const qs = new URLSearchParams();
+    if (wfId !== 'all') qs.set('workflow_id', wfId);
+    if (archived) qs.set('archived', '1');
+    const d = await api(`/tasks${qs.toString() ? `?${qs}` : ''}`);
     setTasks(d.tasks);
   }, []);
 
@@ -62,7 +66,12 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
     loadTemplates();
   }, [loadProjects, loadTags, loadTemplates]);
 
-  useEffect(() => { loadTasks(workflowId); }, [workflowId, loadTasks]);
+  useEffect(() => { loadTasks(workflowId, archivedView); }, [workflowId, archivedView, loadTasks]);
+
+  // The Archived list is workflow-agnostic and read-only, so use List view.
+  useEffect(() => {
+    if (archivedView && view === 'board') setView('list');
+  }, [archivedView, view]);
 
   // Open a specific task when navigated from a notification.
   useEffect(() => {
@@ -79,8 +88,12 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
     if (!socket) return;
     const onChanged = ({ task }) => {
       if (workflowId !== 'all' && task.workflow_id !== workflowId) return;
+      // Keep each list to its side of the archive line: an archived task
+      // leaves the active board, and a restored one leaves the archive view.
+      const belongs = archivedView ? !!task.archived_at : !task.archived_at;
       setTasks((ts) => {
         const idx = ts.findIndex((t) => t.id === task.id);
+        if (!belongs) return idx === -1 ? ts : ts.filter((t) => t.id !== task.id);
         if (idx === -1) return [task, ...ts];
         const copy = [...ts]; copy[idx] = task; return copy;
       });
@@ -99,7 +112,15 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
       socket.off('projects:changed', onProjects);
       socket.off('templates:changed', onTemplates);
     };
-  }, [workflowId, loadProjects, loadTags, loadTemplates]);
+  }, [workflowId, archivedView, loadProjects, loadTags, loadTemplates]);
+
+  async function archiveAllDone() {
+    const done = visibleTasks.filter((t) => t.completed_at);
+    if (!done.length) return;
+    if (!window.confirm(`Archive ${done.length} completed task${done.length > 1 ? 's' : ''}? You can restore them from the Archived view.`)) return;
+    await api('/tasks/archive/done', { method: 'POST' });
+    loadTasks(workflowId, archivedView);
+  }
 
   async function moveTask(taskId, stageId) {
     await api(`/tasks/${taskId}`, { method: 'PATCH', body: { stage_id: stageId } });
@@ -141,14 +162,18 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
         </label>
 
         <div className="view-switch">
-          {(allBoards ? ['list', 'calendar'] : ['board', 'list', 'calendar']).map((v) => (
+          {(allBoards || archivedView ? ['list', 'calendar'] : ['board', 'list', 'calendar']).map((v) => (
             <button key={v} className={view === v ? 'active' : ''} onClick={() => setView(v)}>
               {v[0].toUpperCase() + v.slice(1)}
             </button>
           ))}
         </div>
 
-        <button className="btn btn-primary" onClick={() => setCreating(true)}>＋ New task</button>
+        <button className={`btn btn-sm ${archivedView ? 'active' : ''}`} onClick={() => setArchivedView((v) => !v)}
+          title="Tasks auto-archive 7 days after they're done">
+          {archivedView ? '← Active tasks' : '🗄 Archived'}
+        </button>
+        {!archivedView && <button className="btn btn-primary" onClick={() => setCreating(true)}>＋ New task</button>}
       </header>
 
       <div className="filter-bar">
@@ -176,6 +201,9 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
         <label className="checkbox"><input type="checkbox" checked={filters.watching} onChange={(e) => setFilters((f) => ({ ...f, watching: e.target.checked }))} /> Watching</label>
         <button className="btn btn-sm" onClick={() => setShowProjects(true)}>⚙ Projects</button>
         <button className="btn btn-sm" onClick={() => setShowTemplates(true)}>⧉ Templates</button>
+        {!archivedView && visibleTasks.some((t) => t.completed_at) && (
+          <button className="btn btn-sm" onClick={archiveAllDone} title="Move all completed tasks to the archive">🗄 Archive done</button>
+        )}
       </div>
 
       {view === 'board' && !allBoards && workflow && (

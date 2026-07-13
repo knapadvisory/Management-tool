@@ -145,13 +145,13 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
           ) : (
             <section className="dash-panel">
               <div className="dash-block-head"><h2>{t('dash.urgent')}</h2><span className="pill-count">{data.urgent.length}</span></div>
-              <TaskList tasks={data.urgent} onOpenTask={openTask} empty="Nothing urgent — you’re on top of it 🎉" detailed />
+              <TaskList tasks={data.urgent} onOpenTask={openTask} empty="Nothing urgent — you’re on top of it 🎉" detailed currentUserId={user.id} />
             </section>
           )}
 
           <section className="dash-panel">
             <div className="dash-block-head"><h2>{t('dash.allopen')}</h2><span className="pill-count">{data.all_tasks.length}</span></div>
-            <TaskList tasks={data.all_tasks} onOpenTask={openTask} empty="No open tasks." detailed showAssignee={isAdmin} showBy={!isAdmin} />
+            <TaskList tasks={data.all_tasks} onOpenTask={openTask} empty="No open tasks." detailed currentUserId={user.id} />
           </section>
         </div>
 
@@ -206,7 +206,7 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
               <button className="icon-btn" onClick={() => setListPopup(null)}>✕</button>
             </div>
             <div className="dash-listpopup-body">
-              <TaskList tasks={listPopup.tasks} onOpenTask={(id) => { setListPopup(null); openTask(id); }} empty="No tasks here." detailed showAssignee />
+              <TaskList tasks={listPopup.tasks} onOpenTask={(id) => { setListPopup(null); openTask(id); }} empty="No tasks here." detailed currentUserId={user.id} />
             </div>
           </div>
         </div>
@@ -223,13 +223,25 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
   );
 }
 
-function TaskList({ tasks, onOpenTask, empty, showBy, showAssignee, detailed }) {
+const dashFirst = (u) => (u ? u.name.split(' ')[0] : null);
+function dashRel(t, me) {
+  const c = t.creator?.id, a = t.assignee?.id;
+  if (a === me && c === me) return { text: 'Mine', cls: 'self' };
+  if (a === me) return { text: 'For you', cls: 'to-me' };
+  if (c === me && a && a !== me) return { text: 'You allotted', cls: 'by-me' };
+  if (c === me && !a) return { text: 'You created', cls: 'by-me' };
+  return null;
+}
+
+function TaskList({ tasks, onOpenTask, empty, detailed, currentUserId }) {
   if (!tasks.length) return <p className="muted" style={{ padding: 12 }}>{empty}</p>;
   return (
     <div className="dash-tasklist">
       {tasks.map((t) => {
         const p = PRIO[t.priority] || PRIO.medium;
         const b = dueBadge(t.due_date);
+        const rel = dashRel(t, currentUserId);
+        const samePerson = t.creator && t.assignee && t.creator.id === t.assignee.id;
         return (
           <button key={t.id} className="dash-task" onClick={() => onOpenTask(t.id)}>
             <span className={`prio-dot ${p.cls}`} title={p.label} />
@@ -239,12 +251,19 @@ function TaskList({ tasks, onOpenTask, empty, showBy, showAssignee, detailed }) 
                 {detailed && <span className={`dash-prio ${p.cls}`}>{p.label}</span>}
                 {detailed && t.stage && <span className="dash-chip">{t.stage}</span>}
                 {t.project?.name && <span className="dash-chip" style={t.project.color ? { borderColor: t.project.color, color: t.project.color } : undefined}>{t.project.name}</span>}
-                {showBy && t.creator && <span className="muted">by {t.creator.name}</span>}
-                {showAssignee && (
-                  <span className="dash-assignee muted">
-                    {t.assignee ? <><Avatar user={t.assignee} size={16} /> {t.assignee.name}</> : 'Unassigned'}
-                  </span>
-                )}
+                {/* Allotter → allottee, consistent with the task board. */}
+                <span className="dash-people">
+                  {rel && <span className={`rel-tag rel-${rel.cls}`}>{rel.text}</span>}
+                  {samePerson ? (
+                    <span className="dash-person"><Avatar user={t.creator} size={16} /> {dashFirst(t.creator)}</span>
+                  ) : (
+                    <>
+                      {t.creator && <span className="dash-person"><Avatar user={t.creator} size={16} /> {dashFirst(t.creator)}</span>}
+                      <span className="task-arrow">→</span>
+                      {t.assignee ? <span className="dash-person"><Avatar user={t.assignee} size={16} /> {dashFirst(t.assignee)}</span> : <span className="muted">Unassigned</span>}
+                    </>
+                  )}
+                </span>
               </span>
             </span>
             {t.due_date && <span className={`dash-task-due tone-${b.tone}`}>{b.text}</span>}
