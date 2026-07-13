@@ -26,6 +26,7 @@ import dashboardRouter from './routes/dashboard.js';
 import setupSocket from './socket.js';
 import { startReminderScheduler } from './reminders.js';
 import { createNotification } from './notifications.js';
+import { startBackupScheduler, runBackup, backupStatus, latestDbPath } from './backup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -136,6 +137,21 @@ app.get('/api/platform/me', requireAuth, (req, res) => {
   res.json({ platform_admin: isPlatformAdmin(req.user) });
 });
 
+// --- Backups (platform admin only) ---
+app.get('/api/platform/backups', requireAuth, requirePlatformAdmin, (req, res) => {
+  res.json(backupStatus());
+});
+app.post('/api/platform/backups', requireAuth, requirePlatformAdmin, async (req, res) => {
+  try { res.status(201).json(await runBackup()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Download the latest database snapshot for safe off-site keeping.
+app.get('/api/platform/backups/latest.db', requireAuth, requirePlatformAdmin, (req, res) => {
+  const p = latestDbPath();
+  if (!p) return res.status(404).json({ error: 'No backup available yet' });
+  res.download(p, `teamhub-${new Date().toISOString().slice(0, 10)}.db`);
+});
+
 // --- Auth ---
 app.post('/api/auth/login', (req, res) => {
   try {
@@ -222,6 +238,7 @@ if (fs.existsSync(clientDist)) {
 
 setupSocket(io);
 startReminderScheduler(io);
+startBackupScheduler();
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`Server listening on http://localhost:${PORT}`));

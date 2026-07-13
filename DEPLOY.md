@@ -83,6 +83,29 @@ the domain step easy.
 To ship a new version later: `git pull && sudo bash deploy/vps-setup.sh`.
 Your data lives in the `teamhub-data` Docker volume and survives redeploys.
 
+## Backups & restore
+
+TeamHub backs itself up **automatically every day** — a consistent snapshot of
+the database plus all uploaded files, kept in the `teamhub-data` volume at
+`/data/backups` (the last 14 are retained). No setup is needed; the first
+backup runs shortly after the server starts.
+
+- **See status / run one now / download the database:** sign in as the
+  platform owner (the KNAP workspace admin) → **Admin → 💾 Backups**.
+- **Off-site copy (important):** the automatic backups live on the same server,
+  which protects against accidental deletes, bad updates and corruption — but
+  **not** against losing the server itself. Periodically click **Download
+  latest database** and keep the file somewhere off the server.
+- **Restore** from a backup (replaces the current data):
+  ```bash
+  cd ~/Management-tool
+  bash deploy/restore-backup.sh              # list available backups
+  bash deploy/restore-backup.sh teamhub-YYYYMMDD-HHMMSS
+  ```
+
+Optional environment variables (defaults are fine): `BACKUP_INTERVAL_HOURS`
+(default 24), `BACKUP_KEEP` (default 14), `BACKUP_DIR`, `BACKUP_DISABLED=1`.
+
 ## Free alternative: Cloudflare named tunnel
 
 If your domain's DNS is on Cloudflare **and** you have a machine that can

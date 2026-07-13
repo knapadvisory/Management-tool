@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { api } from '../api.js';
+import { api, getToken } from '../api.js';
 import { getSocket } from '../socket.js';
 import Avatar from './Avatar.jsx';
 import ArchiveManager from './ArchiveManager.jsx';
@@ -66,6 +66,8 @@ export default function AdminPanel({ user }) {
       <InviteCodes />
 
       <PlatformCodes />
+
+      <PlatformBackups />
 
       {error && <div className="form-error">{error}</div>}
 
@@ -299,6 +301,79 @@ function PlatformCodes() {
                   <button className="icon-btn" title="Revoke this code" onClick={() => revoke(c.id)}>✕</button>
                 </>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Platform owner (KNAP) only: automatic backup status, run-now and off-site
+// database download.
+function PlatformBackups() {
+  const [isPlatform, setIsPlatform] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [dl, setDl] = useState(false);
+
+  const load = useCallback(() => { api('/platform/backups').then(setStatus).catch(() => {}); }, []);
+  useEffect(() => {
+    api('/platform/me').then((d) => { setIsPlatform(!!d.platform_admin); if (d.platform_admin) load(); }).catch(() => {});
+  }, [load]);
+
+  async function runNow() {
+    setBusy(true);
+    try { await api('/platform/backups', { method: 'POST' }); load(); } catch { /* */ }
+    setBusy(false);
+  }
+  async function download() {
+    setDl(true);
+    try {
+      const res = await fetch('/api/platform/backups/latest.db', { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `teamhub-${new Date().toISOString().slice(0, 10)}.db`; a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch { /* */ }
+    setDl(false);
+  }
+
+  if (!isPlatform || !status) return null;
+  const mb = (b) => (b == null ? '—' : `${(b / 1048576).toFixed(1)} MB`);
+  const when = (iso) => (iso ? new Date(iso).toLocaleString() : 'never');
+  const stale = status.latest && (Date.now() - new Date(status.latest.created_at).getTime()) > (status.interval_hours + 6) * 3600 * 1000;
+
+  return (
+    <div className="admin-policy admin-platform">
+      <div className="admin-policy-head"><strong>💾 Backups (platform)</strong>
+        <span className={`policy-pill ${status.enabled ? 'on' : 'off'}`}>{status.enabled ? `Every ${status.interval_hours}h` : 'Disabled'}</span>
+      </div>
+      {!status.latest ? (
+        <p className="muted">No backup has run yet — the first one runs shortly after the server starts. Click below to make one now.</p>
+      ) : (
+        <p className="muted">
+          Last backup: <strong>{when(status.latest.created_at)}</strong> · {status.count} kept · latest {mb(status.latest.size)}.
+          {stale && <span className="form-error" style={{ display: 'inline', marginLeft: 6 }}>⚠ Overdue — check the server.</span>}
+        </p>
+      )}
+      <div className="admin-policy-row" style={{ gap: 8 }}>
+        <button className="btn btn-sm" disabled={busy} onClick={runNow}>{busy ? 'Backing up…' : 'Run backup now'}</button>
+        <button className="btn btn-sm" disabled={dl || !status.latest} onClick={download}>{dl ? 'Preparing…' : '⬇ Download latest database'}</button>
+      </div>
+      <p className="muted" style={{ fontSize: '12px', marginTop: 8 }}>
+        Backups are kept on the server (safe against accidental deletes, bad updates and corruption). For full disaster recovery,
+        download the database now and then periodically and keep it somewhere off the server.
+      </p>
+      {status.backups?.length > 0 && (
+        <div className="code-list">
+          {status.backups.slice(0, 6).map((b) => (
+            <div key={b.name} className="code-row">
+              <code className="code-value" style={{ fontSize: '12px' }}>{b.name.replace('teamhub-', '')}</code>
+              <span className="code-status muted">{when(b.created_at)} · {mb(b.size)}{b.files != null ? ` · ${b.files} files` : ''}</span>
             </div>
           ))}
         </div>
