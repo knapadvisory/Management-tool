@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../api.js';
 
 // Public entry point / homepage. Three views:
@@ -11,6 +11,9 @@ export default function Login({ onAuth }) {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [emailEnabled, setEmailEnabled] = useState(false);
+
+  useEffect(() => { api('/config').then((c) => setEmailEnabled(!!c.email_enabled)).catch(() => {}); }, []);
 
   async function submit(e) {
     e.preventDefault();
@@ -27,8 +30,17 @@ export default function Login({ onAuth }) {
     }
   }
 
-  function forgot() {
-    setNotice('To reset your password, ask your workspace admin — they can set a new one for you from the Admin panel.');
+  async function forgot() {
+    setError(null); setNotice(null);
+    if (!emailEnabled) {
+      setNotice('To reset your password, ask your workspace admin — they can set a new one for you from the Admin panel.');
+      return;
+    }
+    if (!form.email.trim()) { setError('Enter your email above, then click “Forgot Password”.'); return; }
+    try {
+      await api('/auth/forgot', { method: 'POST', body: { email: form.email } });
+      setNotice('If that email is registered, we’ve sent a reset link. Check your inbox (and spam).');
+    } catch { setNotice('If that email is registered, we’ve sent a reset link.'); }
   }
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));

@@ -175,6 +175,29 @@ export function findReturningGuest({ channelId, name, password }) {
   return candidates.find((u) => u.active && bcrypt.compareSync(password, u.password_hash)) || null;
 }
 
+// --- Self-service password reset (email) ---
+// Create a single-use token valid for 1 hour. Returns the token string.
+export function createPasswordReset(userId) {
+  const token = crypto.randomBytes(24).toString('hex');
+  db.prepare(`INSERT INTO password_resets (user_id, token, expires_at) VALUES (?, ?, datetime('now', '+1 hour'))`).run(userId, token);
+  return token;
+}
+// A valid (unused, unexpired) reset row for this token, or null.
+export function findPasswordReset(token) {
+  return db.prepare(`SELECT * FROM password_resets WHERE token = ? AND used = 0 AND expires_at > datetime('now')`).get(token || '') || null;
+}
+// Apply a new password and burn the token (plus any other outstanding ones).
+export function applyPasswordReset(reset, newPassword) {
+  if (!newPassword || newPassword.length < 6) {
+    throw Object.assign(new Error('New password must be at least 6 characters'), { status: 400 });
+  }
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(newPassword, 10), reset.user_id);
+  db.prepare('UPDATE password_resets SET used = 1 WHERE user_id = ?').run(reset.user_id);
+}
+export function userByEmail(email) {
+  return db.prepare('SELECT * FROM users WHERE email = ?').get((email || '').trim().toLowerCase()) || null;
+}
+
 export function login({ email, password }) {
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get((email || '').trim().toLowerCase());
   if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {

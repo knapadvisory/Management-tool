@@ -29,16 +29,27 @@ if [ -z "${JWT_SECRET:-}" ]; then JWT_SECRET="$(openssl rand -hex 32)"; fi
 # TURN settings make audio/video calls work across restrictive networks.
 WORKSPACE_SIGNUP_CODE="${WORKSPACE_SIGNUP_CODE:-$SIGNUP_CODE}"
 
+# Public URL used in email links (defaults to your domain over HTTPS).
+APP_URL="${APP_URL:-https://$DOMAIN}"
+
 umask 077
 cat > "$CONFIG" <<EOF
 DOMAIN="$DOMAIN"
 SIGNUP_CODE="$SIGNUP_CODE"
 WORKSPACE_SIGNUP_CODE="$WORKSPACE_SIGNUP_CODE"
 JWT_SECRET="$JWT_SECRET"
+APP_URL="$APP_URL"
 # Optional TURN relay for calls across strict networks (fill these in to enable):
 TURN_URL="${TURN_URL:-}"
 TURN_USERNAME="${TURN_USERNAME:-}"
 TURN_CREDENTIAL="${TURN_CREDENTIAL:-}"
+# Optional email (fill these in to enable password-reset + notification emails):
+SMTP_HOST="${SMTP_HOST:-}"
+SMTP_PORT="${SMTP_PORT:-587}"
+SMTP_USER="${SMTP_USER:-}"
+SMTP_PASS="${SMTP_PASS:-}"
+SMTP_FROM="${SMTP_FROM:-}"
+SMTP_SECURE="${SMTP_SECURE:-}"
 EOF
 
 # Clean up a broken Caddy apt source from earlier script versions, if present.
@@ -69,9 +80,16 @@ docker run -d --name teamhub --restart unless-stopped \
   -e SIGNUP_CODE="$SIGNUP_CODE" \
   -e WORKSPACE_SIGNUP_CODE="$WORKSPACE_SIGNUP_CODE" \
   -e DATA_DIR=/data \
+  -e APP_URL="$APP_URL" \
   ${TURN_URL:+-e TURN_URL="$TURN_URL"} \
   ${TURN_USERNAME:+-e TURN_USERNAME="$TURN_USERNAME"} \
   ${TURN_CREDENTIAL:+-e TURN_CREDENTIAL="$TURN_CREDENTIAL"} \
+  ${SMTP_HOST:+-e SMTP_HOST="$SMTP_HOST"} \
+  ${SMTP_PORT:+-e SMTP_PORT="$SMTP_PORT"} \
+  ${SMTP_USER:+-e SMTP_USER="$SMTP_USER"} \
+  ${SMTP_PASS:+-e SMTP_PASS="$SMTP_PASS"} \
+  ${SMTP_FROM:+-e SMTP_FROM="$SMTP_FROM"} \
+  ${SMTP_SECURE:+-e SMTP_SECURE="$SMTP_SECURE"} \
   -v teamhub-data:/data \
   teamhub:latest
 

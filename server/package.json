@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "node test/migration.mjs && node test/reminders.mjs && node test/signup-gate.mjs && node test/multitenant.mjs && node test/backup.mjs && node test/delete-workspace.mjs && node test/smoke.mjs"
+    "test": "node test/migration.mjs && node test/reminders.mjs && node test/signup-gate.mjs && node test/multitenant.mjs && node test/backup.mjs && node test/delete-workspace.mjs && node test/email.mjs && node test/smoke.mjs"
   },
   "devDependencies": {
     "socket.io-client": "^4.8.1"
@@ -19,6 +19,7 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.2.0",
+    "nodemailer": "^9.0.3",
     "socket.io": "^4.8.1"
   }
 }

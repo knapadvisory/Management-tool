@@ -7,7 +7,8 @@ import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 
 import db from './db.js';
-import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, workspaceSignupCodeRequired, allowedSignupDomains, createWorkspaceAdmin, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, AVATAR_COLORS } from './auth.js';
+import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, workspaceSignupCodeRequired, allowedSignupDomains, createWorkspaceAdmin, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, createPasswordReset, findPasswordReset, applyPasswordReset, userByEmail, AVATAR_COLORS } from './auth.js';
+import { emailEnabled, sendMail, layout, button } from './email.js';
 import { createWorkspace, workspaceBySlug, workspaceById, publicWorkspace, deleteWorkspace } from './workspaces.js';
 import { isPlatformAdmin, PLATFORM_WORKSPACE_ID, findUsableCompanyCode, consumeCompanyCode, createCompanyCode, listCompanyCodes, revokeCompanyCode, findUsableInvite, consumeInvite } from './codes.js';
 import channelsRouter from './routes/channels.js';
@@ -37,6 +38,14 @@ app.set('io', io);
 app.use(cors());
 app.use(express.json());
 
+// The app's public base URL, for links inside emails. Honours a configured
+// APP_URL, otherwise derives it from the incoming request.
+function baseUrl(req) {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  return `${proto}://${req.headers.host}`;
+}
+
 // ICE servers for WebRTC calls: always a public STUN server, plus a TURN
 // relay if one is configured (TURN_URL[/TURN_USERNAME/TURN_CREDENTIAL]). TURN
 // is what lets calls connect across strict NATs / firewalls / mobile networks.
@@ -58,9 +67,48 @@ app.get('/api/config', (req, res) => {
     // Registering a new company always needs a code from the platform owner
     // (a DB company-registration code, or the env bootstrap code).
     company_code_required: true,
+    email_enabled: emailEnabled(),
     avatar_colors: AVATAR_COLORS,
     ice_servers: iceServers(),
   });
+});
+
+// --- Self-service password reset (email) ---
+// Request a reset link. Always responds 200 (never reveals whether the email
+// exists). Only actually sends when email is configured and the user exists.
+app.post('/api/auth/forgot', async (req, res) => {
+  const user = userByEmail(req.body?.email);
+  if (user && user.active && !user.deleted && emailEnabled()) {
+    const token = createPasswordReset(user.id);
+    const link = `${baseUrl(req)}/reset/${token}`;
+    await sendMail({
+      to: user.email,
+      subject: 'Reset your TeamHub password',
+      html: layout('Reset your password',
+        `<p>Hi ${user.name}, we got a request to reset your TeamHub password. This link is valid for 1 hour.</p>${button(link, 'Reset password')}<p style="color:#8a8f98;font-size:12px">If you didn't request this, you can safely ignore this email.</p>`),
+    });
+  }
+  res.json({ ok: true });
+});
+
+// Validate a reset token (for the reset page).
+app.get('/api/auth/reset/:token', (req, res) => {
+  const reset = findPasswordReset(req.params.token);
+  if (!reset) return res.status(400).json({ error: 'This reset link is invalid or has expired.' });
+  const u = db.prepare('SELECT email FROM users WHERE id = ?').get(reset.user_id);
+  res.json({ ok: true, email: u?.email || null });
+});
+
+// Set a new password using a valid token.
+app.post('/api/auth/reset/:token', (req, res) => {
+  try {
+    const reset = findPasswordReset(req.params.token);
+    if (!reset) return res.status(400).json({ error: 'This reset link is invalid or has expired.' });
+    applyPasswordReset(reset, req.body?.password);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
 });
 
 // --- Workspace creation & joining ---
@@ -106,9 +154,16 @@ app.post('/api/workspaces/:slug/register', (req, res) => {
     }
     const user = register(ws, req.body);
     if (invite) consumeInvite(invite.id, user.id);
-    const admins = db.prepare(`SELECT id FROM users WHERE workspace_id = ? AND role = 'admin' AND active = 1`).all(ws.id);
-    for (const { id } of admins) {
-      createNotification(io, { user_id: id, type: 'join_request', actor_id: user.id, text: `${user.name} requested to join ${ws.name}` });
+    const admins = db.prepare(`SELECT id, name, email FROM users WHERE workspace_id = ? AND role = 'admin' AND active = 1`).all(ws.id);
+    const adminLink = `${baseUrl(req)}/`;
+    for (const a of admins) {
+      createNotification(io, { user_id: a.id, type: 'join_request', actor_id: user.id, text: `${user.name} requested to join ${ws.name}` });
+      if (emailEnabled()) sendMail({
+        to: a.email,
+        subject: `${user.name} wants to join ${ws.name}`,
+        html: layout('New join request',
+          `<p><strong>${user.name}</strong> (${user.email}) requested to join <strong>${ws.name}</strong> on TeamHub.</p><p>Approve or decline them in Admin → Pending approvals.</p>${button(adminLink, 'Open TeamHub')}`),
+      });
     }
     io.to(`workspace:${ws.id}`).emit('approvals:changed');
     res.status(201).json({ pending: true, workspace: publicWorkspace(ws) });

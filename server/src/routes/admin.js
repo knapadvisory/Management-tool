@@ -7,6 +7,7 @@ import db from '../db.js';
 import { publicUser, joinGeneral, emailDomainAllowed, allowedSignupDomains } from '../auth.js';
 import { createNotification } from '../notifications.js';
 import { createInviteCode, listInviteCodes, revokeInviteCode } from '../codes.js';
+import { emailEnabled, sendMail, layout, button } from '../email.js';
 import { serializeMessage } from '../messages.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,6 +62,17 @@ router.post('/users/:id/approve', (req, res) => {
   joinGeneral(req.workspaceId, target.id);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('approvals:changed');
+  if (emailEnabled() && target.email && !String(target.email).endsWith('@teamhub.guest')) {
+    const ws = db.prepare('SELECT name FROM workspaces WHERE id = ?').get(req.workspaceId);
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const link = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, '') : `${proto}://${req.headers.host}`;
+    sendMail({
+      to: target.email,
+      subject: `You're approved to join ${ws?.name || 'your team'} on TeamHub`,
+      html: layout('You\'re in!',
+        `<p>Hi ${target.name}, your request to join <strong>${ws?.name || 'your team'}</strong> on TeamHub has been approved. You can now sign in.</p>${button(link, 'Sign in')}`),
+    });
+  }
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(target.id)));
 });
 
@@ -265,7 +277,26 @@ router.get('/invite-codes', (req, res) => {
   res.json({ codes: listInviteCodes(req.workspaceId), slug: ws.slug });
 });
 router.post('/invite-codes', (req, res) => {
-  res.status(201).json(createInviteCode(req.workspaceId, req.user.id, req.body?.label || ''));
+  const code = createInviteCode(req.workspaceId, req.user.id, req.body?.label || '');
+  // Optionally email the join link + code straight to the person.
+  const to = (req.body?.email || '').trim();
+  let emailed = false;
+  if (to && emailEnabled()) {
+    const ws = db.prepare('SELECT name, slug FROM workspaces WHERE id = ?').get(req.workspaceId);
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const origin = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, '') : `${proto}://${req.headers.host}`;
+    const link = `${origin}/join/${ws.slug}`;
+    sendMail({
+      to,
+      subject: `You're invited to join ${ws.name} on TeamHub`,
+      html: layout(`Join ${ws.name}`,
+        `<p>You've been invited to join <strong>${ws.name}</strong> on TeamHub. Open the link below and use this invite code when asked:</p>
+         <p style="font-size:20px;font-weight:700;letter-spacing:.05em;background:#f5f6f9;padding:10px 14px;border-radius:8px;text-align:center">${code.code}</p>
+         ${button(link, `Join ${ws.name}`)}`),
+    });
+    emailed = true;
+  }
+  res.status(201).json({ ...code, emailed });
 });
 router.delete('/invite-codes/:id', (req, res) => {
   if (!revokeInviteCode(req.params.id, req.workspaceId)) return res.status(404).json({ error: 'Code not found or already used' });

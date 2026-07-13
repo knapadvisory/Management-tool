@@ -193,22 +193,29 @@ function InviteCodes() {
   const [slug, setSlug] = useState('');
   const [required, setRequired] = useState(false);
   const [label, setLabel] = useState('');
+  const [email, setEmail] = useState('');
+  const [emailEnabled, setEmailEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(null);
+  const [sent, setSent] = useState(false);
 
   const load = useCallback(() => {
     api('/admin/invite-codes').then((d) => { setCodes(d.codes); setSlug(d.slug); }).catch(() => {});
     api('/admin/settings').then((d) => setRequired(!!d.require_invite_code)).catch(() => {});
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); api('/config').then((c) => setEmailEnabled(!!c.email_enabled)).catch(() => {}); }, [load]);
 
   async function toggleRequire() {
     const next = !required; setRequired(next);
     await api('/admin/settings', { method: 'PATCH', body: { require_invite_code: next } }).catch(() => setRequired(!next));
   }
   async function generate() {
-    setBusy(true);
-    try { await api('/admin/invite-codes', { method: 'POST', body: { label } }); setLabel(''); load(); } catch { /* */ }
+    setBusy(true); setSent(false);
+    try {
+      const c = await api('/admin/invite-codes', { method: 'POST', body: { label, email } });
+      if (c.emailed) setSent(true);
+      setLabel(''); setEmail(''); load();
+    } catch { /* */ }
     setBusy(false);
   }
   async function revoke(id) { await api(`/admin/invite-codes/${id}`, { method: 'DELETE' }).catch(() => {}); load(); }
@@ -230,8 +237,12 @@ function InviteCodes() {
       </p>
       <div className="admin-policy-row">
         <input placeholder="Who is this for? (optional — e.g. Bob)" value={label} onChange={(e) => setLabel(e.target.value)} />
+        {emailEnabled && (
+          <input placeholder="Email it to them (optional)" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        )}
         <button className="btn btn-primary btn-sm" disabled={busy} onClick={generate}>{busy ? 'Generating…' : 'Generate code'}</button>
       </div>
+      {sent && <p className="form-ok" style={{ margin: '4px 0' }}>✓ Invite emailed with the join link and code.</p>}
       {codes.length > 0 && (
         <div className="code-list">
           {codes.map((c) => (

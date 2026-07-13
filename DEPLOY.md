@@ -83,6 +83,30 @@ the domain step easy.
 To ship a new version later: `git pull && sudo bash deploy/vps-setup.sh`.
 Your data lives in the `teamhub-data` Docker volume and survives redeploys.
 
+## Email (optional but recommended)
+
+Turn on email so TeamHub can send **password-reset links**, **join-request
+notifications** to admins, **approval** emails, and let you **email invite
+codes** straight to new hires. Without it the app works fine — those steps just
+stay manual (admins reset passwords, you copy/paste invite links).
+
+Add your mail provider's SMTP settings to `/root/teamhub.env`, then re-run
+`sudo bash deploy/vps-setup.sh`:
+
+```bash
+SMTP_HOST="smtp.hostinger.com"   # or smtp.gmail.com, smtp.sendgrid.net, …
+SMTP_PORT="587"                   # 465 if your provider uses SSL
+SMTP_USER="no-reply@yourdomain.com"
+SMTP_PASS="your-smtp-password"
+SMTP_FROM="TeamHub <no-reply@yourdomain.com>"
+# SMTP_SECURE="true"             # only for port 465
+```
+
+Since your domain is on Hostinger, the easiest option is to create an email
+account in hPanel (e.g. `no-reply@knapadvisory.com`) and use Hostinger's SMTP
+host with that account's credentials. The password-reset link and all email
+links use `APP_URL` (set automatically to `https://<your-domain>`).
+
 ## Backups & restore
 
 TeamHub backs itself up **automatically every day** — a consistent snapshot of

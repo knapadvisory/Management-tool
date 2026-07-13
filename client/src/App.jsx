@@ -19,6 +19,7 @@ import DashboardView from './components/DashboardView.jsx';
 import GuestJoin from './components/GuestJoin.jsx';
 import GuestApp from './components/GuestApp.jsx';
 import JoinWorkspace from './components/JoinWorkspace.jsx';
+import ResetPassword from './components/ResetPassword.jsx';
 import { applyTheme, saveLocalTheme } from './theme.js';
 import { onLangChange } from './i18n.js';
 
@@ -30,6 +31,11 @@ const inviteToken = () => {
 // A workspace join link looks like /join/<slug>.
 const joinSlug = () => {
   const m = window.location.pathname.match(/^\/join\/([a-z0-9-]+)$/i);
+  return m ? m[1] : null;
+};
+// A password-reset link looks like /reset/<token>.
+const resetToken = () => {
+  const m = window.location.pathname.match(/^\/reset\/([a-f0-9]+)$/i);
   return m ? m[1] : null;
 };
 
@@ -239,9 +245,11 @@ export default function App() {
   }
 
   if (booting) return <div className="boot">Loading…</div>;
-  // Invite / join links show their own landing pages when nobody's signed in.
+  // Invite / join / reset links show their own landing pages.
   const invite = inviteToken();
   const join = joinSlug();
+  const reset = resetToken();
+  if (reset) return <ResetPassword token={reset} />;
   if (!user && invite) return <GuestJoin token={invite} onAuth={handleAuth} />;
   if (!user && join) return <JoinWorkspace slug={join} onAuth={handleAuth} />;
   if (!user) return <Login onAuth={handleAuth} />;
