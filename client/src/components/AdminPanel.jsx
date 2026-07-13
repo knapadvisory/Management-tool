@@ -247,7 +247,7 @@ function MemberRow({ m, me, act }) {
       </div>
 
       <div className="admin-row-actions">
-        {m.active && !isSelf && (
+        {!!m.active && !isSelf && (
           <>
             {m.role === 'member' ? (
               <button className="btn btn-sm" title="Give full admin access"
