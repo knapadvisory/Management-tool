@@ -1439,3 +1439,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .landing-secondary { padding: 13px 24px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
 .landing-secondary:hover { background: var(--surface-2); }
 .landing-note { font-size: 13px; margin-top: 22px; line-height: 1.5; }
+
+/* Sign out pinned at the bottom of the Settings rail — always visible. */
+.settings-signout { margin-top: 8px; border-top: 1px solid var(--border); border-radius: 0 0 8px 8px; color: var(--danger); font-weight: 600; }
+.settings-signout:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+@media (max-width: 720px) { .settings-signout { border-top: none; margin-top: 0; } }

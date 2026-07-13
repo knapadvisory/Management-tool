@@ -34,6 +34,11 @@ export default function SettingsModal({ user, colors = [], initialSection = 'pro
                 <span className="settings-nav-icon">{s.icon}</span> {t(s.tkey)}
               </button>
             ))}
+            {onLogout && (
+              <button className="settings-nav-item settings-signout" onClick={onLogout}>
+                <span className="settings-nav-icon">⏻</span> Sign out
+              </button>
+            )}
           </nav>
           <div className="settings-panel">
             {section === 'profile' && <ProfilePanel user={user} colors={colors} onSaved={onSaved} />}
