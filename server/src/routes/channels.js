@@ -147,8 +147,15 @@ router.delete('/:id/messages/:msgId', (req, res) => {
   if (msg.user_id !== req.user.id) return res.status(403).json({ error: 'You can only delete your own messages' });
   db.prepare(`UPDATE messages SET deleted_at = datetime('now') WHERE id = ?`).run(msg.id);
   db.prepare('DELETE FROM message_reactions WHERE message_id = ?').run(msg.id);
+  // Archive any files on this message too, so they leave Shared Files (not just
+  // the chat) and are kept for the admin archive — the same outcome as deleting
+  // a file directly from Shared Files.
+  const archived = db.prepare(`UPDATE attachments SET archived_at = datetime('now'), archived_by = ? WHERE message_id = ? AND archived_at IS NULL`)
+    .run(req.user.id, msg.id);
   const message = serializeMessage(msg.id, req.user.id);
   req.app.get('io')?.to(`channel:${msg.channel_id}`).emit('message:updated', { message });
+  // If files were removed, nudge the Files view to drop them from Shared files.
+  if (archived.changes > 0) req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('files:changed');
   res.json(message);
 });
 

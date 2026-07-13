@@ -25,7 +25,7 @@ router.get('/', (req, res) => {
     JOIN users u ON u.id = a.uploader_id
     JOIN messages m ON m.id = a.message_id
     JOIN channels c ON c.id = m.channel_id
-    WHERE a.message_id IS NOT NULL AND a.archived_at IS NULL AND c.workspace_id = ?
+    WHERE a.message_id IS NOT NULL AND a.archived_at IS NULL AND m.deleted_at IS NULL AND c.workspace_id = ?
       AND EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ?)
   `).all(req.workspaceId, req.user.id).map((f) => ({
     id: f.id, original_name: f.original_name, mime_type: f.mime_type, size: f.size, created_at: f.created_at,

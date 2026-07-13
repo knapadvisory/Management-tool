@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, fileUrl, uploadToDrive } from '../api.js';
-import { getSocket } from '../socket.js';
+import { getSocket, onSocket } from '../socket.js';
 import { formatBytes, formatDateTime } from '../format.js';
 import { t } from '../i18n.js';
 import Avatar from './Avatar.jsx';
@@ -87,15 +87,19 @@ export default function FilesView({ user, users = [], initialMode = 'files' }) {
 
   useEffect(() => { const t = setTimeout(() => load(query, folderId), 200); return () => clearTimeout(t); }, [query, folderId, load]);
 
-  // Keep the Drive fresh when teammates upload, move or remove files/folders.
+  // Keep the list fresh when teammates upload, move or remove files — in the
+  // Drive (drive:changed) or in chat/task shared files (files:changed).
   useEffect(() => {
-    if (!isDrive) return;
-    const s = getSocket();
-    if (!s) return;
     const refresh = () => load(query, folderId);
-    s.on('drive:changed', refresh);
-    return () => s.off('drive:changed', refresh);
-  }, [isDrive, load, query, folderId]);
+    const attach = (s) => { s.on('drive:changed', refresh); s.on('files:changed', refresh); };
+    const detach = onSocket(attach);
+    return () => {
+      detach();
+      const s = getSocket();
+      s?.off('drive:changed', refresh);
+      s?.off('files:changed', refresh);
+    };
+  }, [load, query, folderId]);
 
   // Keyboard: Ctrl/Cmd C/X copy or cut the selection, Ctrl/Cmd V pastes into
   // the current folder. Ignored while typing in a field.
