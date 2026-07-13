@@ -1,20 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { api } from '../api.js';
 
-// Auth entry point. Two paths: sign in to an existing account (email +
-// password derives the workspace), or create a brand-new workspace and become
-// its admin. Employees join an existing workspace via a /join/<slug> link.
+// Public entry point / homepage. Three views:
+//  - home:   a simple landing with "Register your company" and "Sign in".
+//  - create: register a new company (needs a code from KNAP) → become its admin.
+//  - login:  sign in with email + password (derives the workspace).
 export default function Login({ onAuth }) {
-  const [mode, setMode] = useState('login'); // 'login' | 'create'
+  const [mode, setMode] = useState('home'); // 'home' | 'login' | 'create'
   const [form, setForm] = useState({ workspace_name: '', name: '', email: '', password: '', code: '' });
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [codeRequired, setCodeRequired] = useState(false);
-
-  useEffect(() => {
-    api('/config').then((c) => setCodeRequired(!!c.workspace_signup_code_required)).catch(() => {});
-  }, []);
 
   async function submit(e) {
     e.preventDefault();
@@ -36,54 +32,65 @@ export default function Login({ onAuth }) {
   }
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const isLogin = mode === 'login';
-  const toggle = () => { setMode(isLogin ? 'create' : 'login'); setError(null); setNotice(null); };
+  const go = (m) => { setMode(m); setError(null); setNotice(null); };
 
   return (
     <div className="auth-page">
       <header className="auth-topbar">
         <div className="auth-brand"><span className="auth-logo">✓</span> TeamHub</div>
         <div className="auth-topbar-right">
-          <span className="muted">{isLogin ? 'New to TeamHub?' : 'Already have an account?'}</span>
-          <button className="auth-topbtn" onClick={toggle}>{isLogin ? 'Create workspace' : 'Sign In'}</button>
+          {mode === 'home' ? (
+            <button className="auth-topbtn" onClick={() => go('login')}>Sign In</button>
+          ) : (
+            <button className="auth-topbtn" onClick={() => go('home')}>← Home</button>
+          )}
         </div>
       </header>
 
       <main className="auth-main">
-        <form className="auth-card" onSubmit={submit}>
-          <h1 className="auth-title">{isLogin ? 'Sign In' : 'Create your workspace'}</h1>
-          {!isLogin && <p className="muted auth-sub">Start a fresh TeamHub for your company. You'll be its admin and can invite your team.</p>}
+        {mode === 'home' ? (
+          <div className="landing">
+            <h1 className="landing-title">One place for your team's chat, tasks &amp; files</h1>
+            <p className="landing-sub">TeamHub gives your company its own private workspace — messaging, task boards, a shared drive, and calls, all in one tool.</p>
+            <div className="landing-actions">
+              <button className="landing-primary" onClick={() => go('create')}>Register your company</button>
+              <button className="landing-secondary" onClick={() => go('login')}>Sign in</button>
+            </div>
+            <p className="landing-note muted">New companies need a registration code from KNAP. Employees join their company with a link from their admin.</p>
+          </div>
+        ) : (
+          <form className="auth-card" onSubmit={submit}>
+            <h1 className="auth-title">{mode === 'login' ? 'Sign In' : 'Register your company'}</h1>
+            {mode === 'create' && <p className="muted auth-sub">Create your company's workspace. You'll be its admin and can invite your team.</p>}
 
-          {!isLogin && (
-            <input className="auth-input" placeholder="Workspace name (e.g. Acme Corp)" value={form.workspace_name} onChange={set('workspace_name')} required />
-          )}
-          {!isLogin && (
-            <input className="auth-input" placeholder="Your name" value={form.name} onChange={set('name')} required />
-          )}
-          <input className="auth-input" type="email" placeholder="Email" value={form.email} onChange={set('email')} required />
-          <input className="auth-input" type="password" placeholder="Password" value={form.password} onChange={set('password')} required minLength={6} />
-          {!isLogin && codeRequired && (
-            <input className="auth-input" placeholder="Workspace creation code" value={form.code} onChange={set('code')} required />
-          )}
+            {mode === 'create' && (
+              <input className="auth-input" placeholder="Company / workspace name" value={form.workspace_name} onChange={set('workspace_name')} required />
+            )}
+            {mode === 'create' && (
+              <input className="auth-input" placeholder="Your name" value={form.name} onChange={set('name')} required />
+            )}
+            <input className="auth-input" type="email" placeholder="Email" value={form.email} onChange={set('email')} required />
+            <input className="auth-input" type="password" placeholder="Password" value={form.password} onChange={set('password')} required minLength={6} />
+            {mode === 'create' && (
+              <input className="auth-input" placeholder="Company registration code (from KNAP)" value={form.code} onChange={set('code')} required />
+            )}
 
-          {error && <div className="form-error">{error}</div>}
-          {notice && <div className="auth-notice">{notice}</div>}
+            {error && <div className="form-error">{error}</div>}
+            {notice && <div className="auth-notice">{notice}</div>}
 
-          <button className="auth-primary" disabled={busy}>
-            {busy ? 'Please wait…' : isLogin ? 'Sign In' : 'Create workspace'}
-          </button>
+            <button className="auth-primary" disabled={busy}>
+              {busy ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create workspace'}
+            </button>
 
-          {isLogin && (
-            <button type="button" className="auth-forgot" onClick={forgot}>Forgot Password</button>
-          )}
-        </form>
+            {mode === 'login' && <button type="button" className="auth-forgot" onClick={forgot}>Forgot Password</button>}
 
-        <p className="auth-foot">
-          {isLogin ? 'Joining your team? ' : 'Already have an account? '}
-          {isLogin
-            ? <span className="muted">Use the invite link your admin shared.</span>
-            : <button type="button" className="auth-foot-link" onClick={toggle}>Sign In</button>}
-        </p>
+            <p className="auth-foot">
+              {mode === 'login'
+                ? <>New company? <button type="button" className="auth-foot-link" onClick={() => go('create')}>Register</button></>
+                : <>Already have an account? <button type="button" className="auth-foot-link" onClick={() => go('login')}>Sign In</button></>}
+            </p>
+          </form>
+        )}
       </main>
     </div>
   );

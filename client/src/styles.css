@@ -1415,3 +1415,26 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 /* Pending-approval work/personal grouping */
 .approval-group-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text); opacity: .65; margin: 12px 0 4px; }
 .approval-empty { font-size: 12.5px; margin: 2px 0 4px; padding-left: 2px; }
+
+/* --- Invite / company codes --- */
+.code-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; cursor: pointer; margin-left: auto; }
+.code-toggle input { width: auto; }
+.admin-platform { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.code-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.code-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.code-row.used { opacity: .6; }
+.code-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; font-weight: 700; letter-spacing: .05em; background: var(--surface-2); padding: 2px 8px; border-radius: 6px; }
+.code-label { font-size: 13px; min-width: 60px; }
+.code-status { font-size: 12px; margin-left: auto; }
+.code-row .btn, .code-row .icon-btn { flex: none; }
+
+/* --- Landing / homepage --- */
+.landing { max-width: 560px; text-align: center; padding: 20px; }
+.landing-title { font-size: 32px; line-height: 1.2; margin: 0 0 14px; }
+.landing-sub { font-size: 15px; line-height: 1.5; color: var(--text); opacity: .8; margin: 0 0 28px; }
+.landing-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.landing-primary { padding: 13px 24px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.landing-primary:hover { background: var(--accent-hover); }
+.landing-secondary { padding: 13px 24px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.landing-secondary:hover { background: var(--surface-2); }
+.landing-note { font-size: 13px; margin-top: 22px; line-height: 1.5; }

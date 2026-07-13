@@ -254,6 +254,32 @@ CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Single-use codes an admin generates so a specific person can join their
+-- workspace via the join link. One code per joinee; spent once used.
+CREATE TABLE IF NOT EXISTS workspace_invite_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  code TEXT NOT NULL UNIQUE,
+  label TEXT DEFAULT '',
+  used_by INTEGER REFERENCES users(id),
+  used_at TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ws_invite_codes ON workspace_invite_codes(workspace_id);
+
+-- Single-use codes the platform owner (KNAP) gives a new company so it can
+-- register its own workspace. Spent once the workspace is created.
+CREATE TABLE IF NOT EXISTS company_registration_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  label TEXT DEFAULT '',
+  used_by_workspace INTEGER REFERENCES workspaces(id),
+  used_at TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // Add columns to tables created before these features existed.
@@ -310,6 +336,8 @@ ensureColumn('channels', 'who_can_invite', "TEXT NOT NULL DEFAULT 'all'"); // 'a
 ensureColumn('channels', 'who_can_post', "TEXT NOT NULL DEFAULT 'all'"); // 'all' | 'mods'
 // A per-collab invite link that lets an outside guest join just that collab.
 ensureColumn('channels', 'guest_token', 'TEXT');
+// When on, joining this workspace requires a valid single-use invite code.
+ensureColumn('workspaces', 'require_invite_code', 'INTEGER NOT NULL DEFAULT 0');
 // Per-channel membership role: 'owner' | 'moderator' | 'member'.
 ensureColumn('channel_members', 'role', "TEXT NOT NULL DEFAULT 'member'");
 

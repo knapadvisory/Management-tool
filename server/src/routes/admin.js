@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import db from '../db.js';
 import { publicUser, joinGeneral, emailDomainAllowed, allowedSignupDomains } from '../auth.js';
 import { createNotification } from '../notifications.js';
+import { createInviteCode, listInviteCodes, revokeInviteCode } from '../codes.js';
 import { serializeMessage } from '../messages.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -235,13 +236,14 @@ router.get('/settings', (req, res) => {
   res.json({
     workspace: { id: ws.id, name: ws.name, slug: ws.slug },
     allowed_signup_domains: ws.allowed_signup_domains || '',
+    require_invite_code: !!ws.require_invite_code,
     guest_count: db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'guest' AND workspace_id = ?`).get(req.workspaceId).n,
   });
 });
 
-// Update this workspace's allowed signup domains (comma/space separated).
+// Update this workspace's settings (domains, name, invite-code requirement).
 router.patch('/settings', (req, res) => {
-  const { allowed_signup_domains, workspace_name } = req.body;
+  const { allowed_signup_domains, workspace_name, require_invite_code } = req.body;
   if (allowed_signup_domains !== undefined) {
     const cleaned = String(allowed_signup_domains)
       .split(/[\s,]+/).map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean).join(', ');
@@ -250,8 +252,24 @@ router.patch('/settings', (req, res) => {
   if (workspace_name !== undefined && String(workspace_name).trim()) {
     db.prepare('UPDATE workspaces SET name = ? WHERE id = ?').run(String(workspace_name).trim(), req.workspaceId);
   }
+  if (require_invite_code !== undefined) {
+    db.prepare('UPDATE workspaces SET require_invite_code = ? WHERE id = ?').run(require_invite_code ? 1 : 0, req.workspaceId);
+  }
   const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.workspaceId);
-  res.json({ workspace: { id: ws.id, name: ws.name, slug: ws.slug }, allowed_signup_domains: ws.allowed_signup_domains || '' });
+  res.json({ workspace: { id: ws.id, name: ws.name, slug: ws.slug }, allowed_signup_domains: ws.allowed_signup_domains || '', require_invite_code: !!ws.require_invite_code });
+});
+
+// --- Employee invite codes (single-use, one per joinee) ---
+router.get('/invite-codes', (req, res) => {
+  const ws = db.prepare('SELECT slug FROM workspaces WHERE id = ?').get(req.workspaceId);
+  res.json({ codes: listInviteCodes(req.workspaceId), slug: ws.slug });
+});
+router.post('/invite-codes', (req, res) => {
+  res.status(201).json(createInviteCode(req.workspaceId, req.user.id, req.body?.label || ''));
+});
+router.delete('/invite-codes/:id', (req, res) => {
+  if (!revokeInviteCode(req.params.id, req.workspaceId)) return res.status(404).json({ error: 'Code not found or already used' });
+  res.json({ ok: true });
 });
 
 // True when `excludingId` is the only active admin left IN THIS WORKSPACE.

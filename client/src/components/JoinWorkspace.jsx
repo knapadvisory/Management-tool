@@ -5,16 +5,16 @@ import { api } from '../api.js';
 // /join/<slug> link. Shows the workspace, then collects name + work email +
 // password. The server enforces the workspace's allowed email domains.
 export default function JoinWorkspace({ slug, onAuth }) {
-  const [state, setState] = useState({ loading: true, workspace: null, domains: [], error: null });
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [state, setState] = useState({ loading: true, workspace: null, domains: [], requireCode: false, error: null });
+  const [form, setForm] = useState({ name: '', email: '', password: '', code: '' });
   const [busy, setBusy] = useState(false);
   const [joinError, setJoinError] = useState(null);
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
     api(`/workspaces/${slug}`)
-      .then((d) => setState({ loading: false, workspace: d.workspace, domains: d.allowed_signup_domains || [], error: null }))
-      .catch((e) => setState({ loading: false, workspace: null, domains: [], error: e.message }));
+      .then((d) => setState({ loading: false, workspace: d.workspace, domains: d.allowed_signup_domains || [], requireCode: !!d.require_invite_code, error: null }))
+      .catch((e) => setState({ loading: false, workspace: null, domains: [], requireCode: false, error: e.message }));
   }, [slug]);
 
   async function submit(e) {
@@ -67,6 +67,9 @@ export default function JoinWorkspace({ slug, onAuth }) {
               <input className="auth-input" placeholder="Your name" value={form.name} onChange={set('name')} required />
               <input className="auth-input" type="email" placeholder={domainHint} value={form.email} onChange={set('email')} required />
               <input className="auth-input" type="password" placeholder="Choose a password (6+ characters)" value={form.password} onChange={set('password')} required minLength={6} />
+              {state.requireCode && (
+                <input className="auth-input" placeholder="Invite code (from your admin)" value={form.code} onChange={set('code')} required />
+              )}
 
               {joinError && <div className="form-error">{joinError}</div>}
               <button className="auth-primary" disabled={busy}>{busy ? 'Joining…' : `Join ${state.workspace.name}`}</button>

@@ -45,30 +45,23 @@ async function jpatch(base, url, body, token) {
 }
 
 async function main() {
-  // --- Workspace creation gated by a global code ---
-  const gated = boot(4620, { WORKSPACE_SIGNUP_CODE: 'letmein' });
+  // --- Company creation always needs a code (env bootstrap or a DB code) ---
+  const srv = boot(4620, { WORKSPACE_SIGNUP_CODE: 'letmein' });
   const gBase = 'http://localhost:4620';
-  check('gated server starts', await waitUp(gBase));
+  check('server starts', await waitUp(gBase));
   const cfg = await (await fetch(gBase + '/api/config')).json();
-  check('config advertises workspace code required', cfg.workspace_signup_code_required === true);
-  check('create workspace without code is rejected',
+  check('config says a company code is required', cfg.company_code_required === true);
+  check('create company without code is rejected',
     (await jpost(gBase, '/api/workspaces', { workspace_name: 'X', name: 'A', email: 'a@x.co', password: 'secret123' })).status === 403);
-  check('create workspace with wrong code is rejected',
+  check('create company with wrong code is rejected',
     (await jpost(gBase, '/api/workspaces', { workspace_name: 'X', name: 'A', email: 'a@x.co', password: 'secret123', code: 'nope' })).status === 403);
-  check('create workspace with correct code succeeds',
-    (await jpost(gBase, '/api/workspaces', { workspace_name: 'X', name: 'A', email: 'a@x.co', password: 'secret123', code: 'letmein' })).status === 201);
-  gated.proc.kill();
-  rmSync(gated.dir, { recursive: true, force: true });
+  check('create company with the bootstrap code succeeds',
+    (await jpost(gBase, '/api/workspaces', { workspace_name: 'KNAP', name: 'A', email: 'a@x.co', password: 'secret123', code: 'letmein' })).status === 201);
 
-  // --- Open creation + per-workspace domain-gated joining ---
-  const open = boot(4621, {});
-  const oBase = 'http://localhost:4621';
-  check('open server starts', await waitUp(oBase));
-  const cfg2 = await (await fetch(oBase + '/api/config')).json();
-  check('config advertises no workspace code required', cfg2.workspace_signup_code_required === false);
-
-  const ws = await jpost(oBase, '/api/workspaces', { workspace_name: 'Acme', name: 'Admin', email: 'admin@acme.com', password: 'secret123' });
-  check('open workspace creation succeeds', ws.status === 201);
+  // --- Per-workspace domain sorting (never blocks) ---
+  const oBase = gBase;
+  const ws = await jpost(oBase, '/api/workspaces', { workspace_name: 'Acme', name: 'Admin', email: 'admin@acme.com', password: 'secret123', code: 'letmein' });
+  check('company creation succeeds', ws.status === 201);
   const slug = ws.data.workspace.slug;
   const adminToken = ws.data.token;
 
@@ -87,8 +80,8 @@ async function main() {
   check('work-domain request flagged work_email', pend.users.find((u) => u.email === 'worky@acme.com')?.work_email === true);
   check('personal request flagged not-work', pend.users.find((u) => u.email === 'perso@gmail.com')?.work_email === false);
 
-  open.proc.kill();
-  rmSync(open.dir, { recursive: true, force: true });
+  srv.proc.kill();
+  rmSync(srv.dir, { recursive: true, force: true });
 }
 
 main()

@@ -27,7 +27,7 @@ function check(name, cond) {
 }
 
 const server = spawn('node', [path.join(__dirname, '..', 'src', 'index.js')], {
-  env: { ...process.env, PORT, DATA_DIR: dataDir, JWT_SECRET: 'smoke-test-secret' },
+  env: { ...process.env, PORT, DATA_DIR: dataDir, JWT_SECRET: 'smoke-test-secret', WORKSPACE_SIGNUP_CODE: 'boot' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 
@@ -61,7 +61,7 @@ async function main() {
   console.log('Auth');
   // Alice creates the workspace (and becomes its admin); Bob requests to join.
   const alice = await req('POST', '/api/workspaces', {
-    body: { workspace_name: 'Smoke Co', name: 'Alice', email: 'alice@smoke.test', password: 'secret123' },
+    body: { workspace_name: 'Smoke Co', name: 'Alice', email: 'alice@smoke.test', password: 'secret123', code: 'boot' },
   });
   const slug = alice.data.workspace?.slug;
   const a = alice.data.token;

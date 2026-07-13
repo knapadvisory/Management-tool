@@ -63,6 +63,10 @@ export default function AdminPanel({ user }) {
 
       <SignupPolicy />
 
+      <InviteCodes />
+
+      <PlatformCodes />
+
       {error && <div className="form-error">{error}</div>}
 
       <div className="admin-list">
@@ -173,6 +177,131 @@ function PendingApprovals({ onChanged }) {
         </>
       ) : (
         pending.map(row)
+      )}
+    </div>
+  );
+}
+
+// Single-use employee invite codes: one per joinee, plus a toggle to require
+// a code to join at all.
+function InviteCodes() {
+  const [codes, setCodes] = useState([]);
+  const [slug, setSlug] = useState('');
+  const [required, setRequired] = useState(false);
+  const [label, setLabel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(null);
+
+  const load = useCallback(() => {
+    api('/admin/invite-codes').then((d) => { setCodes(d.codes); setSlug(d.slug); }).catch(() => {});
+    api('/admin/settings').then((d) => setRequired(!!d.require_invite_code)).catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function toggleRequire() {
+    const next = !required; setRequired(next);
+    await api('/admin/settings', { method: 'PATCH', body: { require_invite_code: next } }).catch(() => setRequired(!next));
+  }
+  async function generate() {
+    setBusy(true);
+    try { await api('/admin/invite-codes', { method: 'POST', body: { label } }); setLabel(''); load(); } catch { /* */ }
+    setBusy(false);
+  }
+  async function revoke(id) { await api(`/admin/invite-codes/${id}`, { method: 'DELETE' }).catch(() => {}); load(); }
+  function copy(code) {
+    const link = `${window.location.origin}/join/${slug}`;
+    navigator.clipboard?.writeText(`Join ${link}\nInvite code: ${code}`);
+    setCopied(code); setTimeout(() => setCopied(null), 1800);
+  }
+
+  return (
+    <div className="admin-policy">
+      <div className="admin-policy-head">
+        <strong>🔑 Employee invite codes</strong>
+        <label className="code-toggle"><input type="checkbox" checked={required} onChange={toggleRequire} /> Require a code to join</label>
+      </div>
+      <p className="muted">
+        Generate a single-use code for each person you invite — share the join link <em>and</em> their code; each code works once.
+        {required ? ' A code is currently required to join.' : ' Codes are optional right now; turn on the toggle to require one.'}
+      </p>
+      <div className="admin-policy-row">
+        <input placeholder="Who is this for? (optional — e.g. Bob)" value={label} onChange={(e) => setLabel(e.target.value)} />
+        <button className="btn btn-primary btn-sm" disabled={busy} onClick={generate}>{busy ? 'Generating…' : 'Generate code'}</button>
+      </div>
+      {codes.length > 0 && (
+        <div className="code-list">
+          {codes.map((c) => (
+            <div key={c.id} className={`code-row ${c.used_at ? 'used' : ''}`}>
+              <code className="code-value">{c.code}</code>
+              <span className="code-label">{c.label || '—'}</span>
+              <span className="code-status muted">{c.used_at ? `used by ${c.used_by_name || 'someone'}` : 'unused'}</span>
+              {!c.used_at && (
+                <>
+                  <button className="btn btn-sm" onClick={() => copy(c.code)}>{copied === c.code ? 'Copied ✓' : 'Copy link + code'}</button>
+                  <button className="icon-btn" title="Revoke this code" onClick={() => revoke(c.id)}>✕</button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Platform owner (KNAP) only: single-use codes that let a new company register
+// its own workspace.
+function PlatformCodes() {
+  const [isPlatform, setIsPlatform] = useState(false);
+  const [codes, setCodes] = useState([]);
+  const [label, setLabel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(null);
+
+  const load = useCallback(() => { api('/platform/company-codes').then((d) => setCodes(d.codes)).catch(() => {}); }, []);
+  useEffect(() => {
+    api('/platform/me').then((d) => { setIsPlatform(!!d.platform_admin); if (d.platform_admin) load(); }).catch(() => {});
+  }, [load]);
+
+  async function generate() {
+    setBusy(true);
+    try { await api('/platform/company-codes', { method: 'POST', body: { label } }); setLabel(''); load(); } catch { /* */ }
+    setBusy(false);
+  }
+  async function revoke(id) { await api(`/platform/company-codes/${id}`, { method: 'DELETE' }).catch(() => {}); load(); }
+  function copy(code) {
+    navigator.clipboard?.writeText(`Register your company at ${window.location.origin}\nCompany code: ${code}`);
+    setCopied(code); setTimeout(() => setCopied(null), 1800);
+  }
+
+  if (!isPlatform) return null;
+  return (
+    <div className="admin-policy admin-platform">
+      <div className="admin-policy-head"><strong>🏢 Company registration codes (platform)</strong></div>
+      <p className="muted">
+        Generate a single-use code for each new company you onboard. Share it with them — they enter it on the
+        “Register your company” page to create their own workspace. Each code works once.
+      </p>
+      <div className="admin-policy-row">
+        <input placeholder="Which company? (optional — e.g. Acme Ltd)" value={label} onChange={(e) => setLabel(e.target.value)} />
+        <button className="btn btn-primary btn-sm" disabled={busy} onClick={generate}>{busy ? 'Generating…' : 'Generate company code'}</button>
+      </div>
+      {codes.length > 0 && (
+        <div className="code-list">
+          {codes.map((c) => (
+            <div key={c.id} className={`code-row ${c.used_at ? 'used' : ''}`}>
+              <code className="code-value">{c.code}</code>
+              <span className="code-label">{c.label || '—'}</span>
+              <span className="code-status muted">{c.used_at ? `used by ${c.used_by_workspace_name || 'a company'}` : 'unused'}</span>
+              {!c.used_at && (
+                <>
+                  <button className="btn btn-sm" onClick={() => copy(c.code)}>{copied === c.code ? 'Copied ✓' : 'Copy code'}</button>
+                  <button className="icon-btn" title="Revoke this code" onClick={() => revoke(c.id)}>✕</button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

@@ -19,7 +19,7 @@ let failures = 0;
 const check = (name, ok) => { console.log(`  ${ok ? '✓' : '✗'} ${name}`); if (!ok) failures++; };
 
 const server = spawn('node', [path.join(__dirname, '..', 'src', 'index.js')], {
-  env: { ...process.env, PORT, DATA_DIR: dataDir, JWT_SECRET: 'mt-test' },
+  env: { ...process.env, PORT, DATA_DIR: dataDir, JWT_SECRET: 'mt-test', WORKSPACE_SIGNUP_CODE: 'boot' },
   stdio: ['ignore', 'ignore', 'inherit'],
 });
 
@@ -42,8 +42,8 @@ async function main() {
   await waitUp();
 
   // Two workspaces, each with an admin.
-  const acme = (await api('POST', '/api/workspaces', { body: { workspace_name: 'Acme', name: 'Ann', email: 'ann@acme.com', password: 'secret123' } })).data;
-  const globex = (await api('POST', '/api/workspaces', { body: { workspace_name: 'Globex', name: 'Gwen', email: 'gwen@globex.com', password: 'secret123' } })).data;
+  const acme = (await api('POST', '/api/workspaces', { body: { workspace_name: 'Acme', name: 'Ann', email: 'ann@acme.com', password: 'secret123', code: 'boot' } })).data;
+  const globex = (await api('POST', '/api/workspaces', { body: { workspace_name: 'Globex', name: 'Gwen', email: 'gwen@globex.com', password: 'secret123', code: 'boot' } })).data;
   const A = acme.token, G = globex.token;
   check('two workspaces created with distinct ids', acme.workspace.id !== globex.workspace.id);
 

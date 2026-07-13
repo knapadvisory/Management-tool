@@ -9,6 +9,7 @@ import { Server } from 'socket.io';
 import db from './db.js';
 import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, workspaceSignupCodeRequired, allowedSignupDomains, createWorkspaceAdmin, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, AVATAR_COLORS } from './auth.js';
 import { createWorkspace, workspaceBySlug, workspaceById, publicWorkspace } from './workspaces.js';
+import { isPlatformAdmin, findUsableCompanyCode, consumeCompanyCode, createCompanyCode, listCompanyCodes, revokeCompanyCode, findUsableInvite, consumeInvite } from './codes.js';
 import channelsRouter from './routes/channels.js';
 import collabsRouter, { collabByInviteToken, addGuestToCollab, collabWithMeta } from './routes/collabs.js';
 import adminRouter from './routes/admin.js';
@@ -53,33 +54,40 @@ function iceServers() {
 // Public config the auth screens read before anyone is authenticated.
 app.get('/api/config', (req, res) => {
   res.json({
-    workspace_signup_code_required: workspaceSignupCodeRequired(),
+    // Registering a new company always needs a code from the platform owner
+    // (a DB company-registration code, or the env bootstrap code).
+    company_code_required: true,
     avatar_colors: AVATAR_COLORS,
     ice_servers: iceServers(),
   });
 });
 
 // --- Workspace creation & joining ---
-// Create a brand-new workspace and its first admin (the "start a workspace" flow).
+// Register a new COMPANY: create its workspace + first admin. Requires a
+// single-use company-registration code that only the platform owner hands out
+// (or the WORKSPACE_SIGNUP_CODE env bootstrap for initial setup).
 app.post('/api/workspaces', (req, res) => {
   try {
     const { workspace_name, name, email, password, code } = req.body || {};
-    if (workspaceSignupCodeRequired() && (code || '').trim() !== process.env.WORKSPACE_SIGNUP_CODE.trim()) {
-      throw Object.assign(new Error('A valid workspace creation code is required'), { status: 403 });
+    const companyCode = findUsableCompanyCode(code);
+    const envOk = workspaceSignupCodeRequired() && (code || '').trim() === process.env.WORKSPACE_SIGNUP_CODE.trim();
+    if (!companyCode && !envOk) {
+      throw Object.assign(new Error('A valid company registration code is required. Ask KNAP for one.'), { status: 403 });
     }
     const ws = createWorkspace({ name: workspace_name });
     const user = createWorkspaceAdmin(ws, { name, email, password });
+    if (companyCode) consumeCompanyCode(companyCode.id, ws.id);
     res.status(201).json({ token: signToken(user), user: publicUser(user), workspace: publicWorkspace(ws) });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }
 });
 
-// Public: look up a workspace by slug (for the join page header + domain hint).
+// Public: look up a workspace by slug (for the join page header + hints).
 app.get('/api/workspaces/:slug', (req, res) => {
   const ws = workspaceBySlug(req.params.slug);
   if (!ws) return res.status(404).json({ error: 'Workspace not found' });
-  res.json({ workspace: publicWorkspace(ws), allowed_signup_domains: allowedSignupDomains(ws) });
+  res.json({ workspace: publicWorkspace(ws), allowed_signup_domains: allowedSignupDomains(ws), require_invite_code: !!ws.require_invite_code });
 });
 
 // Join an existing workspace as a member (the "your company invited you" flow).
@@ -89,7 +97,14 @@ app.post('/api/workspaces/:slug/register', (req, res) => {
   try {
     const ws = workspaceBySlug(req.params.slug);
     if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+    // If this workspace requires an invite code, it must be valid and unused.
+    let invite = null;
+    if (ws.require_invite_code) {
+      invite = findUsableInvite(ws.id, req.body?.code);
+      if (!invite) throw Object.assign(new Error('A valid invite code is required to join. Ask your admin for one.'), { status: 403 });
+    }
     const user = register(ws, req.body);
+    if (invite) consumeInvite(invite.id, user.id);
     const admins = db.prepare(`SELECT id FROM users WHERE workspace_id = ? AND role = 'admin' AND active = 1`).all(ws.id);
     for (const { id } of admins) {
       createNotification(io, { user_id: id, type: 'join_request', actor_id: user.id, text: `${user.name} requested to join ${ws.name}` });
@@ -99,6 +114,26 @@ app.post('/api/workspaces/:slug/register', (req, res) => {
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }
+});
+
+// --- Platform admin: manage company-registration codes (KNAP only) ---
+function requirePlatformAdmin(req, res, next) {
+  if (!isPlatformAdmin(req.user)) return res.status(403).json({ error: 'Platform admin access required' });
+  next();
+}
+app.get('/api/platform/company-codes', requireAuth, requirePlatformAdmin, (req, res) => {
+  res.json({ codes: listCompanyCodes() });
+});
+app.post('/api/platform/company-codes', requireAuth, requirePlatformAdmin, (req, res) => {
+  res.status(201).json(createCompanyCode(req.user.id, req.body?.label || ''));
+});
+app.delete('/api/platform/company-codes/:id', requireAuth, requirePlatformAdmin, (req, res) => {
+  if (!revokeCompanyCode(req.params.id)) return res.status(404).json({ error: 'Code not found or already used' });
+  res.json({ ok: true });
+});
+// Tell the client whether the signed-in user is the platform owner.
+app.get('/api/platform/me', requireAuth, (req, res) => {
+  res.json({ platform_admin: isPlatformAdmin(req.user) });
 });
 
 // --- Auth ---
