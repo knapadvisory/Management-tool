@@ -14,9 +14,24 @@ export function dueStatus(due) {
   return '';
 }
 
+// From the viewer's perspective: is this task theirs, allotted to them, or one
+// they allotted to someone else?
+function relationship(task, me) {
+  const c = task.creator?.id, a = task.assignee?.id;
+  if (a === me && c === me) return { text: 'Mine', cls: 'self' };
+  if (a === me) return { text: 'For you', cls: 'to-me' };       // allotted to me by someone
+  if (c === me && a && a !== me) return { text: 'You allotted', cls: 'by-me' }; // I allotted to someone
+  if (c === me && !a) return { text: 'You created', cls: 'by-me' };
+  return null; // not involving me (e.g. an admin viewing everyone's tasks)
+}
+const firstName = (u) => (u ? u.name.split(' ')[0] : null);
+
 export default function TaskCard({ task, onOpen, draggable, onDragStart, currentUserId }) {
   const due = dueStatus(task.due_date);
   const watching = task.watcher_ids?.includes(currentUserId);
+  const rel = relationship(task, currentUserId);
+  const { creator, assignee } = task;
+  const samePerson = creator && assignee && creator.id === assignee.id;
   return (
     <div
       className="task-card"
@@ -57,7 +72,32 @@ export default function TaskCard({ task, onOpen, draggable, onDragStart, current
         {task.attachment_count > 0 && <span>📎 {task.attachment_count}</span>}
         {task.comment_count > 0 && <span>💬 {task.comment_count}</span>}
         {watching && <span title="You're watching this">👁</span>}
-        {task.assignee && <Avatar user={task.assignee} size={22} />}
+      </div>
+
+      {/* Allotter → allottee, so you can see who's involved without opening it. */}
+      <div className="task-people">
+        {rel && <span className={`rel-tag rel-${rel.cls}`}>{rel.text}</span>}
+        {samePerson ? (
+          <span className="task-person" title={`Created by ${creator.name} for themselves`}>
+            <Avatar user={creator} size={18} /><span className="task-person-name">{firstName(creator)}</span>
+          </span>
+        ) : (
+          <>
+            {creator && (
+              <span className="task-person" title={`Allotted by ${creator.name}`}>
+                <Avatar user={creator} size={18} /><span className="task-person-name">{firstName(creator)}</span>
+              </span>
+            )}
+            <span className="task-arrow" aria-hidden>→</span>
+            {assignee ? (
+              <span className="task-person" title={`Allotted to ${assignee.name}`}>
+                <Avatar user={assignee} size={18} /><span className="task-person-name">{firstName(assignee)}</span>
+              </span>
+            ) : (
+              <span className="task-person muted">Unassigned</span>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

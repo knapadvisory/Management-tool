@@ -20,6 +20,7 @@ export default function TaskListView({ tasks, onOpen }) {
         case 'stage': av = a.stage?.position ?? 0; bv = b.stage?.position ?? 0; break;
         case 'status': av = a.status || ''; bv = b.status || ''; break;
         case 'assignee': av = a.assignee?.name || '~'; bv = b.assignee?.name || '~'; break;
+        case 'creator': av = a.creator?.name || '~'; bv = b.creator?.name || '~'; break;
         case 'due': av = a.due_date || '9999'; bv = b.due_date || '9999'; break;
         default: av = a.updated_at; bv = b.updated_at;
       }
@@ -43,7 +44,8 @@ export default function TaskListView({ tasks, onOpen }) {
             {header('board', 'Board')}
             {header('stage', 'Stage')}
             {header('status', 'Status')}
-            {header('assignee', 'Assignee')}
+            {header('creator', 'Allotted by')}
+            {header('assignee', 'Allotted to')}
             {header('priority', 'Priority')}
             {header('due', 'Due')}
             <th>Progress</th>
@@ -63,13 +65,14 @@ export default function TaskListView({ tasks, onOpen }) {
                 <span className="status-badge sm" style={{ background: statusMeta(t.status).color }}
                   title={t.status_reason || ''}>{statusMeta(t.status).label}</span>
               </td>
+              <td>{t.creator ? <span className="list-assignee"><Avatar user={t.creator} size={20} /> {t.creator.name}</span> : <span className="muted">—</span>}</td>
               <td>{t.assignee ? <span className="list-assignee"><Avatar user={t.assignee} size={20} /> {t.assignee.name}</span> : <span className="muted">—</span>}</td>
               <td><span className={`priority priority-${t.priority}`}>{t.priority}</span></td>
               <td>{t.due_date ? <span className={`due ${dueStatus(t.due_date)}`}>{t.due_date}</span> : <span className="muted">—</span>}</td>
               <td>{t.checklist_total > 0 ? `${t.checklist_done}/${t.checklist_total}` : <span className="muted">—</span>}</td>
             </tr>
           ))}
-          {tasks.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 20 }}>No tasks match these filters.</td></tr>}
+          {tasks.length === 0 && <tr><td colSpan={9} className="muted" style={{ padding: 20 }}>No tasks match these filters.</td></tr>}
         </tbody>
       </table>
     </div>
