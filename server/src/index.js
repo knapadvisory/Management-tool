@@ -35,11 +35,27 @@ app.set('io', io);
 app.use(cors());
 app.use(express.json());
 
+// ICE servers for WebRTC calls: always a public STUN server, plus a TURN
+// relay if one is configured (TURN_URL[/TURN_USERNAME/TURN_CREDENTIAL]). TURN
+// is what lets calls connect across strict NATs / firewalls / mobile networks.
+function iceServers() {
+  const servers = [{ urls: 'stun:stun.l.google.com:19302' }];
+  const turnUrl = (process.env.TURN_URL || '').trim();
+  if (turnUrl) {
+    const turn = { urls: turnUrl.split(',').map((u) => u.trim()).filter(Boolean) };
+    if (process.env.TURN_USERNAME) turn.username = process.env.TURN_USERNAME;
+    if (process.env.TURN_CREDENTIAL) turn.credential = process.env.TURN_CREDENTIAL;
+    servers.push(turn);
+  }
+  return servers;
+}
+
 // Public config the auth screens read before anyone is authenticated.
 app.get('/api/config', (req, res) => {
   res.json({
     workspace_signup_code_required: workspaceSignupCodeRequired(),
     avatar_colors: AVATAR_COLORS,
+    ice_servers: iceServers(),
   });
 });
 

@@ -1407,3 +1407,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .approval-name { font-weight: 600; font-size: 14px; }
 .approval-email { font-size: 12.5px; }
 .join-pending-icon { font-size: 44px; text-align: center; margin-bottom: 6px; }
+
+/* Call controls wrap neatly when muting/camera toggles are shown. */
+.call-buttons { flex-wrap: wrap; }
+.call-toggle { background: var(--surface-2); }
