@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import db from './db.js';
 import { verifyToken, publicUser } from './auth.js';
 import { serializeMessage, recordMentions, linkAttachments } from './messages.js';
@@ -5,6 +6,42 @@ import { createNotification } from './notifications.js';
 
 // userId -> Set of socket ids (a user can have multiple tabs open)
 const onlineUsers = new Map();
+
+// --- Multi-party call rooms (huddles / conferences) ---
+// A "room" is a live group call. Media flows peer-to-peer in a mesh; the server
+// only tracks who is in each room and relays WebRTC signaling between them.
+//   roomId -> { kind, collab_id, call_type, by, members: Map<userId,{user,socketIds}> }
+// Collab huddles use roomId `collab:<channelId>` (one per space); ad-hoc
+// conferences use a random `conf:<uuid>` that acts as a join capability.
+const callRooms = new Map();
+const MAX_ROOM = 8; // mesh WebRTC stays comfortable up to ~8 participants
+
+function roomPeers(room) {
+  return [...room.members.values()].map((m) => m.user);
+}
+
+// Remove one socket from a room; when the user has no sockets left in it, they
+// have truly left (announce it), and an empty room is torn down.
+function leaveCallRoom(io, socket, roomId) {
+  const room = callRooms.get(roomId);
+  if (!room) return;
+  const member = room.members.get(socket.user.id);
+  if (member) {
+    member.socketIds.delete(socket.id);
+    if (member.socketIds.size === 0) {
+      room.members.delete(socket.user.id);
+      socket.to(`callroom:${roomId}`).emit('call:room:peer-left', { room_id: roomId, user_id: socket.user.id });
+    }
+  }
+  socket.leave(`callroom:${roomId}`);
+  socket.data.callRooms?.delete(roomId);
+  if (room.members.size === 0) {
+    callRooms.delete(roomId);
+    if (room.kind === 'collab' && room.collab_id) {
+      io.to(`channel:${room.collab_id}`).emit('call:room:ended', { room_id: roomId, collab_id: room.collab_id });
+    }
+  }
+}
 
 // Presence is per-workspace: broadcast only the online users who belong to the
 // given workspace, and only to that workspace's room.
@@ -187,12 +224,122 @@ export default function setupSocket(io) {
       io.to(`user:${to_user_id}`).emit('call:ended', { from: publicUser(socket.user) });
     });
 
+    // --- Multi-party call rooms (group huddles + ad-hoc conferences) ---
+
+    // Join (or start) a call room. For a collab huddle pass kind:'collab' and
+    // target_id; for a conference pass kind:'conference' (omit room_id to start
+    // a fresh one, or pass an existing room_id to join). Replies with the
+    // current peers so the newcomer can dial out to each of them (mesh).
+    socket.on('call:room:join', ({ room_id, kind, target_id, call_type } = {}, ack) => {
+      call_type = call_type === 'video' ? 'video' : 'audio';
+      const resolvedKind = kind === 'collab' ? 'collab' : 'conference';
+      let roomId = room_id;
+      let collabId = null;
+
+      if (resolvedKind === 'collab') {
+        const cid = Number(target_id);
+        const chan = db.prepare('SELECT id, is_collab, workspace_id FROM channels WHERE id = ?').get(cid);
+        if (!chan || !chan.is_collab || chan.workspace_id !== socket.user.workspace_id) return ack?.({ error: 'Collab not found' });
+        if (!db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?').get(cid, userId)) {
+          return ack?.({ error: 'You are not a member of this collab' });
+        }
+        roomId = `collab:${cid}`;
+        collabId = cid;
+      } else if (!roomId) {
+        roomId = `conf:${randomUUID()}`;
+      } else if (!callRooms.has(roomId)) {
+        return ack?.({ error: 'This call has already ended' });
+      }
+
+      let room = callRooms.get(roomId);
+      const isNew = !room;
+      if (!room) {
+        room = { kind: resolvedKind, collab_id: collabId, call_type, by: publicUser(socket.user), members: new Map() };
+        callRooms.set(roomId, room);
+      }
+      const alreadyIn = room.members.has(userId);
+      if (!alreadyIn && room.members.size >= MAX_ROOM) {
+        if (isNew) callRooms.delete(roomId);
+        return ack?.({ error: `This call is full (max ${MAX_ROOM} people)` });
+      }
+
+      const peers = roomPeers(room); // captured before adding self
+      if (alreadyIn) room.members.get(userId).socketIds.add(socket.id);
+      else room.members.set(userId, { user: publicUser(socket.user), socketIds: new Set([socket.id]) });
+      socket.join(`callroom:${roomId}`);
+      (socket.data.callRooms ||= new Set()).add(roomId);
+
+      if (!alreadyIn) socket.to(`callroom:${roomId}`).emit('call:room:peer-joined', { room_id: roomId, user: publicUser(socket.user) });
+      // Let the whole collab know a huddle is live, so members see a Join banner.
+      if (room.kind === 'collab' && isNew) {
+        io.to(`channel:${collabId}`).emit('call:room:active', { room_id: roomId, collab_id: collabId, call_type: room.call_type, by: room.by });
+      }
+      ack?.({ room_id: roomId, kind: room.kind, collab_id: room.collab_id, call_type: room.call_type, peers });
+    });
+
+    socket.on('call:room:leave', ({ room_id } = {}) => leaveCallRoom(io, socket, room_id));
+
+    // Relay WebRTC signaling (SDP/ICE) to one specific peer in the same room.
+    socket.on('call:room:signal', ({ room_id, to_user_id, data } = {}) => {
+      const room = callRooms.get(room_id);
+      if (!room || !room.members.has(userId) || !room.members.has(to_user_id)) return;
+      io.to(`user:${to_user_id}`).emit('call:room:signal', { room_id, from_user_id: userId, data });
+    });
+
+    // Ring a set of teammates into the caller's current room.
+    socket.on('call:room:invite', ({ room_id, user_ids = [] } = {}, ack) => {
+      const room = callRooms.get(room_id);
+      if (!room || !room.members.has(userId)) return ack?.({ error: 'You are not in this call' });
+      const title = room.kind === 'collab' && room.collab_id
+        ? db.prepare('SELECT name FROM channels WHERE id = ?').get(room.collab_id)?.name || null
+        : null;
+      for (const targetId of user_ids) {
+        if (targetId === userId) continue;
+        const target = db.prepare('SELECT id FROM users WHERE id = ? AND workspace_id = ? AND active = 1').get(targetId, socket.user.workspace_id);
+        if (!target) continue;
+        io.to(`user:${targetId}`).emit('call:room:incoming', {
+          room_id, kind: room.kind, collab_id: room.collab_id, call_type: room.call_type,
+          from: publicUser(socket.user), title,
+        });
+      }
+      ack?.({ ok: true });
+    });
+
+    // Ephemeral in-call chat: relayed to everyone in the room, never stored.
+    socket.on('call:room:chat', ({ room_id, text } = {}) => {
+      const room = callRooms.get(room_id);
+      if (!room || !room.members.has(userId)) return;
+      text = (text || '').toString().slice(0, 2000).trim();
+      if (!text) return;
+      io.to(`callroom:${room_id}`).emit('call:room:chat', { room_id, from: publicUser(socket.user), text, at: Date.now() });
+    });
+
+    // A rung teammate declined — let the room know (informational).
+    socket.on('call:room:decline', ({ room_id } = {}) => {
+      if (callRooms.has(room_id)) io.to(`callroom:${room_id}`).emit('call:room:declined', { room_id, user: publicUser(socket.user) });
+    });
+
+    // Is a collab's huddle currently live? Used to show a Join banner on open.
+    socket.on('call:room:status', ({ collab_id } = {}, ack) => {
+      const roomId = `collab:${Number(collab_id)}`;
+      const room = callRooms.get(roomId);
+      ack?.({
+        active: !!room,
+        room_id: room ? roomId : null,
+        call_type: room?.call_type || null,
+        peers: room ? roomPeers(room) : [],
+      });
+    });
+
     socket.on('disconnect', () => {
       const sockets = onlineUsers.get(userId);
       if (sockets) {
         sockets.delete(socket.id);
         if (sockets.size === 0) onlineUsers.delete(userId);
       }
+      // Drop this socket from any call rooms it was in (announces a leave once
+      // the user's last tab in the room disconnects).
+      for (const roomId of [...(socket.data.callRooms || [])]) leaveCallRoom(io, socket, roomId);
       emitPresence(io, socket.user.workspace_id);
     });
   });

@@ -13,6 +13,7 @@ import PeopleView from './components/PeopleView.jsx';
 import ActivityView from './components/ActivityView.jsx';
 import FilesView from './components/FilesView.jsx';
 import CallManager from './components/CallManager.jsx';
+import GroupCallManager from './components/GroupCallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import DashboardView from './components/DashboardView.jsx';
@@ -342,6 +343,7 @@ export default function App() {
         )}
       </main>
       <CallManager user={user} />
+      <GroupCallManager user={user} users={users} />
       {searchOpen && (
         <SearchModal
           onClose={() => setSearchOpen(false)}
