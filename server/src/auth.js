@@ -8,9 +8,10 @@ export const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3a
 
 export function publicUser(u) {
   if (!u) return null;
-  const { id, name, email, avatar_color, title, role, active, approved, theme, accent, workspace_id } = u;
+  const { id, name, email, avatar_color, title, role, active, approved, deleted, deactivated_at, theme, accent, workspace_id } = u;
   return {
     id, name, email, avatar_color, title, role: role || 'member', active: active ?? 1, approved: approved ?? 1,
+    deleted: deleted ?? 0, deactivated_at: deactivated_at || null,
     theme: theme || 'light', accent: accent || '#4f46e5', workspace_id,
   };
 }
@@ -182,6 +183,9 @@ export function login({ email, password }) {
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get((email || '').trim().toLowerCase());
   if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {
     throw Object.assign(new Error('Invalid email or password'), { status: 401 });
+  }
+  if (user.deleted) {
+    throw Object.assign(new Error('This account no longer exists. Contact your administrator.'), { status: 403 });
   }
   if (!user.approved) {
     throw Object.assign(new Error('Your account is still awaiting approval from your workspace admin.'), { status: 403 });

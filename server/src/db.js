@@ -289,6 +289,12 @@ ensureColumn('tasks', 'status_reason', "TEXT NOT NULL DEFAULT ''");
 // 'active' gates access; deactivating revokes login without destroying data.
 ensureColumn('users', 'role', "TEXT NOT NULL DEFAULT 'member'");
 ensureColumn('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
+// Account deletion is a two-stage, reversible-then-permanent flow: an account
+// is first deactivated (active=0, deactivated_at set), and only after a grace
+// period may an admin permanently delete it (deleted=1) — their login is gone
+// but their record and content stay for the admin's records.
+ensureColumn('users', 'deactivated_at', 'TEXT');
+ensureColumn('users', 'deleted', 'INTEGER NOT NULL DEFAULT 0');
 // Members who self-register via a workspace join link start unapproved and
 // cannot log in until an admin approves them. Existing rows default to 1 so
 // current accounts (and admin-created / guest ones) stay usable.

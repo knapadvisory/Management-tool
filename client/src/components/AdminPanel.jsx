@@ -11,13 +11,16 @@ export default function AdminPanel({ user }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [deleted, setDeleted] = useState([]);
   const [archived, setArchived] = useState([]);
   const [showArchive, setShowArchive] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const data = await api('/admin/users');
-      setMembers(data.users);
+      const [d, del] = await Promise.all([api('/admin/users'), api('/admin/users/deleted').catch(() => ({ users: [] }))]);
+      setMembers(d.users);
+      setDeleted(del.users);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -77,6 +80,24 @@ export default function AdminPanel({ user }) {
           </>
         )}
       </div>
+
+      {deleted.length > 0 && (
+        <div className="admin-deleted">
+          <button className="admin-archive-toggle" onClick={() => setShowDeleted((s) => !s)}>
+            🗑 Deleted accounts · {deleted.length} <span>{showDeleted ? '▲' : '▼'}</span>
+          </button>
+          <p className="muted admin-archive-note">These logins are gone for good, but the people's records and their tasks, messages and files are kept here for your reference.</p>
+          {showDeleted && deleted.map((m) => (
+            <div key={m.id} className="admin-row inactive">
+              <Avatar user={m} size={34} />
+              <div className="admin-row-main">
+                <div className="admin-row-name">{m.name}<span className="role-badge off">Deleted</span></div>
+                <div className="muted admin-row-email">{m.email}{m.title ? ` · ${m.title}` : ''}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="admin-archive">
         <button className="admin-archive-toggle" onClick={() => setShowArchive((s) => !s)}>
@@ -255,14 +276,38 @@ function MemberRow({ m, me, act }) {
             </button>
           </>
         )}
-        {!m.active && (
-          <button className="btn btn-sm" title="Restore access"
-            onClick={() => act(() => api(`/admin/users/${m.id}/reactivate`, { method: 'POST' }))}>
-            Reactivate
-          </button>
+        {!m.active && !isSelf && (
+          <>
+            <button className="btn btn-sm" title="Restore access"
+              onClick={() => act(() => api(`/admin/users/${m.id}/reactivate`, { method: 'POST' }))}>
+              Reactivate
+            </button>
+            <DeleteButton m={m} act={act} />
+          </>
         )}
       </div>
     </div>
+  );
+}
+
+// Permanent-delete control: locked until the account has been deactivated for
+// the full grace period; shows a countdown until then.
+function DeleteButton({ m, act }) {
+  const grace = m.delete_grace_days || 7;
+  const since = m.deactivated_at ? Math.floor((Date.now() - new Date(m.deactivated_at.replace(' ', 'T') + 'Z').getTime()) / 86400000) : 0;
+  const remaining = Math.max(0, grace - since);
+  const ready = remaining === 0;
+  if (!ready) {
+    return <button className="btn btn-sm" disabled title={`Deletable in ${remaining} day(s) — a ${grace}-day safety window after deactivation`}>Delete in {remaining}d</button>;
+  }
+  return (
+    <button className="btn btn-sm btn-danger" title="Permanently delete this account"
+      onClick={() => {
+        if (confirm(`Permanently delete ${m.name}?\n\nTheir login is removed for good and they leave every conversation. Their tasks, messages and files are KEPT for your records under "Deleted accounts". This cannot be undone.`))
+          act(() => api(`/admin/users/${m.id}/delete`, { method: 'POST' }));
+      }}>
+      Delete permanently
+    </button>
   );
 }
 

@@ -18,13 +18,26 @@ const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3aed', '#
 // An admin governs only their OWN workspace, so all lookups are scoped to it.
 const wsUser = (req) => db.prepare('SELECT * FROM users WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
 
-// Full roster (this workspace) of approved accounts including deactivated ones,
-// but not external guests (managed per-collab) or pending join requests.
+// How long an account must sit deactivated before it can be permanently
+// deleted — a safety window in case the deactivation was a mistake.
+const DELETE_GRACE_DAYS = 7;
+
+// Full roster (this workspace) of approved, non-deleted accounts including
+// deactivated ones, but not external guests or pending join requests.
 router.get('/users', (req, res) => {
-  const users = db.prepare(`SELECT * FROM users WHERE workspace_id = ? AND role != 'guest' AND approved = 1 ORDER BY active DESC, name`).all(req.workspaceId).map((u) => ({
+  const users = db.prepare(`SELECT * FROM users WHERE workspace_id = ? AND role != 'guest' AND approved = 1 AND deleted = 0 ORDER BY active DESC, name`).all(req.workspaceId).map((u) => ({
     ...publicUser(u),
     created_at: u.created_at,
+    delete_grace_days: DELETE_GRACE_DAYS,
   }));
+  res.json({ users });
+});
+
+// Permanently-deleted accounts, kept for the admin's records (their content —
+// tasks, messages, files — stays attributed to them).
+router.get('/users/deleted', (req, res) => {
+  const users = db.prepare(`SELECT * FROM users WHERE workspace_id = ? AND deleted = 1 ORDER BY deactivated_at DESC, name`).all(req.workspaceId)
+    .map((u) => ({ ...publicUser(u), created_at: u.created_at }));
   res.json({ users });
 });
 
@@ -107,7 +120,7 @@ router.post('/users/:id/deactivate', (req, res) => {
   if (target.role === 'admin' && lastActiveAdmin(target.id, req.workspaceId)) {
     return res.status(400).json({ error: 'Cannot deactivate the only remaining admin' });
   }
-  db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(target.id);
+  db.prepare(`UPDATE users SET active = 0, deactivated_at = datetime('now') WHERE id = ?`).run(target.id);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
   // Boot any live sessions belonging to the deactivated user.
   req.app.get('io')?.to(`user:${target.id}`).emit('account:deactivated');
@@ -117,10 +130,49 @@ router.post('/users/:id/deactivate', (req, res) => {
 router.post('/users/:id/reactivate', (req, res) => {
   const target = wsUser(req);
   if (!target) return res.status(404).json({ error: 'User not found' });
-  db.prepare('UPDATE users SET active = 1 WHERE id = ?').run(target.id);
+  if (target.deleted) return res.status(400).json({ error: 'A deleted account cannot be restored' });
+  db.prepare('UPDATE users SET active = 1, deactivated_at = NULL WHERE id = ?').run(target.id);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(target.id)));
 });
+
+// Permanently delete an account. Only allowed after it has been deactivated
+// for the full grace period. The person can never log in again (password
+// cleared, removed from every channel), but the row and their content stay so
+// the admin keeps a complete record.
+router.post('/users/:id/delete', (req, res) => {
+  const target = wsUser(req);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own account' });
+  if (target.deleted) return res.status(400).json({ error: 'This account is already deleted' });
+  if (target.active || !target.deactivated_at) {
+    return res.status(400).json({ error: 'Deactivate the account first, then delete it after the grace period.' });
+  }
+  const days = daysSince(target.deactivated_at);
+  if (days < DELETE_GRACE_DAYS) {
+    return res.status(400).json({ error: `This account can be permanently deleted ${DELETE_GRACE_DAYS - days} more day(s) from now (${DELETE_GRACE_DAYS}-day safety window).` });
+  }
+  if (target.role === 'admin' && lastActiveAdmin(target.id, req.workspaceId)) {
+    return res.status(400).json({ error: 'Cannot delete the only remaining admin' });
+  }
+  const purge = db.transaction(() => {
+    // Their login is gone for good, and they leave every conversation…
+    db.prepare(`UPDATE users SET deleted = 1, active = 0, password_hash = '' WHERE id = ?`).run(target.id);
+    db.prepare('DELETE FROM channel_members WHERE user_id = ?').run(target.id);
+    // …but their tasks, messages and files stay attributed to their record.
+  });
+  purge();
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
+  req.app.get('io')?.to(`user:${target.id}`).emit('account:deactivated'); // boot any live session
+  res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(target.id)));
+});
+
+// Whole days elapsed since a SQLite UTC timestamp.
+function daysSince(ts) {
+  const then = db.prepare('SELECT (julianday(?) ) AS j').get(ts).j;
+  const now = db.prepare(`SELECT julianday('now') AS j`).get().j;
+  return Math.floor(now - then);
+}
 
 // Reset a teammate's password (e.g. they're locked out).
 router.post('/users/:id/reset-password', (req, res) => {

@@ -24,11 +24,21 @@ if [ -z "${DOMAIN:-}" ]; then read -rp "Your domain (e.g. teamhub.knapadvisory.c
 if [ -z "${SIGNUP_CODE:-}" ]; then read -rp "Sign-up access code for your team: " SIGNUP_CODE; fi
 if [ -z "${JWT_SECRET:-}" ]; then JWT_SECRET="$(openssl rand -hex 32)"; fi
 
+# Workspace creation can be gated by a code (defaults to your sign-up code so
+# behaviour is preserved: a code is needed to start a new workspace). Optional
+# TURN settings make audio/video calls work across restrictive networks.
+WORKSPACE_SIGNUP_CODE="${WORKSPACE_SIGNUP_CODE:-$SIGNUP_CODE}"
+
 umask 077
 cat > "$CONFIG" <<EOF
 DOMAIN="$DOMAIN"
 SIGNUP_CODE="$SIGNUP_CODE"
+WORKSPACE_SIGNUP_CODE="$WORKSPACE_SIGNUP_CODE"
 JWT_SECRET="$JWT_SECRET"
+# Optional TURN relay for calls across strict networks (fill these in to enable):
+TURN_URL="${TURN_URL:-}"
+TURN_USERNAME="${TURN_USERNAME:-}"
+TURN_CREDENTIAL="${TURN_CREDENTIAL:-}"
 EOF
 
 # Clean up a broken Caddy apt source from earlier script versions, if present.
@@ -57,7 +67,11 @@ docker run -d --name teamhub --restart unless-stopped \
   --network teamhub-net \
   -e JWT_SECRET="$JWT_SECRET" \
   -e SIGNUP_CODE="$SIGNUP_CODE" \
+  -e WORKSPACE_SIGNUP_CODE="$WORKSPACE_SIGNUP_CODE" \
   -e DATA_DIR=/data \
+  ${TURN_URL:+-e TURN_URL="$TURN_URL"} \
+  ${TURN_USERNAME:+-e TURN_USERNAME="$TURN_USERNAME"} \
+  ${TURN_CREDENTIAL:+-e TURN_CREDENTIAL="$TURN_CREDENTIAL"} \
   -v teamhub-data:/data \
   teamhub:latest
 
