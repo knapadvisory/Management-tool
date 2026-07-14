@@ -65,6 +65,7 @@ export default function GroupCallManager({ user, users = [] }) {
   }
 
   function peerConn(peerUser) {
+    if (!peerUser || peerUser.id === user.id) return null; // never connect to yourself
     const existing = pcsRef.current.get(peerUser.id);
     if (existing) return existing;
     const pc = new RTCPeerConnection({ iceServers: iceRef.current });
@@ -82,6 +83,12 @@ export default function GroupCallManager({ user, users = [] }) {
       }
     };
     localStreamRef.current?.getTracks().forEach((t) => pc.addTrack(t, localStreamRef.current));
+    // If a screen share is already running, a peer connecting now must receive
+    // the screen, not the untouched camera track.
+    if (screenTrackRef.current) {
+      const vs = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+      if (vs) vs.replaceTrack(screenTrackRef.current);
+    }
     pcsRef.current.set(peerUser.id, pc);
     return pc;
   }
@@ -146,7 +153,7 @@ export default function GroupCallManager({ user, users = [] }) {
       const joined = { room_id: res.room_id, kind: res.kind, collab_id: res.collab_id, call_type: res.call_type, title: title || null };
       setRoom(joined);
       roomRef.current = joined;
-      (res.peers || []).forEach((p) => dial(p)); // we are the newest — offer to each
+      (res.peers || []).filter((p) => p.id !== user.id).forEach((p) => dial(p)); // we are the newest — offer to each (never to ourselves)
       if (invite_user_ids?.length) socket.emit('call:room:invite', { room_id: res.room_id, user_ids: invite_user_ids });
     });
   }

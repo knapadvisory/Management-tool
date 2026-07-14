@@ -321,8 +321,15 @@ export default function setupSocket(io) {
     });
 
     // Is a collab's huddle currently live? Used to show a Join banner on open.
+    // Only members of that collab (in the caller's own workspace) may ask.
     socket.on('call:room:status', ({ collab_id } = {}, ack) => {
-      const roomId = `collab:${Number(collab_id)}`;
+      const cid = Number(collab_id);
+      const chan = db.prepare('SELECT id, is_collab, workspace_id FROM channels WHERE id = ?').get(cid);
+      if (!chan || !chan.is_collab || chan.workspace_id !== socket.user.workspace_id
+        || !db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?').get(cid, userId)) {
+        return ack?.({ active: false });
+      }
+      const roomId = `collab:${cid}`;
       const room = callRooms.get(roomId);
       ack?.({
         active: !!room,

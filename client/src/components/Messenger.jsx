@@ -44,7 +44,11 @@ export default function Messenger({ user, users = [], channels = [], onlineIds =
   }
   async function leaveChannel(conv) {
     setCtxMenu(null);
-    if (!window.confirm(`Leave #${conv.display_name || conv.name}? You can rejoin it later.`)) return;
+    const name = conv.display_name || conv.name;
+    const prompt = conv.is_private
+      ? `Leave "${name}"? It's private — an admin will need to add you back to rejoin.`
+      : `Leave #${name}? You can rejoin it anytime from the channel list.`;
+    if (!window.confirm(prompt)) return;
     if (selectedId === conv.id) setSelectedId(null);
     try { await api(`/channels/${conv.id}/leave`, { method: 'POST' }); onRefresh?.(); } catch (err) { alert(err.message); }
   }

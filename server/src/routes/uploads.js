@@ -63,8 +63,17 @@ router.get('/:id', (req, res) => {
   if (!att) return res.status(404).json({ error: 'File not found' });
 
   // The requester must belong to the same workspace the file lives in.
-  const myWorkspace = db.prepare('SELECT workspace_id FROM users WHERE id = ?').get(userId)?.workspace_id;
-  if (att.workspace_id && att.workspace_id !== myWorkspace) return res.status(403).json({ error: 'Not allowed' });
+  const me = db.prepare('SELECT workspace_id, role FROM users WHERE id = ?').get(userId);
+  if (att.workspace_id && att.workspace_id !== me?.workspace_id) return res.status(403).json({ error: 'Not allowed' });
+
+  // A file lives inside a task only if the requester can see that task
+  // (creator, assignee, watcher, or admin) — task visibility is NOT workspace-wide.
+  const canSeeTask = (task) => {
+    if (!task) return false;
+    if (me?.role === 'admin') return true;
+    if (task.creator_id === userId || task.assignee_id === userId) return true;
+    return !!db.prepare('SELECT 1 FROM task_watchers WHERE task_id = ? AND user_id = ?').get(task.id, userId);
+  };
 
   if (att.message_id) {
     const msg = db.prepare('SELECT channel_id FROM messages WHERE id = ?').get(att.message_id);
@@ -72,9 +81,12 @@ router.get('/:id', (req, res) => {
       .get(msg.channel_id, userId);
     if (!member) return res.status(403).json({ error: 'Not allowed' });
   } else if (att.task_id) {
-    // Tasks are shared across the workspace team (already scoped above).
+    if (!canSeeTask(db.prepare('SELECT * FROM tasks WHERE id = ?').get(att.task_id))) {
+      return res.status(403).json({ error: 'Not allowed' });
+    }
   } else if (att.task_message_id) {
-    // Per-task chat files are shared with the task team (already scoped above).
+    const task = db.prepare('SELECT t.* FROM tasks t JOIN task_messages tm ON tm.task_id = t.id WHERE tm.id = ?').get(att.task_message_id);
+    if (!canSeeTask(task)) return res.status(403).json({ error: 'Not allowed' });
   } else if (att.is_drive) {
     // The shared Drive is workspace-wide (already scoped above).
   } else if (att.uploader_id !== userId) {

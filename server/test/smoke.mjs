@@ -593,6 +593,9 @@ async function main() {
   check('task chat history includes the attachment', chatHistory2.data.messages.some((m) => m.attachments?.some((x) => x.id === tcAttId)));
   const tcDl = await fetch(`${BASE}/api/uploads/${tcAttId}?token=${b}`);
   check('participant can download a task chat attachment', tcDl.status === 200);
+  // An uninvolved member (Carol: not creator/assignee/watcher) must NOT get it.
+  const tcDenied = await fetch(`${BASE}/api/uploads/${tcAttId}?token=${carolTok}`);
+  check('an uninvolved member cannot download a task chat file', tcDenied.status === 403);
 
   const markRead = await req('POST', '/api/notifications/read-all', { token: b });
   check('mark-all-read clears unread count', markRead.data.unread_count === 0);
