@@ -239,11 +239,14 @@ function BulkImportModal({ onClose, onDone }) {
 
   const parsed = text.split('\n').map((line) => {
     const parts = line.split(/\t|,/).map((s) => s.trim());
-    return { name: parts[0], gstin: parts[1] || '', email: parts[2] || '', phone: parts[3] || '' };
+    return {
+      name: parts[0], gstin: parts[1] || '', email: parts[2] || '', phone: parts[3] || '',
+      tags: (parts[4] || '').split(/[;|]/).map((s) => s.trim()).filter(Boolean),
+    };
   }).filter((r) => r.name);
 
   function downloadTemplate() {
-    const csv = 'Name,GSTIN,Email,Phone\nAcme Pvt Ltd,29ABCDE1234F1Z5,ops@acme.in,9876543210\n';
+    const csv = 'Name,GSTIN,Email,Phone,Tags (separate with ;)\nAcme Pvt Ltd,29ABCDE1234F1Z5,ops@acme.in,9876543210,GST;TDS\nBharat Traders,,,,GST;PF\n';
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a');
     link.href = url; link.download = 'teamhub-clients-template.csv';
@@ -269,7 +272,7 @@ function BulkImportModal({ onClose, onDone }) {
       const body = (isHeader ? rows.slice(1) : rows)
         .map((r) => (r || []).map((c) => (c == null ? '' : String(c)).trim()))
         .filter((r) => r[0]);
-      setText(body.map((r) => [r[0], r[1] || '', r[2] || '', r[3] || ''].join(', ')).join('\n'));
+      setText(body.map((r) => [r[0], r[1] || '', r[2] || '', r[3] || '', r[4] || ''].join(', ')).join('\n'));
     } catch {
       setError('Could not read that file. Please use the template (.csv or .xlsx).');
     }
@@ -291,9 +294,9 @@ function BulkImportModal({ onClose, onDone }) {
           <button type="button" className="btn btn-sm" onClick={() => fileRef.current?.click()}>⬆ Upload filled sheet</button>
           <input ref={fileRef} type="file" accept=".csv,.xlsx" hidden onChange={onFile} />
         </div>
-        <p className="muted" style={{ marginTop: 0 }}>Download the template, fill it in Excel, and upload it — or paste one client per line: <code>Name, GSTIN, Email, Phone</code></p>
+        <p className="muted" style={{ marginTop: 0 }}>Download the template, fill it in Excel, and upload it — or paste one client per line: <code>Name, GSTIN, Email, Phone, Tags</code>. Tag clients by compliance (e.g. <code>GST;TDS</code>) to bulk-select them later.</p>
         <textarea className="bulk-textarea" rows={10} autoFocus value={text} onChange={(e) => setText(e.target.value)}
-          placeholder={'Acme Pvt Ltd\nBharat Traders, 29ABCDE1234F1Z5\nR. Sharma & Co, , ca@sharma.in, 9876543210'} />
+          placeholder={'Acme Pvt Ltd, 29ABCDE1234F1Z5, ops@acme.in, 9876543210, GST;TDS\nBharat Traders, , , , GST;PF'} />
         {error && <div className="form-error">{error}</div>}
         <div className="modal-footer">
           <span className="muted">{parsed.length} client{parsed.length === 1 ? '' : 's'} detected</span>
@@ -316,9 +319,11 @@ function BulkDeadlinesModal({ clients, staff = [], onClose, onDone }) {
   const [sel, setSel] = useState(() => new Set());
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
+  const [tagFilter, setTagFilter] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [types, setTypes] = useState([]);       // firm-added filing types
+  const allTags = [...new Set(clients.flatMap((c) => c.tags || []))].sort();
   const [addingType, setAddingType] = useState(false);
   const [newType, setNewType] = useState('');
 
@@ -333,7 +338,10 @@ function BulkDeadlinesModal({ clients, staff = [], onClose, onDone }) {
     setNewType(''); setAddingType(false);
   }
 
-  const filtered = clients.filter((c) => (statusFilter === 'all' || c.status === statusFilter) && (!q.trim() || c.name.toLowerCase().includes(q.trim().toLowerCase())));
+  const filtered = clients.filter((c) =>
+    (statusFilter === 'all' || c.status === statusFilter) &&
+    (!tagFilter || (c.tags || []).some((t) => t.toLowerCase() === tagFilter.toLowerCase())) &&
+    (!q.trim() || c.name.toLowerCase().includes(q.trim().toLowerCase())));
   const allFilteredSelected = filtered.length > 0 && filtered.every((c) => sel.has(c.id));
 
   function toggle(id) { setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
@@ -397,6 +405,10 @@ function BulkDeadlinesModal({ clients, staff = [], onClose, onDone }) {
 
         <div className="bulk-pick-head">
           <input className="bulk-search" placeholder="Filter clients" value={q} onChange={(e) => setQ(e.target.value)} />
+          <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} title="Filter by tag / compliance segment">
+            <option value="">All tags</option>
+            {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="active">Active</option><option value="prospect">Prospect</option>
             <option value="inactive">Inactive</option><option value="all">All statuses</option>
@@ -429,13 +441,19 @@ function BulkDeadlinesModal({ clients, staff = [], onClose, onDone }) {
   );
 }
 
-const BLANK = { name: '', type: 'company', status: 'active', email: '', phone: '', gstin: '', pan: '', address: '', notes: '' };
+const BLANK = { name: '', type: 'company', status: 'active', email: '', phone: '', gstin: '', pan: '', address: '', notes: '', tags: [] };
 
 function ClientForm({ initial, onCancel, onSaved }) {
-  const [form, setForm] = useState(initial || BLANK);
+  const [form, setForm] = useState(() => ({ ...BLANK, ...(initial || {}), tags: initial?.tags || [] }));
+  const [tagInput, setTagInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  function addTag() {
+    const t = tagInput.trim();
+    if (t && !form.tags.some((x) => x.toLowerCase() === t.toLowerCase())) setForm((f) => ({ ...f, tags: [...f.tags, t] }));
+    setTagInput('');
+  }
 
   async function save(e) {
     e.preventDefault();
@@ -474,6 +492,17 @@ function ClientForm({ initial, onCancel, onSaved }) {
         <label className="field">PAN<input value={form.pan} onChange={set('pan')} /></label>
       </div>
       <label className="field">Address<input value={form.address} onChange={set('address')} /></label>
+      <div className="field">
+        <span>Tags <span className="muted">— which compliances apply (GST, TDS, PF…) so you can bulk-select this segment</span></span>
+        <div className="tags-row">
+          {form.tags.map((t) => (
+            <span key={t} className="task-tag removable">{t}<button type="button" onClick={() => setForm((f) => ({ ...f, tags: f.tags.filter((x) => x !== t) }))}>✕</button></span>
+          ))}
+          <input className="tag-inline" placeholder="+ tag" value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }} onBlur={addTag} />
+        </div>
+      </div>
       <label className="field">Notes / summary<textarea rows={2} value={form.notes} onChange={set('notes')} /></label>
       {error && <div className="form-error">{error}</div>}
       <div className="editor-actions">
@@ -519,6 +548,7 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
           <h2>{c.name}</h2>
           <div className="client-head-meta">
             <span className={`client-status s-${c.status}`}>{STATUS[c.status]}</span>
+            {(c.tags || []).map((t) => <span key={t} className="client-tag">{t}</span>)}
             {c.email && <span className="muted">✉ {c.email}</span>}
             {c.phone && <span className="muted">☎ {c.phone}</span>}
           </div>

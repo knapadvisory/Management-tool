@@ -141,6 +141,19 @@ async function main() {
   const bulkT = await req('POST', '/api/clients/deadlines/bulk', { token: a, body: { title: 'GSTR-1', due_date: '2026-08-11', recurrence: 'monthly', assignee_id: bobId, create_tasks: true, client_ids: [cid2] } });
   check('bulk can also generate tasks', bulkT.data.created === 1 && bulkT.data.tasks === 1);
 
+  console.log('Client tags (compliance segments)');
+  const tagged = await req('POST', '/api/clients', { token: a, body: { name: 'Tagged Co', tags: ['GST', 'TDS', 'gst'] } });
+  check('a client can be created with tags (deduped)', tagged.data.tags.length === 2 && tagged.data.tags.includes('GST') && tagged.data.tags.includes('TDS'));
+  const retag = await req('PATCH', `/api/clients/${tagged.data.id}`, { token: a, body: { tags: ['GST', 'PF'] } });
+  check('tags can be replaced on edit', retag.data.tags.includes('PF') && !retag.data.tags.includes('TDS'));
+  const bulkTags = await req('POST', '/api/clients/bulk', { token: a, body: { clients: [{ name: 'Seg One', tags: ['GST'] }, { name: 'Seg Two', tags: ['GST', 'PF'] }] } });
+  check('bulk import carries tags', bulkTags.data.created === 2);
+  const distinct = await req('GET', '/api/clients/tags', { token: b });
+  check('distinct tags are listed for the filter', distinct.data.tags.includes('GST') && distinct.data.tags.includes('PF'));
+  const listed = (await req('GET', '/api/clients', { token: a })).data.clients;
+  const gstClients = listed.filter((c) => (c.tags || []).includes('GST'));
+  check('clients can be segmented by tag (>=3 GST clients)', gstClients.length >= 3);
+
   console.log('Custom compliance types');
   const t0 = await req('GET', '/api/clients/compliance-types', { token: a });
   check('compliance types start empty', Array.isArray(t0.data.types) && t0.data.types.length === 0);

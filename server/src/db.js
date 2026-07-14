@@ -180,6 +180,15 @@ CREATE TABLE IF NOT EXISTS clients (
 );
 CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);
 
+-- Tags on a client — e.g. which compliances apply (GST / TDS / PF), so a whole
+-- segment can be filtered and bulk-selected at once.
+CREATE TABLE IF NOT EXISTS client_tags (
+  client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  tag TEXT NOT NULL,
+  PRIMARY KEY (client_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_client_tags ON client_tags(tag);
+
 -- People at a client (points of contact).
 CREATE TABLE IF NOT EXISTS client_contacts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

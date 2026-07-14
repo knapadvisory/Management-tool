@@ -22,6 +22,20 @@ const deadlinesFor = (clientId) => db.prepare(`
 
 const isWsUser = (id, ws) => id && db.prepare('SELECT 1 FROM users WHERE id = ? AND workspace_id = ?').get(id, ws);
 
+const tagsFor = (clientId) => db.prepare('SELECT tag FROM client_tags WHERE client_id = ? ORDER BY tag').all(clientId).map((r) => r.tag);
+
+// Replace a client's tags with a cleaned, de-duplicated set (case-insensitive).
+function setTags(clientId, tags) {
+  if (!Array.isArray(tags)) return;
+  db.prepare('DELETE FROM client_tags WHERE client_id = ?').run(clientId);
+  const seen = new Set();
+  const ins = db.prepare('INSERT OR IGNORE INTO client_tags (client_id, tag) VALUES (?, ?)');
+  for (const raw of tags) {
+    const tag = String(raw || '').trim().slice(0, 40);
+    if (tag && !seen.has(tag.toLowerCase())) { seen.add(tag.toLowerCase()); ins.run(clientId, tag); }
+  }
+}
+
 function clientWithMeta(c) {
   const openTasks = db.prepare(`
     SELECT COUNT(*) AS n FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id
@@ -32,7 +46,7 @@ function clientWithMeta(c) {
     WHERE client_id = ? AND completed = 0 ORDER BY due_date LIMIT 1
   `).get(c.id) || null;
   const contactCount = db.prepare('SELECT COUNT(*) AS n FROM client_contacts WHERE client_id = ?').get(c.id).n;
-  return { ...c, open_task_count: openTasks, next_deadline: nextDeadline, contact_count: contactCount };
+  return { ...c, open_task_count: openTasks, next_deadline: nextDeadline, contact_count: contactCount, tags: tagsFor(c.id) };
 }
 
 const load = (req, res) => {
@@ -71,8 +85,17 @@ router.post('/', (req, res) => {
     email: f.email || '', phone: f.phone || '', gstin: f.gstin || '', pan: f.pan || '',
     address: f.address || '', notes: f.notes || '', created_by: req.user.id, workspace_id: req.workspaceId,
   });
+  if (req.body.tags !== undefined) setTags(info.lastInsertRowid, req.body.tags);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
   res.status(201).json(clientWithMeta(db.prepare('SELECT * FROM clients WHERE id = ?').get(info.lastInsertRowid)));
+});
+
+// Distinct tags across the workspace's clients (for the segment filter).
+router.get('/tags', (req, res) => {
+  res.json({ tags: db.prepare(`
+    SELECT DISTINCT ct.tag FROM client_tags ct JOIN clients c ON c.id = ct.client_id
+    WHERE c.workspace_id = ? ORDER BY ct.tag
+  `).all(req.workspaceId).map((r) => r.tag) });
 });
 
 // Custom compliance types (firm-wide additions to the built-in list).
@@ -113,11 +136,12 @@ router.post('/bulk', (req, res) => {
       const f = clientFields(r);
       if (!f.name || existing.has(f.name.toLowerCase())) { skipped++; continue; }
       existing.add(f.name.toLowerCase());
-      ins.run({
+      const info = ins.run({
         name: f.name, type: f.type || 'company', status: f.status || 'active',
         email: f.email || '', phone: f.phone || '', gstin: f.gstin || '', pan: f.pan || '',
         address: f.address || '', notes: f.notes || '', created_by: req.user.id, workspace_id: req.workspaceId,
       });
+      if (Array.isArray(r.tags) && r.tags.length) setTags(info.lastInsertRowid, r.tags);
       created++;
     }
   })();
@@ -216,6 +240,7 @@ router.patch('/:id', (req, res) => {
     UPDATE clients SET name=@name, type=@type, status=@status, email=@email, phone=@phone,
       gstin=@gstin, pan=@pan, address=@address, notes=@notes WHERE id=@id
   `).run({ ...merged });
+  if (req.body.tags !== undefined) setTags(client.id, req.body.tags);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
   res.json(clientWithMeta(db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id)));
 });
