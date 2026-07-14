@@ -28,6 +28,7 @@ function taskWithMeta(task) {
   const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ?').get(task.stage_id);
   const workflow = db.prepare('SELECT id, name FROM workflows WHERE id = ?').get(task.workflow_id);
   const project = task.project_id ? db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) : null;
+  const client = task.client_id ? db.prepare('SELECT id, name FROM clients WHERE id = ?').get(task.client_id) : null;
   const commentCount = db.prepare('SELECT COUNT(*) AS n FROM task_comments WHERE task_id = ?').get(task.id).n;
   const tags = db.prepare('SELECT tag FROM task_tags WHERE task_id = ? ORDER BY tag').all(task.id).map((r) => r.tag);
   const cl = db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(is_done), 0) AS done FROM task_checklist WHERE task_id = ?').get(task.id);
@@ -41,6 +42,7 @@ function taskWithMeta(task) {
     stage,
     workflow,
     project,
+    client,
     comment_count: commentCount,
     tags,
     checklist_total: cl.total,
@@ -165,7 +167,7 @@ function taskInWorkspace(req, res) {
 // --- Tasks list & CRUD ---
 
 router.get('/', (req, res) => {
-  const { workflow_id, project_id, assignee_id, tag, overdue, watching } = req.query;
+  const { workflow_id, project_id, client_id, assignee_id, tag, overdue, watching } = req.query;
   let sql = 'SELECT DISTINCT t.* FROM tasks t';
   // Everything is scoped to the caller's workspace, first and always.
   const where = ['t.workspace_id = ?'];
@@ -176,6 +178,7 @@ router.get('/', (req, res) => {
   if (watching) { where.push('EXISTS (SELECT 1 FROM task_watchers tw WHERE tw.task_id = t.id AND tw.user_id = ?)'); params.push(req.user.id); }
   if (workflow_id) { where.push('t.workflow_id = ?'); params.push(workflow_id); }
   if (project_id) { where.push('t.project_id = ?'); params.push(project_id); }
+  if (client_id) { where.push('t.client_id = ?'); params.push(client_id); }
   if (assignee_id) { where.push('t.assignee_id = ?'); params.push(assignee_id); }
   if (overdue) { where.push(`t.due_date IS NOT NULL AND t.due_date < date('now')`); }
   // Non-admins see only tasks they created, are assigned to, or watch.
@@ -188,7 +191,7 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { title, description = '', workflow_id, project_id = null, assignee_id = null,
+  const { title, description = '', workflow_id, project_id = null, client_id = null, assignee_id = null,
     priority = 'medium', due_date = null, tags = [], checklist = [], recurrence = 'none', reminders = [] } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Task title is required' });
   if (!PRIORITIES.includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
@@ -199,11 +202,14 @@ router.post('/', (req, res) => {
   if (project_id && !db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)) {
     return res.status(400).json({ error: 'Project not found' });
   }
+  if (client_id && !db.prepare('SELECT id FROM clients WHERE id = ? AND workspace_id = ?').get(client_id, req.workspaceId)) {
+    return res.status(400).json({ error: 'Client not found' });
+  }
   const firstStage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
   const info = db.prepare(`
-    INSERT INTO tasks (title, description, workflow_id, project_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(title.trim(), description, wf.id, project_id, firstStage.id, assignee_id, req.user.id, priority, due_date, recurrence, req.workspaceId);
+    INSERT INTO tasks (title, description, workflow_id, project_id, client_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(title.trim(), description, wf.id, project_id, client_id, firstStage.id, assignee_id, req.user.id, priority, due_date, recurrence, req.workspaceId);
   const taskId = info.lastInsertRowid;
 
   const insReminder = db.prepare('INSERT INTO task_reminders (task_id, remind_at, created_by) VALUES (?, ?, ?)');
@@ -261,7 +267,7 @@ router.get('/:id', (req, res) => {
 router.patch('/:id', (req, res) => {
   const task = loadTask(req, res);
   if (!task) return;
-  const { title, description, stage_id, assignee_id, priority, due_date, project_id, recurrence, status, status_reason } = req.body;
+  const { title, description, stage_id, assignee_id, priority, due_date, project_id, client_id, recurrence, status, status_reason } = req.body;
 
   if (priority !== undefined && !PRIORITIES.includes(priority)) {
     return res.status(400).json({ error: 'Invalid priority' });
@@ -295,6 +301,9 @@ router.patch('/:id', (req, res) => {
   }
   if (project_id !== undefined && project_id !== null && !db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)) {
     return res.status(400).json({ error: 'Project not found' });
+  }
+  if (client_id !== undefined && client_id !== null && !db.prepare('SELECT id FROM clients WHERE id = ? AND workspace_id = ?').get(client_id, req.workspaceId)) {
+    return res.status(400).json({ error: 'Client not found' });
   }
 
   // Notify watchers of other meaningful edits (title, priority, due date, repeat).
@@ -337,6 +346,7 @@ router.patch('/:id', (req, res) => {
       priority = COALESCE(?, priority),
       due_date = CASE WHEN ? THEN ? ELSE due_date END,
       project_id = CASE WHEN ? THEN ? ELSE project_id END,
+      client_id = CASE WHEN ? THEN ? ELSE client_id END,
       recurrence = COALESCE(?, recurrence),
       status = COALESCE(?, status),
       status_reason = CASE WHEN ? THEN ? ELSE status_reason END,
@@ -348,6 +358,7 @@ router.patch('/:id', (req, res) => {
     priority ?? null,
     due_date !== undefined ? 1 : 0, due_date ?? null,
     project_id !== undefined ? 1 : 0, project_id ?? null,
+    client_id !== undefined ? 1 : 0, client_id ?? null,
     recurrence ?? null,
     status ?? null,
     reasonWrite, reasonValue,

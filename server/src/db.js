@@ -163,6 +163,57 @@ CREATE TABLE IF NOT EXISTS projects (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Clients (light CRM): the firms/individuals the team does work for.
+CREATE TABLE IF NOT EXISTS clients (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'company',      -- company | individual
+  status TEXT NOT NULL DEFAULT 'active',      -- active | prospect | inactive
+  email TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  gstin TEXT DEFAULT '',
+  pan TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  notes TEXT DEFAULT '',                       -- short description / summary
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);
+
+-- People at a client (points of contact).
+CREATE TABLE IF NOT EXISTS client_contacts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  role TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  phone TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_client_contacts ON client_contacts(client_id);
+
+-- A running log of notes against a client.
+CREATE TABLE IF NOT EXISTS client_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_client_notes ON client_notes(client_id, id);
+
+-- Compliance / statutory deadlines per client, optionally recurring.
+CREATE TABLE IF NOT EXISTS client_deadlines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  due_date TEXT NOT NULL,                      -- YYYY-MM-DD
+  recurrence TEXT NOT NULL DEFAULT 'none',     -- none | monthly | quarterly | yearly
+  completed INTEGER NOT NULL DEFAULT 0,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_client_deadlines ON client_deadlines(client_id, due_date);
+
 CREATE TABLE IF NOT EXISTS task_tags (
   task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   tag TEXT NOT NULL,
@@ -377,9 +428,11 @@ ensureColumn('channel_members', 'cleared_before', 'TEXT');
 // --- Multi-tenancy: every root entity belongs to a workspace ---
 // Added as plain columns (nullable at the DB level) and always set in code;
 // existing rows are backfilled into a default workspace just below.
-for (const table of ['users', 'channels', 'messages', 'attachments', 'drive_folders', 'workflows', 'tasks', 'projects', 'task_templates']) {
+for (const table of ['users', 'channels', 'messages', 'attachments', 'drive_folders', 'workflows', 'tasks', 'projects', 'task_templates', 'clients']) {
   ensureColumn(table, 'workspace_id', 'INTEGER REFERENCES workspaces(id)');
 }
+// Link a task to a client (nullable — most tasks have no client).
+ensureColumn('tasks', 'client_id', 'INTEGER REFERENCES clients(id)');
 
 // Indexes on migration-added columns must come after the columns exist,
 // otherwise upgrading an existing database fails on startup.

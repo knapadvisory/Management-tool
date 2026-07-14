@@ -18,6 +18,7 @@ import adminRouter from './routes/admin.js';
 import tasksRouter from './routes/tasks.js';
 import workflowsRouter from './routes/workflows.js';
 import projectsRouter from './routes/projects.js';
+import clientsRouter from './routes/clients.js';
 import templatesRouter from './routes/templates.js';
 import notificationsRouter from './routes/notifications.js';
 import uploadsRouter from './routes/uploads.js';
@@ -317,6 +318,7 @@ app.use('/api/files', requireAuth, blockGuests, filesRouter);
 app.use('/api/drive', requireAuth, blockGuests, driveRouter);
 app.use('/api/dashboard', requireAuth, blockGuests, dashboardRouter);
 app.use('/api/push', requireAuth, pushRouter);
+app.use('/api/clients', requireAuth, blockGuests, clientsRouter);
 
 // Serve the built client in production.
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
