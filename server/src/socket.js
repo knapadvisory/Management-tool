@@ -17,6 +17,19 @@ const onlineUsers = new Map();
 const callRooms = new Map();
 const MAX_ROOM = 8; // mesh WebRTC stays comfortable up to ~8 participants
 
+// Calls that are ringing and not yet answered, keyed by the callee's user id.
+// Lets a callee who reconnects (or opens the app after the ring was missed)
+// still see the incoming call, and lets us dismiss it across all their devices.
+const pendingCalls = new Map(); // calleeUserId -> { payload, event, at }
+const RING_TTL = 45000; // a ring is considered live for ~45s
+
+function setPendingCall(calleeId, event, payload) {
+  pendingCalls.set(calleeId, { event, payload, at: Date.now() });
+}
+function clearPendingCall(calleeId) {
+  pendingCalls.delete(calleeId);
+}
+
 function roomPeers(room) {
   return [...room.members.values()].map((m) => m.user);
 }
@@ -83,6 +96,16 @@ export default function setupSocket(io) {
     if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Set());
     onlineUsers.get(userId).add(socket.id);
     emitPresence(io, socket.user.workspace_id);
+
+    // If a call is still ringing for this user (e.g. they just reopened the app
+    // after a missed ring, or reconnected), replay the incoming-call event so
+    // the call surfaces instead of being lost.
+    const pending = pendingCalls.get(userId);
+    if (pending && Date.now() - pending.at < RING_TTL) {
+      socket.emit(pending.event, pending.payload);
+    } else if (pending) {
+      pendingCalls.delete(userId);
+    }
 
     socket.on('channel:subscribe', (channelId) => {
       const member = db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?')
@@ -209,19 +232,29 @@ export default function setupSocket(io) {
     // --- WebRTC call signaling (1:1). The server only relays; media is peer-to-peer. ---
     socket.on('call:invite', ({ to_user_id, call_type }) => {
       const type = call_type === 'video' ? 'video' : 'audio';
-      io.to(`user:${to_user_id}`).emit('call:incoming', { from: publicUser(socket.user), call_type: type });
+      const payload = { from: publicUser(socket.user), call_type: type };
+      setPendingCall(to_user_id, 'call:incoming', payload);
+      io.to(`user:${to_user_id}`).emit('call:incoming', payload);
       sendPushToUser(to_user_id, { title: `Incoming ${type} call`, body: `${socket.user.name} is calling you`, data: { type: 'call' } });
     });
     socket.on('call:accept', ({ to_user_id }) => {
+      clearPendingCall(userId); // the callee (this user) answered
       io.to(`user:${to_user_id}`).emit('call:accepted', { from: publicUser(socket.user) });
+      // Stop the ring on the callee's other devices.
+      socket.to(`user:${userId}`).emit('call:handled', { by: userId });
     });
     socket.on('call:reject', ({ to_user_id }) => {
+      clearPendingCall(userId);
       io.to(`user:${to_user_id}`).emit('call:rejected', { from: publicUser(socket.user) });
+      socket.to(`user:${userId}`).emit('call:handled', { by: userId });
     });
     socket.on('call:signal', ({ to_user_id, data }) => {
       io.to(`user:${to_user_id}`).emit('call:signal', { from_user_id: userId, data });
     });
     socket.on('call:end', ({ to_user_id }) => {
+      // Whoever ends it, the ring is over for the callee — clear both directions.
+      clearPendingCall(to_user_id);
+      clearPendingCall(userId);
       io.to(`user:${to_user_id}`).emit('call:ended', { from: publicUser(socket.user) });
     });
 
@@ -270,6 +303,9 @@ export default function setupSocket(io) {
       socket.join(`callroom:${roomId}`);
       (socket.data.callRooms ||= new Set()).add(roomId);
 
+      // Answering the ring here dismisses it on this user's other devices.
+      clearPendingCall(userId);
+      socket.to(`user:${userId}`).emit('call:room:handled', { room_id: roomId });
       if (!alreadyIn) socket.to(`callroom:${roomId}`).emit('call:room:peer-joined', { room_id: roomId, user: publicUser(socket.user) });
       // Let the whole collab know a huddle is live, so members see a Join banner.
       if (room.kind === 'collab' && isNew) {
@@ -298,10 +334,12 @@ export default function setupSocket(io) {
         if (targetId === userId) continue;
         const target = db.prepare('SELECT id FROM users WHERE id = ? AND workspace_id = ? AND active = 1').get(targetId, socket.user.workspace_id);
         if (!target) continue;
-        io.to(`user:${targetId}`).emit('call:room:incoming', {
+        const ringPayload = {
           room_id, kind: room.kind, collab_id: room.collab_id, call_type: room.call_type,
           from: publicUser(socket.user), title,
-        });
+        };
+        setPendingCall(targetId, 'call:room:incoming', ringPayload);
+        io.to(`user:${targetId}`).emit('call:room:incoming', ringPayload);
         sendPushToUser(targetId, {
           title: `Incoming ${room.call_type} call`,
           body: `${socket.user.name} is inviting you${title ? ` — ${title}` : ''}`,
@@ -320,8 +358,11 @@ export default function setupSocket(io) {
       io.to(`callroom:${room_id}`).emit('call:room:chat', { room_id, from: publicUser(socket.user), text, at: Date.now() });
     });
 
-    // A rung teammate declined — let the room know (informational).
+    // A rung teammate declined — let the room know, and dismiss the ring on the
+    // decliner's own other devices.
     socket.on('call:room:decline', ({ room_id } = {}) => {
+      clearPendingCall(userId);
+      socket.to(`user:${userId}`).emit('call:room:handled', { room_id });
       if (callRooms.has(room_id)) io.to(`callroom:${room_id}`).emit('call:room:declined', { room_id, user: publicUser(socket.user) });
     });
 

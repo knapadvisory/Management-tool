@@ -168,6 +168,14 @@ export default function CallManager({ user }) {
 
     const onRejected = () => { setError('Call declined'); cleanup(); };
     const onEnded = () => cleanup();
+    // The call was answered or declined on another of my devices — stop ringing
+    // here (only dismiss an unanswered incoming call, never an active one).
+    const onHandled = () => {
+      // Only the callee's OTHER devices receive this, so any not-yet-active
+      // incoming call here is stale — clear it.
+      const c = callRef.current;
+      if (c && c.direction === 'in' && c.status !== 'active') cleanup();
+    };
 
     const attach = (socket) => {
       socket.on('call:incoming', onIncoming);
@@ -175,6 +183,7 @@ export default function CallManager({ user }) {
       socket.on('call:signal', onSignal);
       socket.on('call:rejected', onRejected);
       socket.on('call:ended', onEnded);
+      socket.on('call:handled', onHandled);
     };
 
     window.addEventListener('teamhub:start-call', onStartCall);
@@ -190,6 +199,7 @@ export default function CallManager({ user }) {
       s?.off('call:signal', onSignal);
       s?.off('call:rejected', onRejected);
       s?.off('call:ended', onEnded);
+      s?.off('call:handled', onHandled);
     };
     // Reconnects create a new socket; user change re-runs this effect.
   }, [user.id]);

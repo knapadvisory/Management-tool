@@ -206,6 +206,8 @@ export default function GroupCallManager({ user, users = [] }) {
 
     const onEnded = ({ room_id }) => { if (roomRef.current?.room_id === room_id) teardown(); };
     const onChat = (msg) => { if (roomRef.current?.room_id === msg.room_id) setChat((c) => [...c, msg]); };
+    // Answered/declined on another of my devices — drop the incoming ring here.
+    const onHandled = () => { if (!roomRef.current) setIncoming(null); };
 
     const attach = (socket) => {
       socket.on('call:room:incoming', onIncoming);
@@ -214,6 +216,7 @@ export default function GroupCallManager({ user, users = [] }) {
       socket.on('call:room:signal', onSignal);
       socket.on('call:room:ended', onEnded);
       socket.on('call:room:chat', onChat);
+      socket.on('call:room:handled', onHandled);
     };
 
     window.addEventListener('teamhub:start-room-call', onStart);
@@ -228,6 +231,7 @@ export default function GroupCallManager({ user, users = [] }) {
       s?.off('call:room:signal', onSignal);
       s?.off('call:room:ended', onEnded);
       s?.off('call:room:chat', onChat);
+      s?.off('call:room:handled', onHandled);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.id, users, tiles]);

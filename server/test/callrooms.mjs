@@ -167,6 +167,43 @@ async function main() {
   const stale = await emit(sockB, 'call:room:join', { kind: 'conference', room_id: confJoin.room_id });
   check('joining an ended conference is rejected', !!stale.error);
 
+  console.log('1:1 call across devices');
+  const aliceId = owner.data.user.id;
+  // Bob is signed in on a second device.
+  const sockB2 = await connect(bob.token);
+  const ring1 = once(sockB, 'call:incoming');
+  const ring2 = once(sockB2, 'call:incoming');
+  sockA.emit('call:invite', { to_user_id: bob.id, call_type: 'audio' });
+  check('both of the callee devices ring', !!(await ring1) && !!(await ring2));
+  // Bob declines on device 1 -> caller is told, device 2's ring is dismissed.
+  const aliceRejected = once(sockA, 'call:rejected');
+  const dev2Handled = once(sockB2, 'call:handled');
+  sockB.emit('call:reject', { to_user_id: aliceId });
+  check('the caller is told the call was declined', !!(await aliceRejected));
+  check('the callee other device is dismissed on decline', !!(await dev2Handled));
+
+  // A device that connects while a call is ringing sees it (missed-ring replay).
+  sockA.emit('call:invite', { to_user_id: bob.id, call_type: 'video' });
+  await new Promise((r) => setTimeout(r, 120));
+  const replayed = await new Promise((resolve) => {
+    const s = io(BASE, { auth: { token: bob.token } });
+    s.on('call:incoming', (d) => resolve({ d, s }));
+    setTimeout(() => resolve(null), 3000);
+  });
+  check('a device connecting mid-ring replays the incoming call', !!replayed && replayed.d.call_type === 'video');
+  replayed?.s?.disconnect();
+  // Once the call ends, a fresh device no longer sees a stale ring.
+  sockA.emit('call:end', { to_user_id: bob.id });
+  await new Promise((r) => setTimeout(r, 120));
+  const noStale = await new Promise((resolve) => {
+    const s = io(BASE, { auth: { token: bob.token } });
+    s.on('call:incoming', () => resolve({ stale: true, s }));
+    setTimeout(() => resolve({ stale: false, s }), 1500);
+  });
+  check('no stale ring after the call ends', noStale.stale === false);
+  noStale.s.disconnect();
+  sockB2.disconnect();
+
   [sockA, sockB, sockC, sockD].forEach((s) => s.disconnect());
 }
 
