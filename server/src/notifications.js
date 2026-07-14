@@ -1,5 +1,6 @@
 import db from './db.js';
 import { publicUser } from './auth.js';
+import { sendPushToUser } from './push.js';
 
 export function serializeNotification(n) {
   const actor = n.actor_id ? db.prepare('SELECT * FROM users WHERE id = ?').get(n.actor_id) : null;
@@ -22,5 +23,7 @@ export function createNotification(io, { user_id, type, actor_id = null, task_id
   `).run(user_id, type, actor_id, task_id, channel_id, text);
   const notification = serializeNotification(db.prepare('SELECT * FROM notifications WHERE id = ?').get(info.lastInsertRowid));
   io?.to(`user:${user_id}`).emit('notification:new', { notification, unread_count: unreadCount(user_id) });
+  // Also nudge the user's phone (no-op unless FCM is configured / they have the app).
+  sendPushToUser(user_id, { title: 'TeamHub', body: text, data: { type, task_id, channel_id } });
   return notification;
 }

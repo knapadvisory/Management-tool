@@ -3,6 +3,7 @@ import db from './db.js';
 import { verifyToken, publicUser } from './auth.js';
 import { serializeMessage, recordMentions, linkAttachments, serializeTaskMessage, linkTaskMessageAttachments } from './messages.js';
 import { createNotification } from './notifications.js';
+import { sendPushToUser } from './push.js';
 
 // userId -> Set of socket ids (a user can have multiple tabs open)
 const onlineUsers = new Map();
@@ -207,10 +208,9 @@ export default function setupSocket(io) {
 
     // --- WebRTC call signaling (1:1). The server only relays; media is peer-to-peer. ---
     socket.on('call:invite', ({ to_user_id, call_type }) => {
-      io.to(`user:${to_user_id}`).emit('call:incoming', {
-        from: publicUser(socket.user),
-        call_type: call_type === 'video' ? 'video' : 'audio',
-      });
+      const type = call_type === 'video' ? 'video' : 'audio';
+      io.to(`user:${to_user_id}`).emit('call:incoming', { from: publicUser(socket.user), call_type: type });
+      sendPushToUser(to_user_id, { title: `Incoming ${type} call`, body: `${socket.user.name} is calling you`, data: { type: 'call' } });
     });
     socket.on('call:accept', ({ to_user_id }) => {
       io.to(`user:${to_user_id}`).emit('call:accepted', { from: publicUser(socket.user) });
@@ -301,6 +301,11 @@ export default function setupSocket(io) {
         io.to(`user:${targetId}`).emit('call:room:incoming', {
           room_id, kind: room.kind, collab_id: room.collab_id, call_type: room.call_type,
           from: publicUser(socket.user), title,
+        });
+        sendPushToUser(targetId, {
+          title: `Incoming ${room.call_type} call`,
+          body: `${socket.user.name} is inviting you${title ? ` — ${title}` : ''}`,
+          data: { type: 'call', room_id },
         });
       }
       ack?.({ ok: true });

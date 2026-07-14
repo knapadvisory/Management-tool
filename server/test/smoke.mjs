@@ -102,6 +102,7 @@ async function main() {
   console.log('Self-service profile');
   const cfg = await req('GET', '/api/config');
   check('config exposes the avatar palette', Array.isArray(cfg.data.avatar_colors) && cfg.data.avatar_colors.length > 0);
+  check('config exposes the push flag', typeof cfg.data.push_enabled === 'boolean');
   const newColor = cfg.data.avatar_colors[1];
   const prof = await req('PATCH', '/api/auth/me', { token: b, body: { name: 'Bobby', title: 'Analyst', avatar_color: newColor } });
   check('user can update their own name/title/colour', prof.status === 200 && prof.data.user.name === 'Bobby' && prof.data.user.title === 'Analyst' && prof.data.user.avatar_color === newColor);
@@ -599,6 +600,17 @@ async function main() {
 
   const markRead = await req('POST', '/api/notifications/read-all', { token: b });
   check('mark-all-read clears unread count', markRead.data.unread_count === 0);
+
+  console.log('Push registration');
+  const pushReg = await req('POST', '/api/push/register', { token: b, body: { token: 'device-token-abc', platform: 'android' } });
+  check('a device can register for push', pushReg.status === 200 && pushReg.data.push_enabled === false);
+  const pushNoToken = await req('POST', '/api/push/register', { token: b, body: {} });
+  check('push registration requires a token', pushNoToken.status === 400);
+  // Creating a notification with a token on file must not throw when FCM is off.
+  const pingTask = await req('POST', '/api/tasks', { token: a, body: { title: 'Ping Bob', workflow_id: wf.data.id, assignee_id: bobId } });
+  check('notifying a push-registered user still works with FCM disabled', pingTask.status === 201);
+  const pushUnreg = await req('POST', '/api/push/unregister', { token: b, body: { token: 'device-token-abc' } });
+  check('a device can unregister from push', pushUnreg.status === 200);
 
   console.log('Chat features');
   // Upload a file (REST multipart), then post a message that carries the

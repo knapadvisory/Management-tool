@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, getToken, setToken, clearToken } from './api.js';
 import { connectSocket, disconnectSocket, getSocket } from './socket.js';
+import { initPush } from './capacitorPush.js';
 import { showDesktopNotification } from './desktopNotify.js';
 import Login from './components/Login.jsx';
 import Sidebar from './components/Sidebar.jsx';
@@ -193,6 +194,23 @@ export default function App() {
     setNotifications([]);
     setUnreadCount(0);
   }
+
+  // Register for mobile push once logged in (no-op in a browser). Tapping a
+  // push opens the relevant task or conversation.
+  const channelsRef = useRef(channels);
+  channelsRef.current = channels;
+  useEffect(() => {
+    if (!user) return undefined;
+    let cleanup;
+    initPush((data) => {
+      if (data?.task_id) { setView({ type: 'tasks' }); setTaskToOpen(Number(data.task_id)); }
+      else if (data?.channel_id) {
+        const ch = channelsRef.current.find((c) => c.id === Number(data.channel_id));
+        setView(ch ? { type: 'channel', channel: ch } : { type: 'messenger' });
+      }
+    }).then((fn) => { cleanup = fn; });
+    return () => { cleanup?.(); };
+  }, [user]);
 
   async function selectNotification(n) {
     if (!n.is_read) {

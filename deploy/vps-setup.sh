@@ -50,6 +50,10 @@ SMTP_USER="${SMTP_USER:-}"
 SMTP_PASS="${SMTP_PASS:-}"
 SMTP_FROM="${SMTP_FROM:-}"
 SMTP_SECURE="${SMTP_SECURE:-}"
+# Optional mobile push (from your Firebase service-account JSON; enables FCM):
+FCM_PROJECT_ID="${FCM_PROJECT_ID:-}"
+FCM_CLIENT_EMAIL="${FCM_CLIENT_EMAIL:-}"
+FCM_PRIVATE_KEY="${FCM_PRIVATE_KEY:-}"
 EOF
 
 # Clean up a broken Caddy apt source from earlier script versions, if present.
@@ -90,6 +94,9 @@ docker run -d --name teamhub --restart unless-stopped \
   ${SMTP_PASS:+-e SMTP_PASS="$SMTP_PASS"} \
   ${SMTP_FROM:+-e SMTP_FROM="$SMTP_FROM"} \
   ${SMTP_SECURE:+-e SMTP_SECURE="$SMTP_SECURE"} \
+  ${FCM_PROJECT_ID:+-e FCM_PROJECT_ID="$FCM_PROJECT_ID"} \
+  ${FCM_CLIENT_EMAIL:+-e FCM_CLIENT_EMAIL="$FCM_CLIENT_EMAIL"} \
+  ${FCM_PRIVATE_KEY:+-e FCM_PRIVATE_KEY="$FCM_PRIVATE_KEY"} \
   -v teamhub-data:/data \
   teamhub:latest
 

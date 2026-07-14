@@ -59,15 +59,40 @@ cd client/android
   backend to connect across mobile networks — see the server deploy config.)
 - **Splash screen** uses the TeamHub navy (`#1a1d29`).
 
+## Push notifications (FCM)
+
+The full push pipeline is built: the app registers its device token after
+login (`client/src/capacitorPush.js` → `POST /api/push/register`), the server
+stores tokens (`push_tokens`) and fires a push through Firebase Cloud Messaging
+on every notification — new DMs, mentions, task assignments, task-chat, and
+incoming calls (`server/src/push.js`, hooked into `createNotification`).
+Tapping a push opens the relevant task or conversation.
+
+All that's left is connecting **your** Firebase project (this can't be
+committed — it's account-specific):
+
+1. Create a Firebase project at <https://console.firebase.google.com> and add an
+   **Android app** with package name `com.knapadvisory.teamhub`.
+2. Download the generated **`google-services.json`** and place it at
+   `client/android/app/google-services.json`. (The Gradle build activates FCM
+   automatically when this file is present; without it the APK still builds,
+   push just stays off.)
+3. In **Project settings → Service accounts**, click **Generate new private
+   key**. From that JSON, set three env vars on the server (the deploy script
+   already reads them):
+   - `FCM_PROJECT_ID`  → `project_id`
+   - `FCM_CLIENT_EMAIL` → `client_email`
+   - `FCM_PRIVATE_KEY` → `private_key` (keep the `\n` escapes; the server
+     un-escapes them)
+4. Redeploy the server (`sudo bash deploy/vps-setup.sh` with those vars set) and
+   rebuild the APK (Actions → Build Android APK) so it carries
+   `google-services.json`.
+
+`GET /api/config` reports `push_enabled: true` once the server vars are set —
+a quick way to confirm the backend half is live.
+
 ## Next steps (not done yet)
 
-- **Push notifications.** The `@capacitor/push-notifications` plugin is
-  installed and permission is requested, but delivering pushes needs: (1) a
-  Firebase project + `google-services.json` dropped into `client/android/app/`,
-  (2) client code that registers the device and sends its FCM token to the
-  backend, and (3) a backend path that sends FCM messages on new
-  messages/calls. This is the natural follow-up to make the app useful in the
-  background.
 - **App icon.** Currently the default Capacitor launcher icon. Drop a
   1024×1024 PNG and run `npx @capacitor/assets generate` to produce all sizes.
 - **Play Store release.** Generate an upload keystore, configure signing in

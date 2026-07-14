@@ -248,6 +248,16 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, id);
 
+-- Device tokens for mobile push (FCM). One row per device; a token belongs to
+-- whoever last registered it (device handoff re-points it).
+CREATE TABLE IF NOT EXISTS push_tokens (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL DEFAULT 'android',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id);
+
 -- Simple key/value store for workspace-wide settings the admin controls
 -- (e.g. which email domains may self-register as members).
 CREATE TABLE IF NOT EXISTS app_settings (

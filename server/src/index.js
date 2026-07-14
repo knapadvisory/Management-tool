@@ -9,6 +9,7 @@ import { Server } from 'socket.io';
 import db from './db.js';
 import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, workspaceSignupCodeRequired, allowedSignupDomains, createWorkspaceAdmin, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, createPasswordReset, findPasswordReset, applyPasswordReset, userByEmail, AVATAR_COLORS } from './auth.js';
 import { emailEnabled, sendMail, layout, button } from './email.js';
+import { pushEnabled } from './push.js';
 import { createWorkspace, workspaceBySlug, workspaceById, publicWorkspace, deleteWorkspace } from './workspaces.js';
 import { isPlatformAdmin, PLATFORM_WORKSPACE_ID, findUsableCompanyCode, consumeCompanyCode, createCompanyCode, listCompanyCodes, revokeCompanyCode, findUsableInvite, consumeInvite } from './codes.js';
 import channelsRouter from './routes/channels.js';
@@ -24,6 +25,7 @@ import searchRouter from './routes/search.js';
 import filesRouter from './routes/files.js';
 import driveRouter from './routes/drive.js';
 import dashboardRouter from './routes/dashboard.js';
+import pushRouter from './routes/push.js';
 import setupSocket from './socket.js';
 import { startReminderScheduler, startAutoArchiveScheduler } from './reminders.js';
 import { createNotification } from './notifications.js';
@@ -68,6 +70,7 @@ app.get('/api/config', (req, res) => {
     // (a DB company-registration code, or the env bootstrap code).
     company_code_required: true,
     email_enabled: emailEnabled(),
+    push_enabled: pushEnabled(),
     avatar_colors: AVATAR_COLORS,
     ice_servers: iceServers(),
   });
@@ -313,6 +316,7 @@ app.use('/api/search', requireAuth, blockGuests, searchRouter);
 app.use('/api/files', requireAuth, blockGuests, filesRouter);
 app.use('/api/drive', requireAuth, blockGuests, driveRouter);
 app.use('/api/dashboard', requireAuth, blockGuests, dashboardRouter);
+app.use('/api/push', requireAuth, pushRouter);
 
 // Serve the built client in production.
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
