@@ -42,6 +42,19 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      # Enables FCM push in the built APK. Set repo secret GOOGLE_SERVICES_JSON
+      # to the base64 of your google-services.json (or commit the file instead).
+      - name: Add google-services.json (from secret, if provided)
+        env:
+          GS: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GS" ]; then
+            echo "$GS" | base64 -d > android/app/google-services.json
+            echo "google-services.json written from secret — push enabled in this build"
+          else
+            echo "No GOOGLE_SERVICES_JSON secret set — APK builds without push"
+          fi
+
       - name: Build debug APK
         working-directory: client/android
         run: |
