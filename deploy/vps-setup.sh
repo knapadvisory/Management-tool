@@ -39,7 +39,8 @@ SIGNUP_CODE="$SIGNUP_CODE"
 WORKSPACE_SIGNUP_CODE="$WORKSPACE_SIGNUP_CODE"
 JWT_SECRET="$JWT_SECRET"
 APP_URL="$APP_URL"
-# Optional TURN relay for calls across strict networks (fill these in to enable):
+# TURN relay for calls across strict networks. Run deploy/turn-setup.sh to stand
+# up coturn on this VPS; it prints these three values to paste in here.
 TURN_URL="${TURN_URL:-}"
 TURN_USERNAME="${TURN_USERNAME:-}"
 TURN_CREDENTIAL="${TURN_CREDENTIAL:-}"
