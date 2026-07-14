@@ -433,6 +433,10 @@ for (const table of ['users', 'channels', 'messages', 'attachments', 'drive_fold
 }
 // Link a task to a client (nullable — most tasks have no client).
 ensureColumn('tasks', 'client_id', 'INTEGER REFERENCES clients(id)');
+// A compliance deadline can be assigned to a staff member (who files it) and,
+// once turned into an actionable task, linked to that task.
+ensureColumn('client_deadlines', 'assignee_id', 'INTEGER REFERENCES users(id)');
+ensureColumn('client_deadlines', 'task_id', 'INTEGER REFERENCES tasks(id)');
 
 // Indexes on migration-added columns must come after the columns exist,
 // otherwise upgrading an existing database fails on startup.

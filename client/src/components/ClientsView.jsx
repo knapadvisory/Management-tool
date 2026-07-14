@@ -13,7 +13,8 @@ function fmtDate(d) {
 }
 const overdue = (d) => d && d < new Date().toISOString().slice(0, 10);
 
-export default function ClientsView({ user, onOpenTask }) {
+export default function ClientsView({ user, users = [], onOpenTask }) {
+  const [tab, setTab] = useState('clients');
   const [clients, setClients] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -21,6 +22,7 @@ export default function ClientsView({ user, onOpenTask }) {
   const [showImport, setShowImport] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [flash, setFlash] = useState(null);
+  const staff = users.filter((u) => u.role !== 'guest');
 
   const load = useCallback(async () => {
     const d = await api('/clients');
@@ -43,7 +45,15 @@ export default function ClientsView({ user, onOpenTask }) {
   function backToList() { setCreating(false); setSelectedId(null); }
 
   return (
-    <div className={`messenger ${showDetail ? 'show-detail' : ''}`}>
+    <div className="clients-page">
+      <div className="files-tabs">
+        <button className={`files-tab ${tab === 'clients' ? 'active' : ''}`} onClick={() => setTab('clients')}>🗂️ Clients</button>
+        <button className={`files-tab ${tab === 'board' ? 'active' : ''}`} onClick={() => setTab('board')}>🗓 Compliance board</button>
+      </div>
+      {tab === 'board' ? (
+        <ComplianceBoard staff={staff} onOpenTask={onOpenTask} />
+      ) : (
+        <div className={`messenger ${showDetail ? 'show-detail' : ''}`}>
       <div className="msgr-list">
         <div className="msgr-search collab-search">
           <input placeholder="Find a client" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -81,7 +91,7 @@ export default function ClientsView({ user, onOpenTask }) {
         {creating ? (
           <ClientForm user={user} onCancel={() => setCreating(false)} onSaved={(c) => { load(); setCreating(false); setSelectedId(c.id); }} />
         ) : selectedId != null ? (
-          <ClientDetail key={selectedId} clientId={selectedId} user={user} onChanged={load} onOpenTask={onOpenTask}
+          <ClientDetail key={selectedId} clientId={selectedId} user={user} staff={staff} onChanged={load} onOpenTask={onOpenTask}
             onDeleted={() => { setSelectedId(null); load(); }} />
         ) : (
           <div className="collab-promo">
@@ -105,16 +115,121 @@ export default function ClientsView({ user, onOpenTask }) {
       )}
       {showBulk && (
         <BulkDeadlinesModal
-          clients={clients}
+          clients={clients} staff={staff}
           onClose={() => setShowBulk(false)}
-          onDone={(r) => { setShowBulk(false); load(); setFlash(`Set on ${r.created} client${r.created === 1 ? '' : 's'}${r.skipped ? ` · ${r.skipped} already had it` : ''}`); }}
+          onDone={(r) => { setShowBulk(false); load(); setFlash(`Set on ${r.created} client${r.created === 1 ? '' : 's'}${r.tasks ? ` · ${r.tasks} task${r.tasks === 1 ? '' : 's'} created` : ''}${r.skipped ? ` · ${r.skipped} already had it` : ''}`); }}
         />
+      )}
+        </div>
       )}
     </div>
   );
 }
 
 const PRESETS = ['GSTR-1', 'GSTR-3B', 'TDS payment', 'PF payment', 'ESI payment', 'Advance tax', 'Professional tax'];
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function shiftMonth(m, delta) {
+  let [y, mo] = m.split('-').map(Number);
+  mo += delta;
+  if (mo < 1) { mo = 12; y -= 1; } else if (mo > 12) { mo = 1; y += 1; }
+  return `${y}-${String(mo).padStart(2, '0')}`;
+}
+
+function ComplianceBoard({ staff = [], onOpenTask }) {
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [data, setData] = useState({ deadlines: [], summary: [] });
+  const [filing, setFiling] = useState('');
+  const [assignee, setAssignee] = useState('');
+  const [status, setStatus] = useState('pending');
+
+  const load = useCallback(async () => {
+    setData(await api(`/clients/deadlines/board?month=${month}`));
+  }, [month]);
+  useEffect(() => {
+    load();
+    const s = getSocket();
+    const onCh = () => load();
+    s?.on('clients:changed', onCh);
+    return () => s?.off('clients:changed', onCh);
+  }, [load]);
+
+  async function toggle(d) {
+    await api(`/clients/${d.client_id}/deadlines/${d.id}`, { method: 'PATCH', body: { completed: !d.completed } });
+    load();
+  }
+  async function makeTask(d) {
+    const r = await api(`/clients/${d.client_id}/deadlines/${d.id}/task`, { method: 'POST' });
+    load();
+    if (r.task_id && confirm('Task created and assigned. Open it now?')) onOpenTask?.(r.task_id);
+  }
+
+  const rows = data.deadlines.filter((d) =>
+    (!filing || d.title === filing) &&
+    (!assignee || (assignee === 'none' ? !d.assignee_id : String(d.assignee_id || '') === assignee)) &&
+    (status === 'all' || (status === 'done' ? d.completed : !d.completed))
+  );
+  const [y, mo] = month.split('-').map(Number);
+
+  return (
+    <div className="compliance-board">
+      <div className="cb-head">
+        <div className="cb-month">
+          <button className="btn btn-sm" onClick={() => setMonth((m) => shiftMonth(m, -1))}>‹</button>
+          <strong>{MONTHS[mo - 1]} {y}</strong>
+          <button className="btn btn-sm" onClick={() => setMonth((m) => shiftMonth(m, 1))}>›</button>
+        </div>
+        <div className="cb-filters">
+          <select value={filing} onChange={(e) => setFiling(e.target.value)}>
+            <option value="">All filings</option>
+            {data.summary.map((s) => <option key={s.title} value={s.title}>{s.title}</option>)}
+          </select>
+          <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+            <option value="">Anyone</option>
+            <option value="none">Unassigned</option>
+            {staff.map((u) => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
+          </select>
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="pending">Pending</option><option value="done">Filed</option><option value="all">All</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="cb-summary">
+        {data.summary.length === 0 && <span className="muted">No compliance deadlines this month.</span>}
+        {data.summary.map((s) => (
+          <button key={s.title} className={`cb-stat ${filing === s.title ? 'on' : ''}`} onClick={() => setFiling(filing === s.title ? '' : s.title)}>
+            <div className="cb-stat-top"><span>{s.title}</span><span className="cb-stat-num">{s.done}/{s.total}</span></div>
+            <div className="cb-bar"><div className="cb-bar-fill" style={{ width: `${s.total ? Math.round((s.done / s.total) * 100) : 0}%` }} /></div>
+          </button>
+        ))}
+      </div>
+
+      <div className="cb-table-wrap">
+        <table className="cb-table">
+          <thead><tr><th></th><th>Filing</th><th>Client</th><th>Who files</th><th>Due</th><th></th></tr></thead>
+          <tbody>
+            {rows.map((d) => (
+              <tr key={d.id} className={d.completed ? 'filed' : (overdue(d.due_date) ? 'overdue' : '')}>
+                <td><input type="checkbox" checked={!!d.completed} onChange={() => toggle(d)} title="Mark filed" /></td>
+                <td className="cb-filing">{d.title}{d.recurrence !== 'none' && <span className="dl-rec">{REC[d.recurrence]}</span>}</td>
+                <td>{d.client_name}</td>
+                <td>{d.assignee_name
+                  ? <span className="cb-assignee"><Avatar user={{ name: d.assignee_name, avatar_color: d.assignee_color }} size={20} /> {d.assignee_name}</span>
+                  : <span className="muted">Unassigned</span>}</td>
+                <td className={!d.completed && overdue(d.due_date) ? 'due-warn' : 'muted'}>{fmtDate(d.due_date)}</td>
+                <td>{d.task_id
+                  ? <button className="icon-btn" title="Open task" onClick={() => onOpenTask?.(d.task_id)}>📋</button>
+                  : <button className="icon-btn" title="Create task" onClick={() => makeTask(d)}>＋📋</button>}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && data.summary.length > 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Nothing matches these filters.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 function BulkImportModal({ onClose, onDone }) {
   const [text, setText] = useState('');
@@ -153,10 +268,12 @@ function BulkImportModal({ onClose, onDone }) {
   );
 }
 
-function BulkDeadlinesModal({ clients, onClose, onDone }) {
+function BulkDeadlinesModal({ clients, staff = [], onClose, onDone }) {
   const [title, setTitle] = useState('GSTR-3B');
   const [due, setDue] = useState('');
   const [rec, setRec] = useState('monthly');
+  const [assignee, setAssignee] = useState('');
+  const [createTasks, setCreateTasks] = useState(false);
   const [sel, setSel] = useState(() => new Set());
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
@@ -179,8 +296,12 @@ function BulkDeadlinesModal({ clients, onClose, onDone }) {
   async function submit() {
     if (!title.trim() || !due || sel.size === 0) return;
     setBusy(true); setError(null);
-    try { onDone(await api('/clients/deadlines/bulk', { method: 'POST', body: { title: title.trim(), due_date: due, recurrence: rec, client_ids: [...sel] } })); }
-    catch (err) { setError(err.message); setBusy(false); }
+    try {
+      onDone(await api('/clients/deadlines/bulk', { method: 'POST', body: {
+        title: title.trim(), due_date: due, recurrence: rec,
+        assignee_id: assignee ? Number(assignee) : null, create_tasks: createTasks, client_ids: [...sel],
+      } }));
+    } catch (err) { setError(err.message); setBusy(false); }
   }
 
   return (
@@ -202,7 +323,14 @@ function BulkDeadlinesModal({ clients, onClose, onDone }) {
               <option value="yearly">Yearly</option><option value="none">One-off</option>
             </select>
           </label>
+          <label className="field">Assign to
+            <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+              <option value="">Unassigned</option>
+              {staff.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </label>
         </div>
+        <label className="checkbox"><input type="checkbox" checked={createTasks} onChange={(e) => setCreateTasks(e.target.checked)} /> Also create an assignable task for each client</label>
 
         <div className="bulk-pick-head">
           <input className="bulk-search" placeholder="Filter clients" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -293,7 +421,7 @@ function ClientForm({ initial, onCancel, onSaved }) {
   );
 }
 
-function ClientDetail({ clientId, user, onChanged, onDeleted, onOpenTask }) {
+function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpenTask }) {
   const [data, setData] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [editing, setEditing] = useState(false);
@@ -347,7 +475,8 @@ function ClientDetail({ clientId, user, onChanged, onDeleted, onOpenTask }) {
         </div>
       )}
 
-      <Deadlines clientId={clientId} deadlines={data.deadlines} onChange={(d) => { setData((x) => ({ ...x, deadlines: d })); onChanged?.(); }} />
+      <Deadlines clientId={clientId} deadlines={data.deadlines} staff={staff} onOpenTask={onOpenTask}
+        onChange={(d) => { setData((x) => ({ ...x, deadlines: d })); onChanged?.(); }} />
       <Contacts clientId={clientId} contacts={data.contacts} onChange={(c2) => setData((x) => ({ ...x, contacts: c2 }))} />
 
       <section className="client-section">
@@ -368,31 +497,40 @@ function ClientDetail({ clientId, user, onChanged, onDeleted, onOpenTask }) {
   );
 }
 
-function Deadlines({ clientId, deadlines, onChange }) {
+function Deadlines({ clientId, deadlines, staff = [], onOpenTask, onChange }) {
   const [title, setTitle] = useState('');
   const [due, setDue] = useState('');
   const [rec, setRec] = useState('none');
+  const base = `/clients/${clientId}/deadlines`;
   async function add(e) {
     e.preventDefault();
     if (!title.trim() || !due) return;
-    const d = await api(`/clients/${clientId}/deadlines`, { method: 'POST', body: { title: title.trim(), due_date: due, recurrence: rec } });
-    onChange(d); setTitle(''); setDue(''); setRec('none');
+    onChange(await api(base, { method: 'POST', body: { title: title.trim(), due_date: due, recurrence: rec } }));
+    setTitle(''); setDue(''); setRec('none');
   }
-  async function toggle(dl) {
-    onChange(await api(`/clients/${clientId}/deadlines/${dl.id}`, { method: 'PATCH', body: { completed: !dl.completed } }));
-  }
-  async function del(dl) {
-    onChange(await api(`/clients/${clientId}/deadlines/${dl.id}`, { method: 'DELETE' }));
+  const patch = async (dl, body) => onChange(await api(`${base}/${dl.id}`, { method: 'PATCH', body }));
+  async function del(dl) { onChange(await api(`${base}/${dl.id}`, { method: 'DELETE' })); }
+  async function makeTask(dl) {
+    const r = await api(`${base}/${dl.id}/task`, { method: 'POST' });
+    onChange(r.deadlines);
+    if (r.task_id && confirm('Task created and assigned. Open it now?')) onOpenTask?.(r.task_id);
   }
   return (
     <section className="client-section">
       <h3>Compliance deadlines</h3>
       {deadlines.map((d) => (
         <div key={d.id} className={`deadline-row ${d.completed ? 'done' : ''}`}>
-          <input type="checkbox" checked={!!d.completed} onChange={() => toggle(d)} />
+          <input type="checkbox" checked={!!d.completed} onChange={() => patch(d, { completed: !d.completed })} />
           <span className="dl-title">{d.title}</span>
           {d.recurrence !== 'none' && <span className="dl-rec">{REC[d.recurrence]}</span>}
+          <select className="dl-assignee" value={d.assignee_id || ''} onChange={(e) => patch(d, { assignee_id: e.target.value ? Number(e.target.value) : null })} title="Who files it">
+            <option value="">Unassigned</option>
+            {staff.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
           <span className={`dl-date ${!d.completed && overdue(d.due_date) ? 'due-warn' : 'muted'}`}>{fmtDate(d.due_date)}</span>
+          {d.task_id
+            ? <button className="icon-btn" title="Open the task" onClick={() => onOpenTask?.(d.task_id)}>📋</button>
+            : <button className="icon-btn" title="Create an assignable task" onClick={() => makeTask(d)}>＋📋</button>}
           <button className="icon-btn" title="Remove" onClick={() => del(d)}>✕</button>
         </div>
       ))}

@@ -111,6 +111,36 @@ async function main() {
   const badBulkDl = await req('POST', '/api/clients/deadlines/bulk', { token: a, body: { title: 'x', due_date: '2026-08-20', client_ids: [] } });
   check('bulk deadline needs at least one client', badBulkDl.status === 400);
 
+  console.log('Assignees, board & task generation');
+  // Assign a deadline to Bob.
+  const cid2 = allClients.find((c) => c.name === 'Bharat Traders').id;
+  const dlA = await req('POST', `/api/clients/${cid2}/deadlines`, { token: a, body: { title: 'PF payment', due_date: '2026-08-15', recurrence: 'monthly', assignee_id: bobId } });
+  check('a deadline can carry an assignee', dlA.data.some((d) => d.title === 'PF payment' && d.assignee_name === 'Bob'));
+
+  // Firm-wide board for the month, with a per-filing summary.
+  const board = await req('GET', '/api/clients/deadlines/board?month=2026-08', { token: b });
+  check('the compliance board lists deadlines with client + assignee', board.data.deadlines.some((d) => d.client_name === 'Bharat Traders' && d.assignee_name === 'Bob'));
+  check('the board summarises per filing', board.data.summary.some((s) => s.title === 'TDS payment' && s.total >= 1));
+
+  // Generate an assignable task from a deadline; completing it ticks the deadline.
+  const pfDeadline = dlA.data.find((d) => d.title === 'PF payment');
+  const gen = await req('POST', `/api/clients/${cid2}/deadlines/${pfDeadline.id}/task`, { token: a });
+  check('a task can be generated from a deadline', gen.status === 201 && gen.data.task_id > 0);
+  const genTask = await req('GET', `/api/tasks/${gen.data.task_id}`, { token: a });
+  check('the generated task is linked to the client + assignee', genTask.data.task.client?.id === cid2 && genTask.data.task.assignee?.id === bobId);
+  const dupTask = await req('POST', `/api/clients/${cid2}/deadlines/${pfDeadline.id}/task`, { token: a });
+  check('a deadline will not spawn a second task', dupTask.status === 400);
+  // Complete the task -> deadline is filed and the next month's PF is created.
+  const doneStage = (await req('GET', '/api/workflows', { token: a })).data.workflows[0].stages.find((s) => s.is_done);
+  await req('PATCH', `/api/tasks/${gen.data.task_id}`, { token: a, body: { stage_id: doneStage.id } });
+  const afterDl = await req('GET', `/api/clients/${cid2}`, { token: a });
+  check('completing the task filed the deadline', afterDl.data.deadlines.find((d) => d.id === pfDeadline.id).completed === 1);
+  check('the next month\'s PF deadline was spawned (keeping the assignee)', afterDl.data.deadlines.some((d) => d.title === 'PF payment' && d.completed === 0 && d.due_date === '2026-09-15' && d.assignee_name === 'Bob'));
+
+  // Bulk set with assignee + task generation.
+  const bulkT = await req('POST', '/api/clients/deadlines/bulk', { token: a, body: { title: 'GSTR-1', due_date: '2026-08-11', recurrence: 'monthly', assignee_id: bobId, create_tasks: true, client_ids: [cid2] } });
+  check('bulk can also generate tasks', bulkT.data.created === 1 && bulkT.data.tasks === 1);
+
   console.log('Permissions & cleanup');
   const memberDelete = await req('DELETE', `/api/clients/${cid}`, { token: b });
   check('a member cannot delete a client', memberDelete.status === 403);

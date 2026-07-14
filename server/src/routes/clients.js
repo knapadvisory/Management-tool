@@ -1,22 +1,21 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
+import { completeDeadline } from '../compliance.js';
 
 const router = Router();
 const TYPES = ['company', 'individual'];
 const STATUSES = ['active', 'prospect', 'inactive'];
 const RECURRENCES = ['none', 'monthly', 'quarterly', 'yearly'];
 
-// Advance a YYYY-MM-DD date by one recurrence step.
-function advanceDate(dateStr, recurrence) {
-  const d = new Date(dateStr + 'T00:00:00Z');
-  if (Number.isNaN(d.getTime())) return null;
-  if (recurrence === 'monthly') d.setUTCMonth(d.getUTCMonth() + 1);
-  else if (recurrence === 'quarterly') d.setUTCMonth(d.getUTCMonth() + 3);
-  else if (recurrence === 'yearly') d.setUTCFullYear(d.getUTCFullYear() + 1);
-  else return null;
-  return d.toISOString().slice(0, 10);
-}
+// Deadlines for a client, with the assignee (who files it) joined in.
+const deadlinesFor = (clientId) => db.prepare(`
+  SELECT d.*, u.name AS assignee_name, u.avatar_color AS assignee_color
+  FROM client_deadlines d LEFT JOIN users u ON u.id = d.assignee_id
+  WHERE d.client_id = ? ORDER BY d.completed, d.due_date
+`).all(clientId);
+
+const isWsUser = (id, ws) => id && db.prepare('SELECT 1 FROM users WHERE id = ? AND workspace_id = ?').get(id, ws);
 
 function clientWithMeta(c) {
   const openTasks = db.prepare(`
@@ -105,23 +104,68 @@ router.post('/deadlines/bulk', (req, res) => {
   const title = String(req.body.title || '').trim();
   const due_date = String(req.body.due_date || '').trim();
   const recurrence = RECURRENCES.includes(req.body.recurrence) ? req.body.recurrence : 'monthly';
+  const assignee_id = isWsUser(req.body.assignee_id, req.workspaceId) ? req.body.assignee_id : null;
+  const createTasks = !!req.body.create_tasks;
   const ids = Array.isArray(req.body.client_ids) ? [...new Set(req.body.client_ids.map(Number).filter(Boolean))] : [];
   if (!title) return res.status(400).json({ error: 'A deadline title is required' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(due_date)) return res.status(400).json({ error: 'A valid due date (YYYY-MM-DD) is required' });
   if (!ids.length) return res.status(400).json({ error: 'Select at least one client' });
-  const valid = new Set(db.prepare('SELECT id FROM clients WHERE workspace_id = ?').all(req.workspaceId).map((r) => r.id));
+  const clientsById = new Map(db.prepare('SELECT id, name FROM clients WHERE workspace_id = ?').all(req.workspaceId).map((c) => [c.id, c]));
   const hasOpen = db.prepare('SELECT 1 FROM client_deadlines WHERE client_id = ? AND title = ? AND completed = 0');
-  const ins = db.prepare('INSERT INTO client_deadlines (client_id, title, due_date, recurrence, created_by) VALUES (?, ?, ?, ?, ?)');
-  let created = 0, skipped = 0;
+  const insDl = db.prepare('INSERT INTO client_deadlines (client_id, title, due_date, recurrence, assignee_id, created_by) VALUES (?, ?, ?, ?, ?, ?)');
+  // For optional task generation.
+  const wf = createTasks ? db.prepare('SELECT * FROM workflows WHERE workspace_id = ? ORDER BY id LIMIT 1').get(req.workspaceId) : null;
+  const stage = wf ? db.prepare('SELECT id FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id) : null;
+  const insTask = db.prepare(`INSERT INTO tasks (title, workflow_id, client_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, 'high', ?, 'none', ?)`);
+  const insWatch = db.prepare('INSERT OR IGNORE INTO task_watchers (task_id, user_id) VALUES (?, ?)');
+  let created = 0, skipped = 0, tasks = 0;
   db.transaction(() => {
     for (const cid of ids) {
-      if (!valid.has(cid) || hasOpen.get(cid, title)) { skipped++; continue; }
-      ins.run(cid, title, due_date, recurrence, req.user.id);
+      const client = clientsById.get(cid);
+      if (!client || hasOpen.get(cid, title)) { skipped++; continue; }
+      const dlInfo = insDl.run(cid, title, due_date, recurrence, assignee_id, req.user.id);
       created++;
+      if (createTasks && stage) {
+        const tInfo = insTask.run(`${title} — ${client.name}`, wf.id, cid, stage.id, assignee_id, req.user.id, due_date, req.workspaceId);
+        insWatch.run(tInfo.lastInsertRowid, req.user.id);
+        if (assignee_id) insWatch.run(tInfo.lastInsertRowid, assignee_id);
+        db.prepare('UPDATE client_deadlines SET task_id = ? WHERE id = ?').run(tInfo.lastInsertRowid, dlInfo.lastInsertRowid);
+        tasks++;
+      }
     }
   })();
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
-  res.status(201).json({ created, skipped });
+  res.status(201).json({ created, skipped, tasks });
+});
+
+// Firm-wide compliance board: every deadline due up to the end of a month
+// (plus anything still-open and overdue from before), with client + assignee,
+// and a per-filing summary (how many filed vs total).
+router.get('/deadlines/board', (req, res) => {
+  const m = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : new Date().toISOString().slice(0, 7);
+  const start = `${m}-01`;
+  const end = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).toISOString().slice(0, 10); // last day of month
+  const rows = db.prepare(`
+    SELECT d.*, c.name AS client_name, u.name AS assignee_name, u.avatar_color AS assignee_color,
+           EXISTS (SELECT 1 FROM tasks t WHERE t.id = d.task_id) AS has_task
+    FROM client_deadlines d
+    JOIN clients c ON c.id = d.client_id
+    LEFT JOIN users u ON u.id = d.assignee_id
+    WHERE c.workspace_id = ?
+      AND d.due_date <= ?
+      AND (d.completed = 0 OR d.due_date >= ?)
+    ORDER BY d.due_date, c.name
+  `).all(req.workspaceId, end, start);
+  // Per-filing progress (GSTR-3B: 40/100 filed, …).
+  const byTitle = new Map();
+  for (const r of rows) {
+    if (!byTitle.has(r.title)) byTitle.set(r.title, { title: r.title, total: 0, done: 0 });
+    const s = byTitle.get(r.title);
+    s.total += 1;
+    if (r.completed) s.done += 1;
+  }
+  res.json({ month: m, deadlines: rows, summary: [...byTitle.values()].sort((a, b) => b.total - a.total) });
 });
 
 router.get('/:id', (req, res) => {
@@ -132,8 +176,7 @@ router.get('/:id', (req, res) => {
     SELECT n.*, u.name AS user_name, u.avatar_color FROM client_notes n
     JOIN users u ON u.id = n.user_id WHERE n.client_id = ? ORDER BY n.id DESC
   `).all(client.id);
-  const deadlines = db.prepare('SELECT * FROM client_deadlines WHERE client_id = ? ORDER BY completed, due_date').all(client.id);
-  res.json({ client: clientWithMeta(client), contacts, notes, deadlines });
+  res.json({ client: clientWithMeta(client), contacts, notes, deadlines: deadlinesFor(client.id) });
 });
 
 router.patch('/:id', (req, res) => {
@@ -245,38 +288,64 @@ router.post('/:id/deadlines', (req, res) => {
   if (!title) return res.status(400).json({ error: 'Deadline title is required' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(due_date)) return res.status(400).json({ error: 'A valid due date (YYYY-MM-DD) is required' });
   const recurrence = RECURRENCES.includes(req.body.recurrence) ? req.body.recurrence : 'none';
-  db.prepare('INSERT INTO client_deadlines (client_id, title, due_date, recurrence, created_by) VALUES (?, ?, ?, ?, ?)')
-    .run(client.id, title, due_date, recurrence, req.user.id);
-  res.status(201).json(db.prepare('SELECT * FROM client_deadlines WHERE client_id = ? ORDER BY completed, due_date').all(client.id));
+  const assignee_id = isWsUser(req.body.assignee_id, req.workspaceId) ? req.body.assignee_id : null;
+  db.prepare('INSERT INTO client_deadlines (client_id, title, due_date, recurrence, assignee_id, created_by) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(client.id, title, due_date, recurrence, assignee_id, req.user.id);
+  res.status(201).json(deadlinesFor(client.id));
 });
 
-// Toggle a deadline done. Completing a recurring one spawns the next occurrence.
+// Toggle a deadline done (recurring ones spawn the next), or edit its fields
+// including the assignee.
 router.patch('/:id/deadlines/:did', (req, res) => {
   const client = load(req, res);
   if (!client) return;
   const dl = db.prepare('SELECT * FROM client_deadlines WHERE id = ? AND client_id = ?').get(req.params.did, client.id);
   if (!dl) return res.status(404).json({ error: 'Deadline not found' });
   if (req.body.completed !== undefined) {
-    const done = req.body.completed ? 1 : 0;
-    db.prepare('UPDATE client_deadlines SET completed = ? WHERE id = ?').run(done, dl.id);
-    if (done && dl.recurrence !== 'none') {
-      const next = advanceDate(dl.due_date, dl.recurrence);
-      if (next) db.prepare('INSERT INTO client_deadlines (client_id, title, due_date, recurrence, created_by) VALUES (?, ?, ?, ?, ?)')
-        .run(client.id, dl.title, next, dl.recurrence, req.user.id);
-    }
+    if (req.body.completed) completeDeadline(dl, req.user.id);
+    else db.prepare('UPDATE client_deadlines SET completed = 0 WHERE id = ?').run(dl.id);
+  }
+  if (req.body.assignee_id !== undefined) {
+    const aid = isWsUser(req.body.assignee_id, req.workspaceId) ? req.body.assignee_id : null;
+    db.prepare('UPDATE client_deadlines SET assignee_id = ? WHERE id = ?').run(aid, dl.id);
   }
   if (req.body.title !== undefined || req.body.due_date !== undefined || req.body.recurrence !== undefined) {
     db.prepare('UPDATE client_deadlines SET title = COALESCE(?, title), due_date = COALESCE(?, due_date), recurrence = COALESCE(?, recurrence) WHERE id = ?')
       .run(req.body.title?.trim() || null, req.body.due_date || null, RECURRENCES.includes(req.body.recurrence) ? req.body.recurrence : null, dl.id);
   }
-  res.json(db.prepare('SELECT * FROM client_deadlines WHERE client_id = ? ORDER BY completed, due_date').all(client.id));
+  res.json(deadlinesFor(client.id));
 });
 
 router.delete('/:id/deadlines/:did', (req, res) => {
   const client = load(req, res);
   if (!client) return;
   db.prepare('DELETE FROM client_deadlines WHERE id = ? AND client_id = ?').run(req.params.did, client.id);
-  res.json(db.prepare('SELECT * FROM client_deadlines WHERE client_id = ? ORDER BY completed, due_date').all(client.id));
+  res.json(deadlinesFor(client.id));
+});
+
+// Turn a deadline into an assignable task (in the default board), linked to the
+// client + assignee, due on the deadline date. Completing that task later ticks
+// the deadline off automatically.
+router.post('/:id/deadlines/:did/task', (req, res) => {
+  const client = load(req, res);
+  if (!client) return;
+  const dl = db.prepare('SELECT * FROM client_deadlines WHERE id = ? AND client_id = ?').get(req.params.did, client.id);
+  if (!dl) return res.status(404).json({ error: 'Deadline not found' });
+  if (dl.task_id && db.prepare('SELECT 1 FROM tasks WHERE id = ?').get(dl.task_id)) {
+    return res.status(400).json({ error: 'A task already exists for this deadline' });
+  }
+  const wf = db.prepare('SELECT * FROM workflows WHERE workspace_id = ? ORDER BY id LIMIT 1').get(req.workspaceId);
+  if (!wf) return res.status(400).json({ error: 'No board exists to create the task in' });
+  const stage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
+  const info = db.prepare(`
+    INSERT INTO tasks (title, description, workflow_id, client_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'high', ?, 'none', ?)
+  `).run(`${dl.title} — ${client.name}`, '', wf.id, client.id, stage.id, dl.assignee_id || null, req.user.id, dl.due_date, req.workspaceId);
+  const taskId = info.lastInsertRowid;
+  db.prepare('INSERT OR IGNORE INTO task_watchers (task_id, user_id) VALUES (?, ?)').run(taskId, req.user.id);
+  if (dl.assignee_id) db.prepare('INSERT OR IGNORE INTO task_watchers (task_id, user_id) VALUES (?, ?)').run(taskId, dl.assignee_id);
+  db.prepare('UPDATE client_deadlines SET task_id = ? WHERE id = ?').run(taskId, dl.id);
+  res.status(201).json({ task_id: taskId, deadlines: deadlinesFor(client.id) });
 });
 
 export default router;

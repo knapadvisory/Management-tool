@@ -1609,6 +1609,31 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .bulk-client-row:last-child { border-bottom: none; }
 .bulk-client-row:hover { background: var(--surface-2); }
 
+/* Clients: tabs + compliance board */
+.clients-page { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.dl-assignee { font-size: 12px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); max-width: 120px; }
+.compliance-board { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 18px 22px; overflow-y: auto; }
+.cb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.cb-month { display: flex; align-items: center; gap: 10px; font-size: 16px; }
+.cb-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.cb-filters select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.cb-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.cb-stat { text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; cursor: pointer; }
+.cb-stat.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.cb-stat-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; font-weight: 600; color: var(--ink, var(--text)); }
+.cb-stat-num { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 700; }
+.cb-bar { height: 6px; background: var(--surface-2); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+.cb-bar-fill { height: 100%; background: var(--success); border-radius: 4px; transition: width .3s ease; }
+.cb-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+.cb-table { width: 100%; border-collapse: collapse; min-width: 640px; }
+.cb-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; }
+.cb-table td { padding: 9px 12px; border-bottom: 1px solid var(--surface-2); font-size: 14px; }
+.cb-table tr.filed td { opacity: .55; }
+.cb-table tr.filed .cb-filing { text-decoration: line-through; }
+.cb-table tr.overdue td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.cb-filing { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.cb-assignee { display: inline-flex; align-items: center; gap: 6px; }
+
 /* ============================================================
    Mobile / responsive
    ============================================================ */

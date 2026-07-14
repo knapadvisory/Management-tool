@@ -364,7 +364,7 @@ export default function App() {
           <FilesView user={user} users={users} initialMode={view.type === 'drive' ? 'drive' : 'files'} />
         )}
         {view?.type === 'clients' && (
-          <ClientsView user={user} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
+          <ClientsView user={user} users={users} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
         )}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'admin' && user.role === 'admin' && (

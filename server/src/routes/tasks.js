@@ -3,6 +3,7 @@ import db from '../db.js';
 import { publicUser } from '../auth.js';
 import { createNotification } from '../notifications.js';
 import { nextDueDate } from '../reminders.js';
+import { completeDeadlinesForTask } from '../compliance.js';
 
 const router = Router();
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -369,8 +370,14 @@ router.patch('/:id', (req, res) => {
   // (completed status or a done stage); clear it (and any archive) if reopened.
   const now = db.prepare('SELECT t.status, t.completed_at, s.is_done FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id WHERE t.id = ?').get(task.id);
   const isDoneNow = now.status === 'completed' || !!now.is_done;
-  if (isDoneNow && !now.completed_at) db.prepare(`UPDATE tasks SET completed_at = datetime('now') WHERE id = ?`).run(task.id);
-  else if (!isDoneNow && now.completed_at) db.prepare('UPDATE tasks SET completed_at = NULL, archived_at = NULL WHERE id = ?').run(task.id);
+  if (isDoneNow && !now.completed_at) {
+    db.prepare(`UPDATE tasks SET completed_at = datetime('now') WHERE id = ?`).run(task.id);
+    // If this task was generated from a compliance deadline, tick the deadline
+    // off (and roll a recurring one to its next period).
+    completeDeadlinesForTask(task.id, req.user.id);
+  } else if (!isDoneNow && now.completed_at) {
+    db.prepare('UPDATE tasks SET completed_at = NULL, archived_at = NULL WHERE id = ?').run(task.id);
+  }
 
   const updated = emitChanged(req, task.id);
   if (assignee_id && assignee_id !== task.assignee_id && assignee_id !== req.user.id) {
