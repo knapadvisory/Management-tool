@@ -71,6 +71,59 @@ router.post('/', (req, res) => {
   res.status(201).json(clientWithMeta(db.prepare('SELECT * FROM clients WHERE id = ?').get(info.lastInsertRowid)));
 });
 
+// Bulk-create clients from a pasted list. Skips blanks and case-insensitive
+// duplicate names (so re-importing is safe).
+router.post('/bulk', (req, res) => {
+  const rows = Array.isArray(req.body.clients) ? req.body.clients : [];
+  if (!rows.length) return res.status(400).json({ error: 'Provide at least one client' });
+  const existing = new Set(db.prepare('SELECT LOWER(name) AS n FROM clients WHERE workspace_id = ?').all(req.workspaceId).map((r) => r.n));
+  const ins = db.prepare(`
+    INSERT INTO clients (name, type, status, email, phone, gstin, pan, address, notes, created_by, workspace_id)
+    VALUES (@name, @type, @status, @email, @phone, @gstin, @pan, @address, @notes, @created_by, @workspace_id)
+  `);
+  let created = 0, skipped = 0;
+  db.transaction(() => {
+    for (const r of rows) {
+      const f = clientFields(r);
+      if (!f.name || existing.has(f.name.toLowerCase())) { skipped++; continue; }
+      existing.add(f.name.toLowerCase());
+      ins.run({
+        name: f.name, type: f.type || 'company', status: f.status || 'active',
+        email: f.email || '', phone: f.phone || '', gstin: f.gstin || '', pan: f.pan || '',
+        address: f.address || '', notes: f.notes || '', created_by: req.user.id, workspace_id: req.workspaceId,
+      });
+      created++;
+    }
+  })();
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
+  res.status(201).json({ created, skipped });
+});
+
+// Assign one recurring deadline (e.g. GSTR-3B, monthly) to many clients at once.
+// Skips clients that already have an open deadline with the same title.
+router.post('/deadlines/bulk', (req, res) => {
+  const title = String(req.body.title || '').trim();
+  const due_date = String(req.body.due_date || '').trim();
+  const recurrence = RECURRENCES.includes(req.body.recurrence) ? req.body.recurrence : 'monthly';
+  const ids = Array.isArray(req.body.client_ids) ? [...new Set(req.body.client_ids.map(Number).filter(Boolean))] : [];
+  if (!title) return res.status(400).json({ error: 'A deadline title is required' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due_date)) return res.status(400).json({ error: 'A valid due date (YYYY-MM-DD) is required' });
+  if (!ids.length) return res.status(400).json({ error: 'Select at least one client' });
+  const valid = new Set(db.prepare('SELECT id FROM clients WHERE workspace_id = ?').all(req.workspaceId).map((r) => r.id));
+  const hasOpen = db.prepare('SELECT 1 FROM client_deadlines WHERE client_id = ? AND title = ? AND completed = 0');
+  const ins = db.prepare('INSERT INTO client_deadlines (client_id, title, due_date, recurrence, created_by) VALUES (?, ?, ?, ?, ?)');
+  let created = 0, skipped = 0;
+  db.transaction(() => {
+    for (const cid of ids) {
+      if (!valid.has(cid) || hasOpen.get(cid, title)) { skipped++; continue; }
+      ins.run(cid, title, due_date, recurrence, req.user.id);
+      created++;
+    }
+  })();
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
+  res.status(201).json({ created, skipped });
+});
+
 router.get('/:id', (req, res) => {
   const client = load(req, res);
   if (!client) return;

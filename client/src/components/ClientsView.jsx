@@ -18,6 +18,9 @@ export default function ClientsView({ user, onOpenTask }) {
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState('');
+  const [showImport, setShowImport] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
+  const [flash, setFlash] = useState(null);
 
   const load = useCallback(async () => {
     const d = await api('/clients');
@@ -46,6 +49,11 @@ export default function ClientsView({ user, onOpenTask }) {
           <input placeholder="Find a client" value={query} onChange={(e) => setQuery(e.target.value)} />
           <button className="collab-new" title="New client" onClick={() => { setCreating(true); setSelectedId(null); }}>＋</button>
         </div>
+        <div className="client-toolbar">
+          <button className="btn btn-sm" onClick={() => setShowImport(true)}>⬆ Import list</button>
+          <button className="btn btn-sm" onClick={() => setShowBulk(true)}>🗓 Bulk deadlines</button>
+        </div>
+        {flash && <div className="client-flash">{flash}</div>}
 
         {visible.map((c) => (
           <button key={c.id} className={`msgr-row client-row ${selectedId === c.id ? 'active' : ''}`} onClick={() => selectClient(c.id)}>
@@ -87,6 +95,144 @@ export default function ClientsView({ user, onOpenTask }) {
             <button className="btn btn-primary" onClick={() => setCreating(true)}>Add a client</button>
           </div>
         )}
+      </div>
+
+      {showImport && (
+        <BulkImportModal
+          onClose={() => setShowImport(false)}
+          onDone={(r) => { setShowImport(false); load(); setFlash(`Imported ${r.created} client${r.created === 1 ? '' : 's'}${r.skipped ? ` · ${r.skipped} skipped (duplicates)` : ''}`); }}
+        />
+      )}
+      {showBulk && (
+        <BulkDeadlinesModal
+          clients={clients}
+          onClose={() => setShowBulk(false)}
+          onDone={(r) => { setShowBulk(false); load(); setFlash(`Set on ${r.created} client${r.created === 1 ? '' : 's'}${r.skipped ? ` · ${r.skipped} already had it` : ''}`); }}
+        />
+      )}
+    </div>
+  );
+}
+
+const PRESETS = ['GSTR-1', 'GSTR-3B', 'TDS payment', 'PF payment', 'ESI payment', 'Advance tax', 'Professional tax'];
+
+function BulkImportModal({ onClose, onDone }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const parsed = text.split('\n').map((line) => {
+    const parts = line.split(/\t|,/).map((s) => s.trim());
+    return { name: parts[0], gstin: parts[1] || '', email: parts[2] || '', phone: parts[3] || '' };
+  }).filter((r) => r.name);
+
+  async function submit() {
+    if (!parsed.length) return;
+    setBusy(true); setError(null);
+    try { onDone(await api('/clients/bulk', { method: 'POST', body: { clients: parsed } })); }
+    catch (err) { setError(err.message); setBusy(false); }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal bulk-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header"><strong>Import clients</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <p className="muted" style={{ marginTop: 0 }}>One client per line. Optionally add more, comma-separated: <code>Name, GSTIN, Email, Phone</code></p>
+        <textarea className="bulk-textarea" rows={12} autoFocus value={text} onChange={(e) => setText(e.target.value)}
+          placeholder={'Acme Pvt Ltd\nBharat Traders, 29ABCDE1234F1Z5\nR. Sharma & Co, , ca@sharma.in, 9876543210'} />
+        {error && <div className="form-error">{error}</div>}
+        <div className="modal-footer">
+          <span className="muted">{parsed.length} client{parsed.length === 1 ? '' : 's'} detected</span>
+          <div className="footer-actions">
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" disabled={busy || !parsed.length} onClick={submit}>{busy ? 'Importing…' : `Import ${parsed.length}`}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BulkDeadlinesModal({ clients, onClose, onDone }) {
+  const [title, setTitle] = useState('GSTR-3B');
+  const [due, setDue] = useState('');
+  const [rec, setRec] = useState('monthly');
+  const [sel, setSel] = useState(() => new Set());
+  const [q, setQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState('active');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const filtered = clients.filter((c) => (statusFilter === 'all' || c.status === statusFilter) && (!q.trim() || c.name.toLowerCase().includes(q.trim().toLowerCase())));
+  const allFilteredSelected = filtered.length > 0 && filtered.every((c) => sel.has(c.id));
+
+  function toggle(id) { setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
+  function toggleAll() {
+    setSel((s) => {
+      const n = new Set(s);
+      if (allFilteredSelected) filtered.forEach((c) => n.delete(c.id));
+      else filtered.forEach((c) => n.add(c.id));
+      return n;
+    });
+  }
+
+  async function submit() {
+    if (!title.trim() || !due || sel.size === 0) return;
+    setBusy(true); setError(null);
+    try { onDone(await api('/clients/deadlines/bulk', { method: 'POST', body: { title: title.trim(), due_date: due, recurrence: rec, client_ids: [...sel] } })); }
+    catch (err) { setError(err.message); setBusy(false); }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal bulk-modal wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header"><strong>Set a recurring deadline on many clients</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
+
+        <div className="bulk-presets">
+          {PRESETS.map((p) => (
+            <button key={p} className={`chip ${title === p ? 'on' : ''}`} onClick={() => setTitle(p)}>{p}</button>
+          ))}
+        </div>
+        <div className="field-row">
+          <label className="field">Deadline<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. GSTR-3B" /></label>
+          <label className="field">First due date<input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
+          <label className="field">Repeats
+            <select value={rec} onChange={(e) => setRec(e.target.value)}>
+              <option value="monthly">Monthly</option><option value="quarterly">Quarterly</option>
+              <option value="yearly">Yearly</option><option value="none">One-off</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="bulk-pick-head">
+          <input className="bulk-search" placeholder="Filter clients" value={q} onChange={(e) => setQ(e.target.value)} />
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="active">Active</option><option value="prospect">Prospect</option>
+            <option value="inactive">Inactive</option><option value="all">All statuses</option>
+          </select>
+          <label className="checkbox"><input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} /> Select all ({filtered.length})</label>
+        </div>
+        <div className="bulk-client-list">
+          {filtered.map((c) => (
+            <label key={c.id} className="bulk-client-row">
+              <input type="checkbox" checked={sel.has(c.id)} onChange={() => toggle(c.id)} />
+              <span className={`client-avatar ${c.type}`} style={{ width: 26, height: 26, fontSize: 13 }}>{c.type === 'individual' ? '👤' : '🏢'}</span>
+              <span>{c.name}</span>
+            </label>
+          ))}
+          {filtered.length === 0 && <div className="empty-hint" style={{ padding: 12 }}>No clients match.</div>}
+        </div>
+
+        {error && <div className="form-error">{error}</div>}
+        <div className="modal-footer">
+          <span className="muted">{sel.size} selected</span>
+          <div className="footer-actions">
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" disabled={busy || !title.trim() || !due || sel.size === 0} onClick={submit}>
+              {busy ? 'Setting…' : `Set on ${sel.size} client${sel.size === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

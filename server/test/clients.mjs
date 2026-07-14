@@ -90,6 +90,27 @@ async function main() {
   check('client detail bundles contacts + deadlines', detail.data.contacts.length === 1 && detail.data.deadlines.length >= 1);
   check('client meta counts open tasks', detail.data.client.open_task_count === 1);
 
+  console.log('Bulk import + bulk deadlines');
+  const bulk = await req('POST', '/api/clients/bulk', { token: a, body: { clients: [
+    { name: 'Bharat Traders', gstin: '27AAAAA0000A1Z5' },
+    { name: 'R Sharma & Co', email: 'ca@sharma.in' },
+    { name: 'Acme Pvt Ltd' },   // duplicate of the earlier client -> skipped
+    { name: '   ' },            // blank -> skipped
+  ] } });
+  check('bulk import creates new clients and skips dupes/blanks', bulk.status === 201 && bulk.data.created === 2 && bulk.data.skipped === 2);
+  const allClients = (await req('GET', '/api/clients', { token: a })).data.clients;
+  check('imported clients appear in the list', allClients.some((c) => c.name === 'Bharat Traders') && allClients.some((c) => c.name === 'R Sharma & Co'));
+
+  const targetIds = allClients.map((c) => c.id);
+  const bulkDl = await req('POST', '/api/clients/deadlines/bulk', { token: a, body: { title: 'TDS payment', due_date: '2026-08-07', recurrence: 'monthly', client_ids: targetIds } });
+  check('bulk deadline set on every selected client', bulkDl.status === 201 && bulkDl.data.created === targetIds.length);
+  const rerun = await req('POST', '/api/clients/deadlines/bulk', { token: a, body: { title: 'TDS payment', due_date: '2026-08-07', recurrence: 'monthly', client_ids: targetIds } });
+  check('re-running skips clients that already have that open deadline', rerun.data.created === 0 && rerun.data.skipped === targetIds.length);
+  const oneClient = await req('GET', `/api/clients/${targetIds[0]}`, { token: a });
+  check('the bulk deadline shows on a client', oneClient.data.deadlines.some((d) => d.title === 'TDS payment' && d.recurrence === 'monthly'));
+  const badBulkDl = await req('POST', '/api/clients/deadlines/bulk', { token: a, body: { title: 'x', due_date: '2026-08-20', client_ids: [] } });
+  check('bulk deadline needs at least one client', badBulkDl.status === 400);
+
   console.log('Permissions & cleanup');
   const memberDelete = await req('DELETE', `/api/clients/${cid}`, { token: b });
   check('a member cannot delete a client', memberDelete.status === 403);
