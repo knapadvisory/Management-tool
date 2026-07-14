@@ -58,6 +58,7 @@ export default function App() {
   const [taskToOpen, setTaskToOpen] = useState(null);
   const [avatarColors, setAvatarColors] = useState([]);
   const [settings, setSettings] = useState(null); // null or { section }
+  const [drawerOpen, setDrawerOpen] = useState(false); // mobile sidebar drawer
   // Always-current pointer to selectNotification, so desktop-notification
   // clicks navigate using the latest state (channels, etc.).
   const selectNotifRef = useRef(null);
@@ -272,7 +273,8 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app ${drawerOpen ? 'drawer-open' : ''}`}>
+      {drawerOpen && <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)} />}
       <Sidebar
         user={user}
         workspace={workspace}
@@ -281,9 +283,9 @@ export default function App() {
         users={users}
         onlineIds={onlineIds}
         view={view}
-        onSelectChannel={(channel) => setView({ type: 'channel', channel })}
-        onSelectView={(type) => setView({ type })}
-        onOpenDm={openDm}
+        onSelectChannel={(channel) => { setView({ type: 'channel', channel }); setDrawerOpen(false); }}
+        onSelectView={(type) => { setView({ type }); setDrawerOpen(false); }}
+        onOpenDm={(u) => { openDm(u); setDrawerOpen(false); }}
         onJoinChannel={joinChannel}
         onChannelCreated={async (channel) => {
           getSocket()?.emit('channel:subscribe', channel.id);
@@ -301,6 +303,11 @@ export default function App() {
         onMarkAllRead={markAllRead}
       />
       <main className="main">
+        <div className="mobile-topbar">
+          <button className="mobile-menu-btn" aria-label="Menu" onClick={() => setDrawerOpen(true)}>☰</button>
+          <span className="mobile-topbar-title">{workspace?.name || 'TeamHub'}</span>
+          <button className="mobile-menu-btn" aria-label="Search" onClick={() => setSearchOpen(true)}>🔍</button>
+        </div>
         {view?.type === 'dashboard' && (
           <DashboardView
             user={user}

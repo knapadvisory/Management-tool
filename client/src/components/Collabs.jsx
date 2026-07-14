@@ -65,8 +65,11 @@ export default function Collabs({ user, users = [], collabs = [], onlineIds = []
   function openConference() { setConferenceMode(true); setCreating(false); setSelectedId(null); }
   function selectCollab(id) { setCreating(false); setConferenceMode(false); setSelectedId(id); }
 
+  const showDetail = creating || conferenceMode || !!selected;
+  function backToList() { setCreating(false); setConferenceMode(false); setSelectedId(null); }
+
   return (
-    <div className="messenger">
+    <div className={`messenger ${showDetail ? 'show-detail' : ''}`}>
       <div className="msgr-list">
         <div className="msgr-search collab-search">
           <input placeholder="Find a collab" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -105,6 +108,7 @@ export default function Collabs({ user, users = [], collabs = [], onlineIds = []
       </div>
 
       <div className="msgr-pane">
+        {showDetail && <button className="mobile-back" onClick={backToList}>← Collabs</button>}
         {creating ? (
           <CollabForm
             user={user}

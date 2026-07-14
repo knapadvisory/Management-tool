@@ -44,7 +44,7 @@ export default function Messenger({ user, users = [], channels = [], onlineIds =
   }
 
   return (
-    <div className="messenger">
+    <div className={`messenger ${activeChannel ? 'show-detail' : ''}`}>
       <div className="msgr-list">
         <div className="msgr-search">
           <input placeholder="Find employee or chat" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -95,7 +95,10 @@ export default function Messenger({ user, users = [], channels = [], onlineIds =
 
       <div className="msgr-pane">
         {activeChannel ? (
-          <ChatView key={activeChannel.id} channel={activeChannel} user={user} users={users} onlineIds={onlineIds} />
+          <>
+            <button className="mobile-back" onClick={() => setSelectedId(null)}>← Chats</button>
+            <ChatView key={activeChannel.id} channel={activeChannel} user={user} users={users} onlineIds={onlineIds} />
+          </>
         ) : (
           <div className="msgr-empty">
             <div className="msgr-empty-art">💬</div>

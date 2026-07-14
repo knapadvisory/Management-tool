@@ -1531,3 +1531,74 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .rel-self { background: var(--surface-2); color: var(--text); }
 .rel-to-me { background: color-mix(in srgb, #0ea5e9 20%, transparent); color: #0284c7; }
 .rel-by-me { background: color-mix(in srgb, #2eb67d 20%, transparent); color: #15803d; }
+
+/* ============================================================
+   Mobile / responsive
+   ============================================================ */
+.mobile-topbar { display: none; }
+.mobile-back { display: none; }
+.drawer-backdrop { display: none; }
+
+@media (max-width: 820px) {
+  /* --- Sidebar becomes an off-canvas drawer --- */
+  .sidebar {
+    position: fixed; top: 0; left: 0; height: 100%; z-index: 60;
+    width: 264px; max-width: 84vw;
+    transform: translateX(-100%); transition: transform .22s ease;
+    box-shadow: 0 0 48px rgba(0,0,0,.45);
+  }
+  .app.drawer-open .sidebar { transform: translateX(0); }
+  .drawer-backdrop { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 55; }
+
+  /* --- Mobile top bar (hamburger + title + search) --- */
+  .mobile-topbar {
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  .mobile-menu-btn {
+    background: none; border: none; font-size: 20px; line-height: 1;
+    padding: 8px 10px; color: var(--text); border-radius: 8px;
+  }
+  .mobile-menu-btn:active { background: var(--surface-2); }
+  .mobile-topbar-title { flex: 1; font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* --- Two-pane views collapse to a single pane (list OR detail) --- */
+  .messenger .msgr-list { width: 100%; flex: 1 1 auto; border-right: none; }
+  .messenger .msgr-pane { display: none; }
+  .messenger.show-detail .msgr-list { display: none; }
+  .messenger.show-detail .msgr-pane { display: flex; flex-direction: column; width: 100%; }
+  .activity-list-pane { width: 100% !important; max-width: none !important; min-width: 0 !important; }
+  .mobile-back {
+    display: block; width: 100%; text-align: left; flex-shrink: 0;
+    background: var(--surface-2); border: none; border-bottom: 1px solid var(--border);
+    padding: 11px 14px; font-size: 14px; color: var(--accent); font-weight: 600;
+  }
+
+  /* --- Toolbars & headers wrap instead of overflowing --- */
+  .board-header, .filter-bar, .dash-head, .admin-head, .activity-head,
+  .collab-bar-meta, .files-toolbar, .board-actions { flex-wrap: wrap; }
+  .board-page, .workflows-page { padding: 12px; }
+  .dashboard, .admin-panel, .activity-page, .settings-page { padding: 16px 14px; }
+
+  /* Roomier tap targets */
+  .nav-item { padding: 12px 16px; }
+  .btn, .btn-sm { min-height: 36px; }
+}
+
+@media (max-width: 640px) {
+  /* --- Modals go near full-width, docked to the bottom (thumb-friendly) --- */
+  .modal { width: 100% !important; max-width: 100% !important; }
+  .modal-overlay { padding: 8px; align-items: flex-end; }
+  .task-modal:not(.inline) { max-height: 92vh; }
+
+  /* --- Group call fills the screen --- */
+  .call-overlay { padding: 0; }
+  .room-call { height: 100%; width: 100%; border-radius: 0; }
+  .room-grid { grid-template-columns: 1fr; }
+  .room-grid.tiles-2, .room-grid.tiles-3, .room-grid.tiles-4 { grid-template-columns: repeat(2, 1fr); }
+  .call-chat { width: 100%; max-width: 100%; top: 49px; }
+
+  /* Keep wide content scrollable rather than clipped */
+  .task-table { min-width: 640px; }
+  .calendar-grid { min-width: 560px; }
+}

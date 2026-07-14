@@ -62,7 +62,7 @@ export default function ActivityView({
     : null;
 
   return (
-    <div className="messenger">
+    <div className={`messenger ${selected ? 'show-detail' : ''}`}>
       <div className="msgr-list activity-list-pane">
         <div className="activity-list-head">
           <div className="activity-title-row">
@@ -93,6 +93,7 @@ export default function ActivityView({
       </div>
 
       <div className="msgr-pane">
+        {selected && <button className="mobile-back" onClick={() => setSelected(null)}>← Activity</button>}
         {!selected ? (
           <div className="msgr-empty">
             <div className="msgr-empty-art">🔔</div>
