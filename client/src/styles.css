@@ -1601,6 +1601,9 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .bulk-presets { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 5px 12px; font-size: 13px; cursor: pointer; color: var(--text); }
 .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip-ghost { border-style: dashed; color: var(--muted); }
+.chip-add { border: 1px solid var(--accent); border-radius: 16px; padding: 5px 12px; font-size: 13px; min-width: 140px; background: var(--surface); color: var(--text); }
+.import-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .bulk-pick-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .bulk-search { flex: 1; min-width: 140px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; }
 .bulk-pick-head select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; }

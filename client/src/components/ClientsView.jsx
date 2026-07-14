@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../api.js';
 import { getSocket } from '../socket.js';
 import Avatar from './Avatar.jsx';
@@ -235,11 +235,45 @@ function BulkImportModal({ onClose, onDone }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const fileRef = useRef(null);
 
   const parsed = text.split('\n').map((line) => {
     const parts = line.split(/\t|,/).map((s) => s.trim());
     return { name: parts[0], gstin: parts[1] || '', email: parts[2] || '', phone: parts[3] || '' };
   }).filter((r) => r.name);
+
+  function downloadTemplate() {
+    const csv = 'Name,GSTIN,Email,Phone\nAcme Pvt Ltd,29ABCDE1234F1Z5,ops@acme.in,9876543210\n';
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a');
+    link.href = url; link.download = 'teamhub-clients-template.csv';
+    document.body.appendChild(link); link.click(); link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // Load a filled template (.xlsx or .csv) into the text box for review.
+  async function onFile(e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setError(null);
+    try {
+      let rows;
+      if (file.name.toLowerCase().endsWith('.xlsx')) {
+        const readXlsxFile = (await import('read-excel-file/browser')).default;
+        rows = await readXlsxFile(file);
+      } else {
+        rows = (await file.text()).split(/\r?\n/).map((l) => l.split(','));
+      }
+      const isHeader = rows.length && String(rows[0][0] || '').trim().toLowerCase() === 'name';
+      const body = (isHeader ? rows.slice(1) : rows)
+        .map((r) => (r || []).map((c) => (c == null ? '' : String(c)).trim()))
+        .filter((r) => r[0]);
+      setText(body.map((r) => [r[0], r[1] || '', r[2] || '', r[3] || ''].join(', ')).join('\n'));
+    } catch {
+      setError('Could not read that file. Please use the template (.csv or .xlsx).');
+    }
+  }
 
   async function submit() {
     if (!parsed.length) return;
@@ -252,8 +286,13 @@ function BulkImportModal({ onClose, onDone }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal bulk-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header"><strong>Import clients</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
-        <p className="muted" style={{ marginTop: 0 }}>One client per line. Optionally add more, comma-separated: <code>Name, GSTIN, Email, Phone</code></p>
-        <textarea className="bulk-textarea" rows={12} autoFocus value={text} onChange={(e) => setText(e.target.value)}
+        <div className="import-actions">
+          <button type="button" className="btn btn-sm" onClick={downloadTemplate}>⬇ Download template</button>
+          <button type="button" className="btn btn-sm" onClick={() => fileRef.current?.click()}>⬆ Upload filled sheet</button>
+          <input ref={fileRef} type="file" accept=".csv,.xlsx" hidden onChange={onFile} />
+        </div>
+        <p className="muted" style={{ marginTop: 0 }}>Download the template, fill it in Excel, and upload it — or paste one client per line: <code>Name, GSTIN, Email, Phone</code></p>
+        <textarea className="bulk-textarea" rows={10} autoFocus value={text} onChange={(e) => setText(e.target.value)}
           placeholder={'Acme Pvt Ltd\nBharat Traders, 29ABCDE1234F1Z5\nR. Sharma & Co, , ca@sharma.in, 9876543210'} />
         {error && <div className="form-error">{error}</div>}
         <div className="modal-footer">
@@ -279,6 +318,20 @@ function BulkDeadlinesModal({ clients, staff = [], onClose, onDone }) {
   const [statusFilter, setStatusFilter] = useState('active');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [types, setTypes] = useState([]);       // firm-added filing types
+  const [addingType, setAddingType] = useState(false);
+  const [newType, setNewType] = useState('');
+
+  useEffect(() => { api('/clients/compliance-types').then((d) => setTypes(d.types)).catch(() => {}); }, []);
+  async function addType() {
+    const name = newType.trim();
+    if (!name) { setAddingType(false); return; }
+    try {
+      const d = await api('/clients/compliance-types', { method: 'POST', body: { name } });
+      setTypes(d.types); setTitle(name);
+    } catch { /* ignore */ }
+    setNewType(''); setAddingType(false);
+  }
 
   const filtered = clients.filter((c) => (statusFilter === 'all' || c.status === statusFilter) && (!q.trim() || c.name.toLowerCase().includes(q.trim().toLowerCase())));
   const allFilteredSelected = filtered.length > 0 && filtered.every((c) => sel.has(c.id));
@@ -310,13 +363,23 @@ function BulkDeadlinesModal({ clients, staff = [], onClose, onDone }) {
         <div className="modal-header"><strong>Set a recurring deadline on many clients</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
 
         <div className="bulk-presets">
-          {PRESETS.map((p) => (
+          {[...PRESETS, ...types].map((p) => (
             <button key={p} className={`chip ${title === p ? 'on' : ''}`} onClick={() => setTitle(p)}>{p}</button>
           ))}
+          {addingType ? (
+            <input className="chip-add" autoFocus value={newType} placeholder="New filing name…"
+              onChange={(e) => setNewType(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addType(); } if (e.key === 'Escape') { setNewType(''); setAddingType(false); } }}
+              onBlur={addType} />
+          ) : (
+            <button className="chip chip-ghost" onClick={() => setAddingType(true)}>＋ Add type</button>
+          )}
         </div>
         <div className="field-row">
           <label className="field">Deadline<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. GSTR-3B" /></label>
           <label className="field">First due date<input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
+        </div>
+        <div className="field-row">
           <label className="field">Repeats
             <select value={rec} onChange={(e) => setRec(e.target.value)}>
               <option value="monthly">Monthly</option><option value="quarterly">Quarterly</option>

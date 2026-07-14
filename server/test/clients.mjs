@@ -141,6 +141,18 @@ async function main() {
   const bulkT = await req('POST', '/api/clients/deadlines/bulk', { token: a, body: { title: 'GSTR-1', due_date: '2026-08-11', recurrence: 'monthly', assignee_id: bobId, create_tasks: true, client_ids: [cid2] } });
   check('bulk can also generate tasks', bulkT.data.created === 1 && bulkT.data.tasks === 1);
 
+  console.log('Custom compliance types');
+  const t0 = await req('GET', '/api/clients/compliance-types', { token: a });
+  check('compliance types start empty', Array.isArray(t0.data.types) && t0.data.types.length === 0);
+  const t1 = await req('POST', '/api/clients/compliance-types', { token: a, body: { name: 'ROC filing' } });
+  check('a custom compliance type can be added', t1.data.types.includes('ROC filing'));
+  const t2 = await req('POST', '/api/clients/compliance-types', { token: a, body: { name: 'roc filing' } });
+  check('duplicate types (case-insensitive) are not added twice', t2.data.types.filter((x) => x.toLowerCase() === 'roc filing').length === 1);
+  const t3 = await req('POST', '/api/clients/compliance-types', { token: b, body: { name: '' } });
+  check('a blank type is rejected', t3.status === 400);
+  const t4 = await req('DELETE', `/api/clients/compliance-types/${encodeURIComponent('ROC filing')}`, { token: a });
+  check('a custom type can be removed', !t4.data.types.includes('ROC filing'));
+
   console.log('Permissions & cleanup');
   const memberDelete = await req('DELETE', `/api/clients/${cid}`, { token: b });
   check('a member cannot delete a client', memberDelete.status === 403);

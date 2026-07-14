@@ -1,7 +1,12 @@
 import { Router } from 'express';
-import db from '../db.js';
+import db, { getSetting, setSetting } from '../db.js';
 import { publicUser } from '../auth.js';
 import { completeDeadline } from '../compliance.js';
+
+// Custom compliance filing names, per workspace (on top of the built-in ones
+// the client offers). Stored as a JSON array in app_settings.
+const typesKey = (ws) => `compliance_types:${ws}`;
+const getTypes = (ws) => { try { return JSON.parse(getSetting(typesKey(ws)) || '[]'); } catch { return []; } };
 
 const router = Router();
 const TYPES = ['company', 'individual'];
@@ -68,6 +73,28 @@ router.post('/', (req, res) => {
   });
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
   res.status(201).json(clientWithMeta(db.prepare('SELECT * FROM clients WHERE id = ?').get(info.lastInsertRowid)));
+});
+
+// Custom compliance types (firm-wide additions to the built-in list).
+router.get('/compliance-types', (req, res) => {
+  res.json({ types: getTypes(req.workspaceId) });
+});
+router.post('/compliance-types', (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 60);
+  if (!name) return res.status(400).json({ error: 'A name is required' });
+  const list = getTypes(req.workspaceId);
+  if (!list.some((t) => t.toLowerCase() === name.toLowerCase())) {
+    list.push(name);
+    setSetting(typesKey(req.workspaceId), JSON.stringify(list.slice(0, 100)));
+    req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
+  }
+  res.status(201).json({ types: getTypes(req.workspaceId) });
+});
+router.delete('/compliance-types/:name', (req, res) => {
+  const name = decodeURIComponent(req.params.name);
+  const list = getTypes(req.workspaceId).filter((t) => t.toLowerCase() !== name.toLowerCase());
+  setSetting(typesKey(req.workspaceId), JSON.stringify(list));
+  res.json({ types: list });
 });
 
 // Bulk-create clients from a pasted list. Skips blanks and case-insensitive
