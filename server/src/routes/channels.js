@@ -40,7 +40,11 @@ router.get('/', (req, res) => {
   if (isGuest(req)) return res.json({ channels: [], joinable: [] });
   const mine = db.prepare(`
     SELECT c.* FROM channels c JOIN channel_members cm ON cm.channel_id = c.id
-    WHERE cm.user_id = ? AND c.is_collab = 0 AND c.workspace_id = ? ORDER BY c.is_dm, c.name
+    WHERE cm.user_id = ? AND c.is_collab = 0 AND c.workspace_id = ?
+      AND (cm.hidden_at IS NULL OR EXISTS (
+        SELECT 1 FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL AND m.created_at > cm.hidden_at
+      ))
+    ORDER BY c.is_dm, c.name
   `).all(req.user.id, req.workspaceId);
   const joinable = db.prepare(`
     SELECT c.* FROM channels c
@@ -78,6 +82,25 @@ router.post('/:id/join', (req, res) => {
   if (channel.is_private) return res.status(403).json({ error: 'This channel is private' });
   db.prepare('INSERT OR IGNORE INTO channel_members (channel_id, user_id) VALUES (?, ?)').run(channel.id, req.user.id);
   res.json(channelWithMeta(channel, req.user.id));
+});
+
+// Hide a conversation from my list. Personal to the caller; the chat and its
+// history stay intact and it reappears when a newer message arrives.
+router.post('/:id/hide', (req, res) => {
+  const member = db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!member) return res.status(404).json({ error: 'Conversation not found' });
+  db.prepare(`UPDATE channel_members SET hidden_at = datetime('now') WHERE channel_id = ? AND user_id = ?`)
+    .run(req.params.id, req.user.id);
+  res.json({ ok: true });
+});
+
+// Leave a channel entirely (named channels only — DMs can only be hidden).
+router.post('/:id/leave', (req, res) => {
+  const channel = db.prepare('SELECT * FROM channels WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
+  if (!channel) return res.status(404).json({ error: 'Channel not found' });
+  if (channel.is_dm) return res.status(400).json({ error: 'Direct messages can only be hidden' });
+  db.prepare('DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?').run(channel.id, req.user.id);
+  res.json({ ok: true });
 });
 
 // Top-level channel messages (thread replies are fetched separately).
@@ -201,7 +224,11 @@ router.post('/dm/:userId', (req, res) => {
       AND EXISTS (SELECT 1 FROM channel_members WHERE channel_id = c.id AND user_id = ?)
       AND EXISTS (SELECT 1 FROM channel_members WHERE channel_id = c.id AND user_id = ?)
   `).get(req.workspaceId, req.user.id, otherId);
-  if (existing) return res.json(channelWithMeta(existing, req.user.id));
+  if (existing) {
+    // Re-opening a hidden DM brings it back into the list.
+    db.prepare('UPDATE channel_members SET hidden_at = NULL WHERE channel_id = ? AND user_id = ?').run(existing.id, req.user.id);
+    return res.json(channelWithMeta(existing, req.user.id));
+  }
 
   const info = db.prepare(`INSERT INTO channels (name, is_dm, is_private, created_by, workspace_id) VALUES (?, 1, 1, ?, ?)`)
     .run(`dm-${req.user.id}-${otherId}`, req.user.id, req.workspaceId);

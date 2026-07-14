@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
+import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
 import ChatView from './ChatView.jsx';
+import ConversationMenu from './ConversationMenu.jsx';
 
 function shortTime(value) {
   if (!value) return '';
@@ -15,10 +17,28 @@ function shortTime(value) {
 
 // Bitrix-style unified messenger: a conversation list on the left, the open
 // chat (or an empty prompt) on the right.
-export default function Messenger({ user, users = [], channels = [], onlineIds = [], onEnsureDm }) {
+export default function Messenger({ user, users = [], channels = [], onlineIds = [], onEnsureDm, onRefresh }) {
   const [selectedId, setSelectedId] = useState(null);
   const [pending, setPending] = useState(null); // a just-created DM not yet in `channels`
   const [query, setQuery] = useState('');
+  const [ctxMenu, setCtxMenu] = useState(null); // { conv, x, y }
+
+  function openCtx(e, conv) {
+    e.preventDefault();
+    setCtxMenu({ conv, x: e.clientX, y: e.clientY });
+  }
+
+  async function hideConversation(conv) {
+    setCtxMenu(null);
+    if (selectedId === conv.id) setSelectedId(null);
+    try { await api(`/channels/${conv.id}/hide`, { method: 'POST' }); onRefresh?.(); } catch (err) { alert(err.message); }
+  }
+  async function leaveChannel(conv) {
+    setCtxMenu(null);
+    if (!window.confirm(`Leave #${conv.display_name || conv.name}? You can rejoin it later.`)) return;
+    if (selectedId === conv.id) setSelectedId(null);
+    try { await api(`/channels/${conv.id}/leave`, { method: 'POST' }); onRefresh?.(); } catch (err) { alert(err.message); }
+  }
 
   const isOnline = (id) => onlineIds.includes(id);
 
@@ -55,6 +75,7 @@ export default function Messenger({ user, users = [], channels = [], onlineIds =
             key={c.id}
             className={`msgr-row ${selectedId === c.id ? 'active' : ''}`}
             onClick={() => { setSelectedId(c.id); }}
+            onContextMenu={(e) => openCtx(e, c)}
           >
             {c.is_dm
               ? <Avatar user={c.dm_user} size={40} online={c.dm_user ? isOnline(c.dm_user.id) : false} />
@@ -107,6 +128,19 @@ export default function Messenger({ user, users = [], channels = [], onlineIds =
           </div>
         )}
       </div>
+
+      {ctxMenu && (
+        <ConversationMenu
+          x={ctxMenu.x} y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+          items={[
+            { label: 'Open', icon: '💬', onClick: () => { setSelectedId(ctxMenu.conv.id); setCtxMenu(null); } },
+            ctxMenu.conv.is_dm
+              ? { label: 'Hide conversation', icon: '🙈', onClick: () => hideConversation(ctxMenu.conv) }
+              : { label: 'Leave channel', icon: '🚪', danger: true, onClick: () => leaveChannel(ctxMenu.conv) },
+          ]}
+        />
+      )}
     </div>
   );
 }

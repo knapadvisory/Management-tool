@@ -357,6 +357,9 @@ ensureColumn('channels', 'guest_token', 'TEXT');
 ensureColumn('workspaces', 'require_invite_code', 'INTEGER NOT NULL DEFAULT 0');
 // Per-channel membership role: 'owner' | 'moderator' | 'member'.
 ensureColumn('channel_members', 'role', "TEXT NOT NULL DEFAULT 'member'");
+// When a member hides a conversation from their list. It stays hidden until a
+// newer message arrives (or they re-open it), so history is never lost.
+ensureColumn('channel_members', 'hidden_at', 'TEXT');
 
 // --- Multi-tenancy: every root entity belongs to a workspace ---
 // Added as plain columns (nullable at the DB level) and always set in code;

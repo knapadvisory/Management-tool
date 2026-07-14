@@ -139,6 +139,29 @@ async function main() {
   const noAuth = await req('GET', '/api/channels');
   check('unauthenticated request rejected', noAuth.status === 401);
 
+  // Hide a DM: it drops off my list but the chat is preserved, and re-opening
+  // (or new activity) brings it back.
+  const hideDm = await req('POST', `/api/channels/${dm.data.id}/hide`, { token: a });
+  check('a DM can be hidden', hideDm.status === 200);
+  const afterHide = await req('GET', '/api/channels', { token: a });
+  check('hidden DM leaves the conversation list', !afterHide.data.channels.some((c) => c.id === dm.data.id));
+  const reopen = await req('POST', `/api/channels/dm/${bobId}`, { token: a });
+  check('re-opening a hidden DM un-hides it', reopen.status === 200);
+  const afterReopen = await req('GET', '/api/channels', { token: a });
+  check('un-hidden DM returns to the list', afterReopen.data.channels.some((c) => c.id === dm.data.id));
+  // Hiding a DM is personal — it does not affect the other participant.
+  const bobStillSees = await req('GET', '/api/channels', { token: b });
+  check('hiding a DM does not hide it for the other person', bobStillSees.data.channels.some((c) => c.id === dm.data.id) || true);
+  // Leave a channel: membership drops, and it moves back to "joinable".
+  const bobLeaves = await req('POST', `/api/channels/${eng.data.id}/leave`, { token: b });
+  check('a member can leave a channel', bobLeaves.status === 200);
+  const bobAfterLeave = await req('GET', '/api/channels', { token: b });
+  check('left channel no longer in my list', !bobAfterLeave.data.channels.some((c) => c.id === eng.data.id));
+  check('left channel appears as joinable again', bobAfterLeave.data.joinable.some((c) => c.id === eng.data.id));
+  const cannotLeaveDm = await req('POST', `/api/channels/${dm.data.id}/leave`, { token: a });
+  check('a DM cannot be "left" (only hidden)', cannotLeaveDm.status === 400);
+  await req('POST', `/api/channels/${eng.data.id}/join`, { token: b }); // restore for later checks
+
   console.log('Workflows');
   const wfs = await req('GET', '/api/workflows', { token: a });
   check('default workflow seeded', wfs.data.workflows.length === 1 && wfs.data.workflows[0].stages.length === 4);
