@@ -87,6 +87,12 @@ export default function Sidebar({
           ☑ {t('nav.tasks')}
         </button>
         <button
+          className={`nav-item ${view?.type === 'clients' ? 'active' : ''}`}
+          onClick={() => onSelectView('clients')}
+        >
+          <span className="nav-logo">🗂️</span> {t('nav.clients')}
+        </button>
+        <button
           className={`nav-item ${view?.type === 'workflows' ? 'active' : ''}`}
           onClick={() => onSelectView('workflows')}
         >

@@ -17,6 +17,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
   const [workflows, setWorkflows] = useState([]);
   const [workflowId, setWorkflowId] = useState(null);
   const [projects, setProjects] = useState([]);
+  const [clients, setClients] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [tags, setTags] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -46,6 +47,10 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
     setProjects(d.projects);
   }, []);
 
+  const loadClients = useCallback(async () => {
+    try { setClients((await api('/clients')).clients); } catch { /* clients optional */ }
+  }, []);
+
   const loadTags = useCallback(async () => {
     const d = await api('/tasks/meta/tags');
     setTags(d.tags);
@@ -62,9 +67,10 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
       if (d.workflows.length) setWorkflowId((id) => id ?? d.workflows[0].id);
     });
     loadProjects();
+    loadClients();
     loadTags();
     loadTemplates();
-  }, [loadProjects, loadTags, loadTemplates]);
+  }, [loadProjects, loadClients, loadTags, loadTemplates]);
 
   useEffect(() => { loadTasks(workflowId, archivedView); }, [workflowId, archivedView, loadTasks]);
 
@@ -237,6 +243,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
           users={users}
           workflows={workflows}
           projects={projects}
+          clients={clients}
           onClose={() => setOpenTaskId(null)}
         />
       )}
@@ -259,6 +266,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
         <NewTaskModal
           workflows={workflows}
           projects={projects}
+          clients={clients}
           users={users}
           templates={templates}
           defaultWorkflowId={allBoards ? (workflows[0]?.id) : workflowId}

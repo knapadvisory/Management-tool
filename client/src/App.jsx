@@ -8,6 +8,7 @@ import Sidebar from './components/Sidebar.jsx';
 import ChatView from './components/ChatView.jsx';
 import TasksBoard from './components/TasksBoard.jsx';
 import WorkflowsView from './components/WorkflowsView.jsx';
+import ClientsView from './components/ClientsView.jsx';
 import AdminPanel from './components/AdminPanel.jsx';
 import Messenger from './components/Messenger.jsx';
 import PeopleView from './components/PeopleView.jsx';
@@ -361,6 +362,9 @@ export default function App() {
         )}
         {(view?.type === 'files' || view?.type === 'drive') && (
           <FilesView user={user} users={users} initialMode={view.type === 'drive' ? 'drive' : 'files'} />
+        )}
+        {view?.type === 'clients' && (
+          <ClientsView user={user} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
         )}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'admin' && user.role === 'admin' && (

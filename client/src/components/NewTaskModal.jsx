@@ -4,11 +4,12 @@ import StepsEditor from './StepsEditor.jsx';
 import RemindersEditor from './RemindersEditor.jsx';
 import { parseQuickAdd } from '../quickparse.js';
 
-export default function NewTaskModal({ workflows, projects, users, templates, defaultWorkflowId, onClose, onCreated }) {
+export default function NewTaskModal({ workflows, projects, clients = [], users, templates, defaultWorkflowId, onClose, onCreated }) {
   const [form, setForm] = useState({
     title: '',
     workflow_id: defaultWorkflowId || workflows[0]?.id || '',
     project_id: '',
+    client_id: '',
     assignee_id: '',
     priority: 'medium',
     due_date: '',
@@ -87,6 +88,7 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
           title: p.title || form.title,
           workflow_id: Number(form.workflow_id),
           project_id: form.project_id ? Number(form.project_id) : null,
+          client_id: form.client_id ? Number(form.client_id) : null,
           assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
           priority: p.priority || form.priority,
           due_date: form.due_date || p.due_date || null,
@@ -145,6 +147,14 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
+            {clients.length > 0 && (
+              <label className="field">Client
+                <select value={form.client_id} onChange={set('client_id')}>
+                  <option value="">No client</option>
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </label>
+            )}
           </div>
 
           <div className="field-row">

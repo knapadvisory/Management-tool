@@ -6,7 +6,7 @@ import TaskChat from './TaskChat.jsx';
 import RemindersEditor from './RemindersEditor.jsx';
 import StatusControl from './StatusControl.jsx';
 
-export default function TaskModal({ taskId, user, users, workflows = [], projects = [], onClose, inline = false }) {
+export default function TaskModal({ taskId, user, users, workflows = [], projects = [], clients = [], onClose, inline = false }) {
   const [tab, setTab] = useState('chat');
   const [task, setTask] = useState(null);
   const [comments, setComments] = useState([]);
@@ -164,6 +164,14 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
+          {clients.length > 0 && (
+            <label>Client
+              <select value={task.client?.id ?? ''} onChange={(e) => update({ client_id: e.target.value ? Number(e.target.value) : null })}>
+                <option value="">No client</option>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+          )}
           <label>Priority
             <select value={task.priority} onChange={(e) => update({ priority: e.target.value })}>
               <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
