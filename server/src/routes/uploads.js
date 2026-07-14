@@ -73,6 +73,8 @@ router.get('/:id', (req, res) => {
     if (!member) return res.status(403).json({ error: 'Not allowed' });
   } else if (att.task_id) {
     // Tasks are shared across the workspace team (already scoped above).
+  } else if (att.task_message_id) {
+    // Per-task chat files are shared with the task team (already scoped above).
   } else if (att.is_drive) {
     // The shared Drive is workspace-wide (already scoped above).
   } else if (att.uploader_id !== userId) {

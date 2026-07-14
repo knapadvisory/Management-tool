@@ -303,6 +303,9 @@ ensureColumn('messages', 'parent_id', 'INTEGER REFERENCES messages(id)');
 ensureColumn('messages', 'edited_at', 'TEXT');
 ensureColumn('messages', 'deleted_at', 'TEXT');
 ensureColumn('attachments', 'task_id', 'INTEGER REFERENCES tasks(id)');
+// A file attached to a single per-task chat message (distinct from task_id,
+// which is a file attached to the task itself / its Files tab).
+ensureColumn('attachments', 'task_message_id', 'INTEGER REFERENCES task_messages(id)');
 // Soft-delete (archive): a file the uploader deletes is hidden everywhere but
 // kept for the admin's archive. archived_by records who removed it.
 ensureColumn('attachments', 'archived_at', 'TEXT');

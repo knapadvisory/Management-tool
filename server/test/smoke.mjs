@@ -544,6 +544,19 @@ async function main() {
   const chatHistory = await req('GET', `/api/tasks/${task.data.id}/chat`, { token: b });
   check('task chat history persisted', chatHistory.data.messages.some((m) => m.content === 'chat ping'));
 
+  // Task chat with an attachment: upload a file, send it, and confirm it rides
+  // along on the message and is downloadable by the other participant.
+  const tcFd = new FormData();
+  tcFd.append('files', new Blob(['task chat file'], { type: 'text/plain' }), 'note-in-chat.txt');
+  const tcUp = await (await fetch(BASE + '/api/uploads', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: tcFd })).json();
+  const tcAttId = tcUp.attachments[0].id;
+  const chatWithFile = await new Promise((resolve) => sockA.emit('task:chat:send', { task_id: task.data.id, content: '', attachment_ids: [tcAttId] }, resolve));
+  check('a file-only task chat message is accepted', !!chatWithFile.message && chatWithFile.message.attachments?.length === 1);
+  const chatHistory2 = await req('GET', `/api/tasks/${task.data.id}/chat`, { token: b });
+  check('task chat history includes the attachment', chatHistory2.data.messages.some((m) => m.attachments?.some((x) => x.id === tcAttId)));
+  const tcDl = await fetch(`${BASE}/api/uploads/${tcAttId}?token=${b}`);
+  check('participant can download a task chat attachment', tcDl.status === 200);
+
   const markRead = await req('POST', '/api/notifications/read-all', { token: b });
   check('mark-all-read clears unread count', markRead.data.unread_count === 0);
 

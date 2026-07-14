@@ -395,8 +395,13 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .tc-meta { display: flex; align-items: baseline; gap: 8px; }
 .tc-time { font-size: 11px; color: var(--muted); }
 .tc-text { line-height: 1.4; word-break: break-word; }
-.tc-composer { display: flex; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.tc-composer { display: flex; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border); align-items: center; }
 .tc-composer input { flex: 1; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.tc-attach { background: none; border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 16px; line-height: 1; cursor: pointer; flex: none; }
+.tc-attach:hover:not(:disabled) { background: var(--surface-2); }
+.tc-pending { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0 0; }
+.tc-pending-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 3px 6px 3px 10px; }
+.tc-pending-chip button { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 12px; }
 
 /* ---------- Templates & rich new-task modal ---------- */
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 10px; }

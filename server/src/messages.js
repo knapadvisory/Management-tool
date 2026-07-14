@@ -5,6 +5,30 @@ import db from './db.js';
  * socket layer, so every client sees the same shape: author info,
  * attachments, grouped reactions, mention list, and reply count.
  */
+// Per-task chat message with its author info and any attached files.
+export function serializeTaskMessage(id) {
+  const m = db.prepare(`
+    SELECT tm.*, u.name AS user_name, u.avatar_color FROM task_messages tm
+    JOIN users u ON u.id = tm.user_id WHERE tm.id = ?
+  `).get(id);
+  if (!m) return null;
+  m.attachments = db.prepare(`
+    SELECT id, original_name, mime_type, size FROM attachments
+    WHERE task_message_id = ? AND archived_at IS NULL ORDER BY id
+  `).all(m.id);
+  return m;
+}
+
+// Attach uploaded files to a task-chat message (only the uploader's own,
+// not-yet-linked files). Mirrors linkAttachments for channel messages.
+export function linkTaskMessageAttachments(taskMessageId, uploaderId, attachmentIds = []) {
+  const link = db.prepare(`
+    UPDATE attachments SET task_message_id = ?
+    WHERE id = ? AND uploader_id = ? AND message_id IS NULL AND task_id IS NULL AND task_message_id IS NULL
+  `);
+  for (const aid of attachmentIds) link.run(taskMessageId, aid, uploaderId);
+}
+
 export function serializeMessage(id, currentUserId = null) {
   const m = db.prepare(`
     SELECT m.*, u.name AS user_name, u.avatar_color, u.role AS user_role

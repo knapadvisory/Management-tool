@@ -470,6 +470,8 @@ router.get('/:id/chat', (req, res) => {
     SELECT tm.*, u.name AS user_name, u.avatar_color FROM task_messages tm
     JOIN users u ON u.id = tm.user_id WHERE tm.task_id = ? ORDER BY tm.id
   `).all(task.id);
+  const attFor = db.prepare(`SELECT id, original_name, mime_type, size FROM attachments WHERE task_message_id = ? AND archived_at IS NULL ORDER BY id`);
+  for (const m of messages) m.attachments = attFor.all(m.id);
   res.json({ messages });
 });
 

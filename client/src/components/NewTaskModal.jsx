@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { api } from '../api.js';
+import React, { useState, useRef } from 'react';
+import { api, uploadFiles } from '../api.js';
 import StepsEditor from './StepsEditor.jsx';
 import RemindersEditor from './RemindersEditor.jsx';
 import { parseQuickAdd } from '../quickparse.js';
@@ -21,6 +21,21 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
   const [templateId, setTemplateId] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [attachments, setAttachments] = useState([]); // uploaded, linked after create
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
+
+  async function onFiles(e) {
+    const files = Array.from(e.target.files);
+    e.target.value = '';
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = await uploadFiles(files);
+      setAttachments((a) => [...a, ...uploaded]);
+    } catch (err) { setError(err.message); }
+    setUploading(false);
+  }
 
   // Pull !priority, #tags and a due date out of the title into the form.
   function applyQuickParse() {
@@ -66,7 +81,7 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
     // Re-parse on submit so quick-add tokens are honored even without a blur.
     const p = parseQuickAdd(form.title);
     try {
-      await api('/tasks', {
+      const created = await api('/tasks', {
         method: 'POST',
         body: {
           title: p.title || form.title,
@@ -81,6 +96,10 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
           reminders,
         },
       });
+      // Attach any uploaded files to the freshly-created task.
+      if (attachments.length && created?.id) {
+        await api(`/tasks/${created.id}/attachments`, { method: 'POST', body: { attachment_ids: attachments.map((a) => a.id) } });
+      }
       onCreated();
     } catch (err) {
       setError(err.message);
@@ -179,6 +198,25 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
           <div className="field">
             <span>Steps / checklist{steps.length > 0 && <span className="muted"> — {steps.length} step{steps.length === 1 ? '' : 's'}</span>}</span>
             <StepsEditor steps={steps} onChange={setSteps} placeholder="+ add a step" />
+          </div>
+
+          <div className="field">
+            <div className="tags-row" style={{ justifyContent: 'space-between' }}>
+              <span>Attachments</span>
+              <button type="button" className="btn btn-sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                {uploading ? 'Uploading…' : '📎 Attach'}
+              </button>
+              <input ref={fileRef} type="file" multiple hidden onChange={onFiles} />
+            </div>
+            {attachments.length > 0 && (
+              <div className="tags-row">
+                {attachments.map((a) => (
+                  <span key={a.id} className="task-tag removable">📎 {a.original_name}
+                    <button type="button" onClick={() => setAttachments((x) => x.filter((f) => f.id !== a.id))}>✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {error && <div className="form-error">{error}</div>}

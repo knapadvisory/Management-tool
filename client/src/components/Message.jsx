@@ -13,7 +13,7 @@ function formatTime(iso) {
   return d.toLocaleTimeString(localeArg(), dateOpts({ hour: '2-digit', minute: '2-digit' }));
 }
 
-function AttachmentView({ att, onOpen }) {
+export function AttachmentView({ att, onOpen }) {
   const url = fileUrl(att.id);
   if (att.mime_type?.startsWith('image/')) {
     return (
@@ -75,6 +75,18 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
     setMenuOpen((o) => !o);
   }
 
+  // Right-click anywhere on the message opens the same actions menu at the
+  // cursor (replacing the browser's default context menu).
+  function openMenuAtCursor(e) {
+    if (editing) return;
+    e.preventDefault();
+    const W = 190, H = 340;
+    const left = Math.min(window.innerWidth - W - 8, Math.max(8, e.clientX));
+    const top = Math.min(window.innerHeight - H - 8, Math.max(8, e.clientY));
+    setMenuPos({ top, left });
+    setMenuOpen(true);
+  }
+
   function downloadFiles() {
     for (const a of message.attachments) {
       const link = document.createElement('a');
@@ -122,7 +134,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
   }
 
   return (
-    <div className={`message ${grouped ? 'grouped' : ''} ${isMine ? 'own' : ''}`}>
+    <div className={`message ${grouped ? 'grouped' : ''} ${isMine ? 'own' : ''}`} onContextMenu={openMenuAtCursor}>
       <div className="message-inner">
       {grouped ? (
         <span className="msg-gutter"><span className="gutter-time">{formatTime(message.created_at)}</span></span>

@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import db from './db.js';
 import { verifyToken, publicUser } from './auth.js';
-import { serializeMessage, recordMentions, linkAttachments } from './messages.js';
+import { serializeMessage, recordMentions, linkAttachments, serializeTaskMessage, linkTaskMessageAttachments } from './messages.js';
 import { createNotification } from './notifications.js';
 
 // userId -> Set of socket ids (a user can have multiple tabs open)
@@ -172,28 +172,29 @@ export default function setupSocket(io) {
       if (db.prepare('SELECT 1 FROM tasks WHERE id = ? AND workspace_id = ?').get(taskId, socket.user.workspace_id)) socket.join(`taskchat:${taskId}`);
     });
     socket.on('task:chat:leave', (taskId) => socket.leave(`taskchat:${taskId}`));
-    socket.on('task:chat:send', ({ task_id, content }, ack) => {
+    socket.on('task:chat:send', ({ task_id, content, attachment_ids = [] }, ack) => {
       content = (content || '').trim();
-      if (!content) return ack?.({ error: 'Empty message' });
+      const hasFiles = Array.isArray(attachment_ids) && attachment_ids.length > 0;
+      if (!content && !hasFiles) return ack?.({ error: 'Empty message' });
       const task = db.prepare('SELECT id, title FROM tasks WHERE id = ? AND workspace_id = ?').get(task_id, socket.user.workspace_id);
       if (!task) return ack?.({ error: 'Task not found' });
 
       const info = db.prepare('INSERT INTO task_messages (task_id, user_id, content) VALUES (?, ?, ?)')
         .run(task_id, userId, content);
+      const tmId = info.lastInsertRowid;
+      if (hasFiles) linkTaskMessageAttachments(tmId, userId, attachment_ids);
       db.prepare('INSERT OR IGNORE INTO task_watchers (task_id, user_id) VALUES (?, ?)').run(task_id, userId);
-      const message = db.prepare(`
-        SELECT tm.*, u.name AS user_name, u.avatar_color FROM task_messages tm
-        JOIN users u ON u.id = tm.user_id WHERE tm.id = ?
-      `).get(info.lastInsertRowid);
+      const message = serializeTaskMessage(tmId);
       io.to(`taskchat:${task_id}`).emit('task:chat:new', { message });
 
       // Notify other watchers of the new chat message.
+      const preview = content ? content.slice(0, 80) : '📎 sent a file';
       const watchers = db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task_id);
       for (const { user_id } of watchers) {
         if (user_id !== userId) {
           createNotification(io, {
             user_id, type: 'task_chat', actor_id: userId, task_id,
-            text: `${socket.user.name} in "${task.title}": ${content.slice(0, 80)}`,
+            text: `${socket.user.name} in "${task.title}": ${preview}`,
           });
         }
       }
