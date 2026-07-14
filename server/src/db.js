@@ -360,6 +360,9 @@ ensureColumn('channel_members', 'role', "TEXT NOT NULL DEFAULT 'member'");
 // When a member hides a conversation from their list. It stays hidden until a
 // newer message arrives (or they re-open it), so history is never lost.
 ensureColumn('channel_members', 'hidden_at', 'TEXT');
+// "Clear chat": messages at or before this time are hidden from THIS member's
+// view only (the other participant keeps their copy).
+ensureColumn('channel_members', 'cleared_before', 'TEXT');
 
 // --- Multi-tenancy: every root entity belongs to a workspace ---
 // Added as plain columns (nullable at the DB level) and always set in code;

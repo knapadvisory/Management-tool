@@ -162,6 +162,10 @@ async function main() {
   check('a DM cannot be "left" (only hidden)', cannotLeaveDm.status === 400);
   await req('POST', `/api/channels/${eng.data.id}/join`, { token: b }); // restore for later checks
 
+  // Mark as read clears this conversation's unread notifications.
+  const markConvRead = await req('POST', `/api/channels/${dm.data.id}/read`, { token: b });
+  check('a conversation can be marked as read', markConvRead.status === 200 && typeof markConvRead.data.unread_count === 'number');
+
   console.log('Workflows');
   const wfs = await req('GET', '/api/workflows', { token: a });
   check('default workflow seeded', wfs.data.workflows.length === 1 && wfs.data.workflows[0].stages.length === 4);
@@ -550,6 +554,16 @@ async function main() {
   await new Promise((r) => setTimeout(r, 200));
   const bobDmNotifs = await req('GET', '/api/notifications', { token: b });
   check('direct message surfaces in the activity feed', bobDmNotifs.data.notifications.some((n) => n.type === 'dm'));
+
+  // Clear chat: wipes the DM history for the caller only; the other keeps it.
+  const beforeClear = await req('GET', `/api/channels/${dm.data.id}/messages`, { token: a });
+  check('DM has messages before clearing', beforeClear.data.messages.some((m) => m.content === 'hey bob, dm here'));
+  const cleared = await req('POST', `/api/channels/${dm.data.id}/clear`, { token: a });
+  check('clear chat succeeds', cleared.status === 200);
+  const afterClearA = await req('GET', `/api/channels/${dm.data.id}/messages`, { token: a });
+  check('cleared chat is empty for the clearer', afterClearA.data.messages.length === 0);
+  const afterClearB = await req('GET', `/api/channels/${dm.data.id}/messages`, { token: b });
+  check('the other participant still sees the history', afterClearB.data.messages.some((m) => m.content === 'hey bob, dm here'));
 
   // Task chat: alice and bob join task 1, alice sends -> bob receives + gets a notification.
   let bobGotChat = false;

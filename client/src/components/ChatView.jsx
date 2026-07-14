@@ -73,13 +73,16 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
       clearTimeout(typingTimeout.current);
       typingTimeout.current = setTimeout(() => setTypingUser(null), 2500);
     };
+    const onCleared = ({ channel_id }) => { if (channel_id === channel.id) setMessages([]); };
     socket.on('message:new', onNew);
     socket.on('message:updated', onUpdated);
     socket.on('typing', onTyping);
+    socket.on('conversation:cleared', onCleared);
     return () => {
       socket.off('message:new', onNew);
       socket.off('message:updated', onUpdated);
       socket.off('typing', onTyping);
+      socket.off('conversation:cleared', onCleared);
       clearTimeout(typingTimeout.current);
     };
   }, [channel.id, user.id]);

@@ -323,7 +323,7 @@ export default function App() {
           <TasksBoard user={user} users={users} openTaskRequest={taskToOpen} onTaskOpened={() => setTaskToOpen(null)} />
         )}
         {view?.type === 'messenger' && (
-          <Messenger user={user} users={users} channels={channels} onlineIds={onlineIds} onEnsureDm={ensureDm} onRefresh={refreshChannels} />
+          <Messenger user={user} users={users} channels={channels} onlineIds={onlineIds} onEnsureDm={ensureDm} onRefresh={refreshChannels} onNotifRefresh={refreshNotifications} />
         )}
         {(view?.type === 'team' || view?.type === 'collabs') && (
           <PeopleView

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
 import { serializeMessage, isChannelMember } from '../messages.js';
+import { unreadCount } from '../notifications.js';
 
 const router = Router();
 
@@ -17,13 +18,16 @@ function channelWithMeta(channel, userId) {
   } else {
     out.display_name = channel.name;
   }
+  // Messages the viewer has cleared don't count toward the list preview.
+  const cleared = db.prepare('SELECT cleared_before FROM channel_members WHERE channel_id = ? AND user_id = ?')
+    .get(channel.id, userId)?.cleared_before || null;
   // Latest top-level message, for conversation-list previews and ordering.
   const last = db.prepare(`
     SELECT m.content, m.created_at, m.deleted_at, u.name AS user_name
     FROM messages m JOIN users u ON u.id = m.user_id
-    WHERE m.channel_id = ? AND m.parent_id IS NULL
+    WHERE m.channel_id = ? AND m.parent_id IS NULL AND (? IS NULL OR m.created_at > ?)
     ORDER BY m.id DESC LIMIT 1
-  `).get(channel.id);
+  `).get(channel.id, cleared, cleared);
   out.last_message = last
     ? { content: last.deleted_at ? '(message deleted)' : last.content, created_at: last.created_at, user_name: last.user_name }
     : null;
@@ -94,6 +98,27 @@ router.post('/:id/hide', (req, res) => {
   res.json({ ok: true });
 });
 
+// Mark a conversation as read: clear this member's unread notifications for it.
+router.post('/:id/read', (req, res) => {
+  const member = db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!member) return res.status(404).json({ error: 'Conversation not found' });
+  db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND channel_id = ? AND is_read = 0')
+    .run(req.user.id, req.params.id);
+  res.json({ unread_count: unreadCount(req.user.id) });
+});
+
+// Clear a conversation's history from MY view only (the other participant
+// keeps their copy). Messages stay in the database.
+router.post('/:id/clear', (req, res) => {
+  const member = db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!member) return res.status(404).json({ error: 'Conversation not found' });
+  db.prepare(`UPDATE channel_members SET cleared_before = datetime('now') WHERE channel_id = ? AND user_id = ?`)
+    .run(req.params.id, req.user.id);
+  // Clear my own open view in real time (other participants are unaffected).
+  req.app.get('io')?.to(`user:${req.user.id}`).emit('conversation:cleared', { channel_id: Number(req.params.id) });
+  res.json({ ok: true });
+});
+
 // Leave a channel entirely (named channels only — DMs can only be hidden).
 router.post('/:id/leave', (req, res) => {
   const channel = db.prepare('SELECT * FROM channels WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
@@ -117,12 +142,16 @@ router.get('/:id/messages', (req, res) => {
     const m = db.prepare('SELECT joined_at FROM channel_members WHERE channel_id = ? AND user_id = ?').get(req.params.id, req.user.id);
     since = m?.joined_at || null;
   }
+  // Messages the viewer cleared ("Clear chat") stay hidden for them only.
+  const cleared = db.prepare('SELECT cleared_before FROM channel_members WHERE channel_id = ? AND user_id = ?')
+    .get(req.params.id, req.user.id)?.cleared_before || null;
   const rows = db.prepare(`
     SELECT id FROM messages
     WHERE channel_id = ? AND parent_id IS NULL AND id < ?
       AND (? IS NULL OR created_at >= ?)
+      AND (? IS NULL OR created_at > ?)
     ORDER BY id DESC LIMIT 50
-  `).all(req.params.id, before, since, since).reverse();
+  `).all(req.params.id, before, since, since, cleared, cleared).reverse();
   res.json({ messages: rows.map((r) => serializeMessage(r.id, req.user.id)) });
 });
 

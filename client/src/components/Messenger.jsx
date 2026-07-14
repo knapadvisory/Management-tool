@@ -17,7 +17,7 @@ function shortTime(value) {
 
 // Bitrix-style unified messenger: a conversation list on the left, the open
 // chat (or an empty prompt) on the right.
-export default function Messenger({ user, users = [], channels = [], onlineIds = [], onEnsureDm, onRefresh }) {
+export default function Messenger({ user, users = [], channels = [], onlineIds = [], onEnsureDm, onRefresh, onNotifRefresh }) {
   const [selectedId, setSelectedId] = useState(null);
   const [pending, setPending] = useState(null); // a just-created DM not yet in `channels`
   const [query, setQuery] = useState('');
@@ -28,6 +28,15 @@ export default function Messenger({ user, users = [], channels = [], onlineIds =
     setCtxMenu({ conv, x: e.clientX, y: e.clientY });
   }
 
+  async function markRead(conv) {
+    setCtxMenu(null);
+    try { await api(`/channels/${conv.id}/read`, { method: 'POST' }); onNotifRefresh?.(); } catch (err) { alert(err.message); }
+  }
+  async function clearChat(conv) {
+    setCtxMenu(null);
+    if (!window.confirm(`Clear your copy of this chat with ${conv.display_name}? The other person keeps their messages.`)) return;
+    try { await api(`/channels/${conv.id}/clear`, { method: 'POST' }); onRefresh?.(); } catch (err) { alert(err.message); }
+  }
   async function hideConversation(conv) {
     setCtxMenu(null);
     if (selectedId === conv.id) setSelectedId(null);
@@ -135,9 +144,13 @@ export default function Messenger({ user, users = [], channels = [], onlineIds =
           onClose={() => setCtxMenu(null)}
           items={[
             { label: 'Open', icon: '💬', onClick: () => { setSelectedId(ctxMenu.conv.id); setCtxMenu(null); } },
-            ctxMenu.conv.is_dm
-              ? { label: 'Hide conversation', icon: '🙈', onClick: () => hideConversation(ctxMenu.conv) }
-              : { label: 'Leave channel', icon: '🚪', danger: true, onClick: () => leaveChannel(ctxMenu.conv) },
+            { label: 'Mark as read', icon: '✓', onClick: () => markRead(ctxMenu.conv) },
+            ...(ctxMenu.conv.is_dm ? [
+              { label: 'Clear chat', icon: '🧹', danger: true, onClick: () => clearChat(ctxMenu.conv) },
+              { label: 'Hide conversation', icon: '🙈', onClick: () => hideConversation(ctxMenu.conv) },
+            ] : [
+              { label: 'Leave channel', icon: '🚪', danger: true, onClick: () => leaveChannel(ctxMenu.conv) },
+            ]),
           ]}
         />
       )}
