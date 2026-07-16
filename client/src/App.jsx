@@ -82,6 +82,21 @@ export default function App() {
   }, []);
   const dismissPopup = useCallback((id) => setPopups((ps) => ps.filter((p) => p.id !== id)), []);
 
+  // Opening a conversation clears its unread notifications (server + local),
+  // so the Messages/channel badges reflect what's actually unread.
+  const markChannelRead = useCallback((channelId) => {
+    setNotifications((ns) => {
+      let dec = 0;
+      const next = ns.map((n) => {
+        if (n.channel_id === channelId && !n.is_read) { dec++; return { ...n, is_read: true }; }
+        return n;
+      });
+      if (dec) setUnreadCount((c) => Math.max(0, c - dec));
+      return next;
+    });
+    api(`/channels/${channelId}/read`, { method: 'POST' }).catch(() => {});
+  }, []);
+
   const refreshChannels = useCallback(async () => {
     const data = await api('/channels');
     setChannels(data.channels);
@@ -271,21 +286,6 @@ export default function App() {
     setNotifications((ns) => ns.map((x) => ({ ...x, is_read: true })));
     setUnreadCount(0);
   }
-
-  // Opening a conversation clears its unread notifications (server + local),
-  // so the Messages/channel badges reflect what's actually unread.
-  const markChannelRead = useCallback((channelId) => {
-    setNotifications((ns) => {
-      let dec = 0;
-      const next = ns.map((n) => {
-        if (n.channel_id === channelId && !n.is_read) { dec++; return { ...n, is_read: true }; }
-        return n;
-      });
-      if (dec) setUnreadCount((c) => Math.max(0, c - dec));
-      return next;
-    });
-    api(`/channels/${channelId}/read`, { method: 'POST' }).catch(() => {});
-  }, []);
 
   // Mark one notification read without navigating (used by the Activity pane).
   function markNotificationRead(n) {
