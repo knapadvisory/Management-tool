@@ -101,6 +101,8 @@ export default function ClientsView({ user, users = [], onOpenTask }) {
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [letter, setLetter] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [flash, setFlash] = useState(null);
@@ -120,7 +122,12 @@ export default function ClientsView({ user, users = [], onOpenTask }) {
   }, [load]);
 
   const q = query.trim().toLowerCase();
-  const visible = clients.filter((c) => !q || c.name.toLowerCase().includes(q));
+  const visible = clients.filter((c) =>
+    (!q || c.name.toLowerCase().includes(q)) &&
+    (statusFilter === 'all' || c.status === statusFilter) &&
+    (!letter || c.name.trim().toUpperCase().startsWith(letter)));
+  // Which first-letters actually have clients (for the A–Z rail).
+  const activeLetters = new Set(clients.map((c) => (c.name.trim()[0] || '').toUpperCase()));
   const showDetail = creating || selectedId != null;
 
   function selectClient(id) { setCreating(false); setSelectedId(id); }
@@ -131,9 +138,12 @@ export default function ClientsView({ user, users = [], onOpenTask }) {
       <div className="files-tabs">
         <button className={`files-tab ${tab === 'clients' ? 'active' : ''}`} onClick={() => setTab('clients')}>🗂️ Clients</button>
         <button className={`files-tab ${tab === 'board' ? 'active' : ''}`} onClick={() => setTab('board')}>🗓 Compliance board</button>
+        <button className={`files-tab ${tab === 'matrix' ? 'active' : ''}`} onClick={() => setTab('matrix')}>▦ Matrix</button>
       </div>
       {tab === 'board' ? (
         <ComplianceBoard staff={staff} onOpenTask={onOpenTask} />
+      ) : tab === 'matrix' ? (
+        <ComplianceMatrix onOpenClient={(id) => { setTab('clients'); selectClient(id); }} />
       ) : (
         <div className={`messenger ${showDetail ? 'show-detail' : ''}`}>
       <div className="msgr-list">
@@ -142,8 +152,20 @@ export default function ClientsView({ user, users = [], onOpenTask }) {
           <button className="collab-new" title="New client" onClick={() => { setCreating(true); setSelectedId(null); }}>＋</button>
         </div>
         <div className="client-toolbar">
+          <select className="client-status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} title="Filter by status">
+            <option value="all">All statuses</option>
+            <option value="active">Active</option>
+            <option value="prospect">Prospect</option>
+            <option value="inactive">Inactive</option>
+          </select>
           <button className="btn btn-sm" onClick={() => setShowImport(true)}>⬆ Import list</button>
           <button className="btn btn-sm" onClick={() => setShowBulk(true)}>🗓 Bulk deadlines</button>
+        </div>
+        <div className="az-rail">
+          <button className={`az-key ${letter === '' ? 'on' : ''}`} onClick={() => setLetter('')}>All</button>
+          {'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((L) => (
+            <button key={L} disabled={!activeLetters.has(L)} className={`az-key ${letter === L ? 'on' : ''}`} onClick={() => setLetter(L === letter ? '' : L)}>{L}</button>
+          ))}
         </div>
         {flash && <div className="client-flash">{flash}</div>}
 
@@ -192,7 +214,7 @@ export default function ClientsView({ user, users = [], onOpenTask }) {
       {showImport && (
         <BulkImportModal
           onClose={() => setShowImport(false)}
-          onDone={(r) => { setShowImport(false); load(); setFlash(`Imported ${r.created} client${r.created === 1 ? '' : 's'}${r.skipped ? ` · ${r.skipped} skipped (duplicates)` : ''}`); }}
+          onDone={(r) => { setShowImport(false); load(); setFlash(`Imported ${r.created} new${r.updated ? ` · ${r.updated} updated` : ''}${r.skipped ? ` · ${r.skipped} skipped` : ''}`); }}
         />
       )}
       {showBulk && (
@@ -216,6 +238,70 @@ function shiftMonth(m, delta) {
   mo += delta;
   if (mo < 1) { mo = 12; y -= 1; } else if (mo > 12) { mo = 1; y += 1; }
   return `${y}-${String(mo).padStart(2, '0')}`;
+}
+
+// Compliance matrix: clients (rows) × filing types (columns), each cell showing
+// that filing's status for the month. A firm-wide "who owes what" grid.
+function ComplianceMatrix({ onOpenClient }) {
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [data, setData] = useState({ columns: [], rows: [] });
+  const [q, setQ] = useState('');
+
+  const load = useCallback(async () => {
+    setData(await api(`/clients/matrix?month=${month}`));
+  }, [month]);
+  useEffect(() => {
+    load();
+    const s = getSocket();
+    const onCh = () => load();
+    s?.on('clients:changed', onCh);
+    return () => s?.off('clients:changed', onCh);
+  }, [load]);
+
+  const [y, mo] = month.split('-').map(Number);
+  const rows = data.rows.filter((r) => !q.trim() || r.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const CELL = { filed: { t: '✓', c: 'cell-filed' }, due: { t: '•', c: 'cell-due' }, overdue: { t: '!', c: 'cell-overdue' } };
+
+  return (
+    <div className="matrix-view">
+      <div className="cb-head">
+        <div className="cb-month">
+          <button className="btn btn-sm" onClick={() => setMonth((m) => shiftMonth(m, -1))}>‹</button>
+          <strong>{MONTHS[mo - 1]} {y}</strong>
+          <button className="btn btn-sm" onClick={() => setMonth((m) => shiftMonth(m, 1))}>›</button>
+        </div>
+        <input className="bulk-search" placeholder="Find a client" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="matrix-legend">
+          <span><b className="cell-filed">✓</b> Filed</span>
+          <span><b className="cell-due">•</b> Due</span>
+          <span><b className="cell-overdue">!</b> Overdue</span>
+        </div>
+      </div>
+      {data.columns.length === 0 ? (
+        <div className="empty-hint" style={{ margin: 20 }}>No compliance filings this month. Assign deadlines (Bulk deadlines) to build the matrix.</div>
+      ) : (
+        <div className="matrix-scroll">
+          <table className="matrix-table">
+            <thead>
+              <tr><th className="matrix-csticky">Client</th>{data.columns.map((c) => <th key={c}>{c}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.client_id}>
+                  <td className="matrix-csticky"><button className="link-btn" onClick={() => onOpenClient?.(r.client_id)}>{r.name}</button></td>
+                  {data.columns.map((col) => {
+                    const cell = r.cells[col];
+                    const meta = cell ? CELL[cell.status] : null;
+                    return <td key={col} className="matrix-cell">{meta ? <span className={`matrix-mark ${meta.c}`} title={`${col}: ${cell.status}${cell.due_date ? ` (due ${fmtDate(cell.due_date)})` : ''}`}>{meta.t}</span> : <span className="matrix-na">–</span>}</td>;
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ComplianceBoard({ staff = [], onOpenTask }) {
@@ -335,6 +421,7 @@ const TEMPLATE_SAMPLE = [
 function BulkImportModal({ onClose, onDone }) {
   const [text, setText] = useState('');
   const [fileClients, setFileClients] = useState(null); // structured rows from a client-master file
+  const [updateExisting, setUpdateExisting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const fileRef = useRef(null);
@@ -399,7 +486,7 @@ function BulkImportModal({ onClose, onDone }) {
   async function submit() {
     if (!clients.length) return;
     setBusy(true); setError(null);
-    try { onDone(await api('/clients/bulk', { method: 'POST', body: { clients } })); }
+    try { onDone(await api('/clients/bulk', { method: 'POST', body: { clients, update: updateExisting } })); }
     catch (err) { setError(err.message); setBusy(false); }
   }
 
@@ -433,6 +520,7 @@ function BulkImportModal({ onClose, onDone }) {
               placeholder={'Acme Pvt Ltd, 29ABCDE1234F1Z5, ops@acme.in, 9876543210, GST;TDS\nBharat Traders, , , , GST;PF'} />
           </>
         )}
+        <label className="checkbox import-update"><input type="checkbox" checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)} /> Update existing clients <span className="muted">(match by client code, PAN, or name — otherwise duplicates are skipped)</span></label>
         {error && <div className="form-error">{error}</div>}
         <div className="modal-footer">
           <span className="muted">{clients.length} client{clients.length === 1 ? '' : 's'} detected</span>
@@ -810,6 +898,7 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
 
   const TABS = [
     ['overview', 'Overview'],
+    ['services', `Services${c.tags?.length ? ` (${c.tags.length})` : ''}`],
     ['tasks', `Tasks${tasks.length ? ` (${tasks.length})` : ''}`],
     ['deadlines', `Compliance${data.deadlines?.length ? ` (${data.deadlines.length})` : ''}`],
     ['documents', `Documents${documents.length ? ` (${documents.length})` : ''}`],
@@ -883,6 +972,29 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
                 : <LinkedTasks tasks={tasks.slice(0, 5)} onOpenTask={onOpenTask} />}
             </section>
           </>
+        )}
+        {tab === 'services' && (
+          <section className="client-section">
+            <h3>Services & engagement</h3>
+            {(c.tags || []).length === 0 && <div className="empty-hint">No services tagged. Use ✏ Edit to tick the services you handle for this client.</div>}
+            <div className="service-list">
+              {(c.tags || []).map((t) => {
+                const open = (data.deadlines || []).filter((d) => !d.completed && d.title.toUpperCase().includes(t.toUpperCase())).length;
+                return (
+                  <div key={t} className="service-item">
+                    <span className="service-name">✔ {t}</span>
+                    {open > 0 && <span className="muted small">{open} open filing{open === 1 ? '' : 's'}</span>}
+                  </div>
+                );
+              })}
+            </div>
+            {(c.gst_frequency || c.fee_model) && (
+              <div className="client-facts" style={{ marginTop: 12 }}>
+                {c.gst_frequency && <div><span className="muted">GST frequency</span> {c.gst_frequency}</div>}
+                {c.fee_model && <div><span className="muted">Fee model</span> {c.fee_model}{c.fee_amount ? ` · ₹${c.fee_amount}` : ''}</div>}
+              </div>
+            )}
+          </section>
         )}
         {tab === 'tasks' && <LinkedTasks tasks={tasks} onOpenTask={onOpenTask} />}
         {tab === 'deadlines' && (

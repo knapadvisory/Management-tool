@@ -101,6 +101,18 @@ async function main() {
   const allClients = (await req('GET', '/api/clients', { token: a })).data.clients;
   check('imported clients appear in the list', allClients.some((c) => c.name === 'Bharat Traders') && allClients.some((c) => c.name === 'R Sharma & Co'));
 
+  // Update-existing import: re-upload updates matched clients (by code/PAN/name).
+  await req('POST', '/api/clients', { token: a, body: { name: 'Zeta Corp', client_code: 'KNAP-Z', pan: 'ZZZPZ1234Z' } });
+  const upd = await req('POST', '/api/clients/bulk', { token: a, body: { update: true, clients: [
+    { name: 'Zeta Renamed', client_code: 'KNAP-Z', risk_rating: 'High' }, // matches by code -> update (incl. rename)
+    { name: 'Fresh Co', client_code: 'KNAP-F' },                          // new -> created
+  ] } });
+  check('update mode updates matched clients and creates new ones', upd.data.updated === 1 && upd.data.created === 1);
+  const zeta = (await req('GET', '/api/clients', { token: a })).data.clients.find((c) => c.client_code === 'KNAP-Z');
+  check('an updated client keeps its code but gets new field values', zeta && zeta.name === 'Zeta Renamed' && zeta.risk_rating === 'High');
+  const noUpd = await req('POST', '/api/clients/bulk', { token: a, body: { clients: [{ name: 'Whatever', client_code: 'KNAP-Z' }] } });
+  check('without update mode a matched client is skipped, not changed', noUpd.data.skipped === 1 && noUpd.data.created === 0);
+
   const targetIds = allClients.map((c) => c.id);
   const bulkDl = await req('POST', '/api/clients/deadlines/bulk', { token: a, body: { title: 'TDS payment', due_date: '2026-08-07', recurrence: 'monthly', client_ids: targetIds } });
   check('bulk deadline set on every selected client', bulkDl.status === 201 && bulkDl.data.created === targetIds.length);
@@ -121,6 +133,11 @@ async function main() {
   const board = await req('GET', '/api/clients/deadlines/board?month=2026-08', { token: b });
   check('the compliance board lists deadlines with client + assignee', board.data.deadlines.some((d) => d.client_name === 'Bharat Traders' && d.assignee_name === 'Bob'));
   check('the board summarises per filing', board.data.summary.some((s) => s.title === 'TDS payment' && s.total >= 1));
+
+  // Compliance matrix: clients x filing types for the month.
+  const matrix = await req('GET', '/api/clients/matrix?month=2026-08', { token: a });
+  check('matrix lists filing types as columns', matrix.data.columns.includes('TDS payment'));
+  check('matrix has a row per client with cell statuses', matrix.data.rows.some((r) => r.cells['TDS payment'] && ['due', 'overdue', 'filed'].includes(r.cells['TDS payment'].status)));
 
   // Generate an assignable task from a deadline; completing it ticks the deadline.
   const pfDeadline = dlA.data.find((d) => d.title === 'PF payment');

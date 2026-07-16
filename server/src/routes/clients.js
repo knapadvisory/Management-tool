@@ -133,26 +133,53 @@ router.delete('/compliance-types/:name', (req, res) => {
   res.json({ types: list });
 });
 
-// Bulk-create clients from a pasted list. Skips blanks and case-insensitive
-// duplicate names (so re-importing is safe).
+// Bulk-import clients. Default mode adds new clients and skips case-insensitive
+// duplicate names. With `update: true`, an existing client is UPDATED in place
+// (matched by client_code, else PAN, else name) so a firm can maintain the
+// master by re-uploading — new rows are still created.
 router.post('/bulk', (req, res) => {
   const rows = Array.isArray(req.body.clients) ? req.body.clients : [];
   if (!rows.length) return res.status(400).json({ error: 'Provide at least one client' });
-  const existing = new Set(db.prepare('SELECT LOWER(name) AS n FROM clients WHERE workspace_id = ?').all(req.workspaceId).map((r) => r.n));
+  const update = !!req.body.update;
+
+  const all = db.prepare('SELECT * FROM clients WHERE workspace_id = ?').all(req.workspaceId);
+  const byName = new Map(all.map((c) => [c.name.toLowerCase(), c]));
+  const byCode = new Map(all.filter((c) => c.client_code).map((c) => [c.client_code.toLowerCase(), c]));
+  const byPan = new Map(all.filter((c) => c.pan).map((c) => [c.pan.toLowerCase(), c]));
+  const findExisting = (f) =>
+    (f.client_code && byCode.get(f.client_code.toLowerCase())) ||
+    (f.pan && byPan.get(f.pan.toLowerCase())) ||
+    (f.name && byName.get(f.name.toLowerCase())) || null;
+
   const ins = db.prepare(insertClientSql);
-  let created = 0, skipped = 0;
+  let created = 0, updated = 0, skipped = 0;
   db.transaction(() => {
     for (const r of rows) {
       const f = clientFields(r);
-      if (!f.name || existing.has(f.name.toLowerCase())) { skipped++; continue; }
-      existing.add(f.name.toLowerCase());
+      if (!f.name) { skipped++; continue; }
+      const match = findExisting(f);
+      if (match) {
+        if (!update) { skipped++; continue; }
+        // Update only the fields provided (non-empty), keep the rest.
+        const merged = { ...match };
+        for (const k of ['name', 'type', 'status', ...TEXT_FIELDS]) if (f[k] !== undefined && f[k] !== '') merged[k] = f[k];
+        const sets = ['name', 'type', 'status', ...TEXT_FIELDS].map((c) => `${c}=@${c}`).join(', ');
+        db.prepare(`UPDATE clients SET ${sets} WHERE id=@id`).run(merged);
+        if (Array.isArray(r.tags) && r.tags.length) setTags(match.id, r.tags);
+        updated++;
+        continue;
+      }
       const info = ins.run(insertRow(f, req));
+      const created_c = db.prepare('SELECT * FROM clients WHERE id = ?').get(info.lastInsertRowid);
+      byName.set(created_c.name.toLowerCase(), created_c);
+      if (created_c.client_code) byCode.set(created_c.client_code.toLowerCase(), created_c);
+      if (created_c.pan) byPan.set(created_c.pan.toLowerCase(), created_c);
       if (Array.isArray(r.tags) && r.tags.length) setTags(info.lastInsertRowid, r.tags);
       created++;
     }
   })();
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
-  res.status(201).json({ created, skipped });
+  res.status(201).json({ created, updated, skipped });
 });
 
 // Assign one recurring deadline (e.g. GSTR-3B, monthly) to many clients at once.
@@ -226,6 +253,38 @@ router.get('/deadlines/board', (req, res) => {
     if (r.completed) s.done += 1;
   }
   res.json({ month: m, deadlines: rows, summary: [...byTitle.values()].sort((a, b) => b.total - a.total) });
+});
+
+// Compliance matrix: a grid of clients (rows) x filing types (columns), each
+// cell showing that filing's status for the month (filed / overdue / due).
+router.get('/matrix', (req, res) => {
+  const m = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : new Date().toISOString().slice(0, 7);
+  const start = `${m}-01`;
+  const end = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = db.prepare(`
+    SELECT d.client_id, c.name AS client_name, d.title, d.due_date, d.completed
+    FROM client_deadlines d JOIN clients c ON c.id = d.client_id
+    WHERE c.workspace_id = ? AND d.due_date <= ? AND (d.completed = 0 OR d.due_date >= ?)
+    ORDER BY c.name
+  `).all(req.workspaceId, end, start);
+
+  const titles = new Set();
+  const clients = new Map(); // id -> { client_id, name, cells }
+  for (const r of rows) {
+    titles.add(r.title);
+    if (!clients.has(r.client_id)) clients.set(r.client_id, { client_id: r.client_id, name: r.client_name, tags: tagsFor(r.client_id), cells: {} });
+    const status = r.completed ? 'filed' : (r.due_date < today ? 'overdue' : 'due');
+    // Keep the most urgent status if a client has more than one of a title.
+    const rank = { overdue: 3, due: 2, filed: 1 };
+    const cur = clients.get(r.client_id).cells[r.title];
+    if (!cur || rank[status] > rank[cur.status]) clients.get(r.client_id).cells[r.title] = { status, due_date: r.due_date };
+  }
+  res.json({
+    month: m,
+    columns: [...titles].sort(),
+    rows: [...clients.values()].sort((a, b) => a.name.localeCompare(b.name)),
+  });
 });
 
 router.get('/:id', (req, res) => {

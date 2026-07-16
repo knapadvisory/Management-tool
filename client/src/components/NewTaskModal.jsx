@@ -3,9 +3,11 @@ import { api, uploadFiles } from '../api.js';
 import StepsEditor from './StepsEditor.jsx';
 import RemindersEditor from './RemindersEditor.jsx';
 import AssigneePicker from './AssigneePicker.jsx';
+import ClientPicker from './ClientPicker.jsx';
 import { parseQuickAdd } from '../quickparse.js';
 
 export default function NewTaskModal({ workflows, projects, clients = [], users, templates, defaultWorkflowId, onClose, onCreated }) {
+  const [clientList, setClientList] = useState(clients);
   const [form, setForm] = useState({
     title: '',
     workflow_id: defaultWorkflowId || workflows[0]?.id || '',
@@ -148,14 +150,11 @@ export default function NewTaskModal({ workflows, projects, clients = [], users,
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
-            {clients.length > 0 && (
-              <label className="field">Client
-                <select value={form.client_id} onChange={set('client_id')}>
-                  <option value="">No client</option>
-                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </label>
-            )}
+            <label className="field">Client
+              <ClientPicker clients={clientList} value={form.client_id}
+                onChange={(id) => setForm((f) => ({ ...f, client_id: id }))}
+                onClientAdded={(c) => setClientList((list) => [...list, c])} />
+            </label>
           </div>
 
           <label className="field">Assignees

@@ -1731,6 +1731,49 @@ button.c360-stat:hover { border-color: var(--accent); }
 
 .import-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .import-preview { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface); }
+.import-update { margin: 10px 0 4px; font-size: 13px; }
+
+/* Client list: status filter + A–Z rail */
+.client-status-filter { padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 13px; }
+.az-rail { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.az-key { border: none; background: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 1px 4px; border-radius: 4px; min-width: 16px; }
+.az-key:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.az-key.on { background: var(--accent); color: #fff; }
+.az-key:disabled { opacity: .3; cursor: default; }
+
+/* Searchable client picker (task modal) */
+.client-picker { position: relative; }
+.client-picker-input { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; font-size: 14px; }
+.cp-caret { color: var(--muted); font-size: 11px; }
+.client-picker-pop { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.2); overflow: hidden; }
+.cp-search { width: 100%; border: none; border-bottom: 1px solid var(--border); padding: 9px 12px; background: transparent; color: var(--text); }
+.cp-list { max-height: 220px; overflow-y: auto; }
+.cp-opt { display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none; color: var(--text); cursor: pointer; font-size: 14px; }
+.cp-opt:hover { background: var(--surface-2); }
+.cp-opt.sel { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.cp-empty { padding: 8px 12px; font-size: 13px; }
+.cp-add { display: block; width: 100%; text-align: left; padding: 9px 12px; border: none; border-top: 1px solid var(--border); background: var(--surface-2); color: var(--accent); cursor: pointer; font-weight: 600; font-size: 13px; }
+
+/* Services tab */
+.service-list { display: flex; flex-direction: column; gap: 2px; }
+.service-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 2px; border-bottom: 1px solid var(--surface-2); font-size: 14px; }
+.service-name { font-weight: 600; }
+
+/* Compliance matrix */
+.matrix-view { padding: 12px 16px; }
+.matrix-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-left: auto; }
+.matrix-legend b { font-style: normal; margin-right: 3px; }
+.matrix-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+.matrix-table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.matrix-table th, .matrix-table td { border-bottom: 1px solid var(--surface-2); border-right: 1px solid var(--surface-2); padding: 8px 10px; text-align: center; white-space: nowrap; }
+.matrix-table thead th { background: var(--surface-2); font-weight: 600; position: sticky; top: 0; }
+.matrix-csticky { position: sticky; left: 0; background: var(--surface); text-align: left !important; z-index: 1; }
+.matrix-table thead .matrix-csticky { z-index: 2; }
+.matrix-mark { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; font-weight: 800; }
+.cell-filed { color: #2eb67d; } .matrix-mark.cell-filed { background: rgba(46,182,125,.14); }
+.cell-due { color: #f59e0b; } .matrix-mark.cell-due { background: rgba(245,158,11,.16); }
+.cell-overdue { color: #e01e5a; } .matrix-mark.cell-overdue { background: rgba(224,30,90,.14); }
+.matrix-na { color: var(--muted); opacity: .4; }
 .import-tag-summary { display: flex; gap: 6px; flex-wrap: wrap; }
 .client-tag { font-size: 11px; font-weight: 600; background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 2px 9px; }
 .service-checks { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
