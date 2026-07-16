@@ -104,6 +104,22 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
         </div>
       </header>
 
+      {/* Practice command-centre KPIs */}
+      <div className="dash-kpis">
+        <button className="dash-kpi" onClick={onOpenTasks}>
+          <span className="dash-kpi-num">{s.open}</span><span className="dash-kpi-lbl">Active tasks</span>
+        </button>
+        <button className={`dash-kpi ${s.overdue ? 'warn' : ''}`} onClick={() => openList('Overdue', (t) => t.due_date && daysUntil(t.due_date) < 0 && OPEN(t))}>
+          <span className="dash-kpi-num">{s.overdue}</span><span className="dash-kpi-lbl">Overdue tasks</span>
+        </button>
+        <button className="dash-kpi ok" onClick={() => openList('Completed', (t) => t.status === 'completed')}>
+          <span className="dash-kpi-num">{s.closed_month ?? 0}</span><span className="dash-kpi-lbl">Closed this month</span>
+        </button>
+        <div className="dash-kpi">
+          <span className="dash-kpi-num">{s.clients ?? 0}</span><span className="dash-kpi-lbl">Active clients</span>
+        </div>
+      </div>
+
       {data.upcoming.length > 0 && (
         <section className="dash-block">
           <div className="dash-block-head"><h2>{t('dash.upcoming')}</h2></div>
@@ -198,6 +214,46 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
         </aside>
       </div>
 
+      {/* Practice analytics: overdue aging, upcoming closures, and the FY view */}
+      {(data.aging || data.closures || data.year) && (
+        <div className="dash-analytics">
+          {data.aging && (
+            <section className="dash-panel">
+              <div className="dash-block-head"><h2>Overdue aging</h2></div>
+              <AgingBars title="Tasks" data={data.aging.tasks} />
+              <AgingBars title="Compliance filings" data={data.aging.filings} />
+            </section>
+          )}
+          {data.closures && (
+            <section className="dash-panel">
+              <div className="dash-block-head"><h2>Upcoming closures</h2><span className="pill-count">{data.closures.buckets?.total || 0}</span></div>
+              <div className="closure-buckets">
+                {[['≤15d', data.closures.buckets?.d15], ['16–30d', data.closures.buckets?.d30], ['31–45d', data.closures.buckets?.d45], ['46–60d', data.closures.buckets?.d60]].map(([lbl, n]) => (
+                  <div key={lbl} className="closure-bucket"><span className="closure-num">{n || 0}</span><span className="closure-lbl">{lbl}</span></div>
+                ))}
+              </div>
+              <div className="closure-list">
+                {(data.closures.list || []).length === 0 && <p className="muted" style={{ padding: 8 }}>No filings due in the next 60 days.</p>}
+                {(data.closures.list || []).map((d) => (
+                  <div key={d.id} className="closure-row">
+                    <span className={`closure-when ${daysUntil(d.due_date) <= 7 ? 'soon' : ''}`}>{fmtDay(d.due_date)}</span>
+                    <span className="closure-what">{d.title} · <span className="muted">{d.client_name}</span></span>
+                    {d.assignee_name && <Avatar user={{ name: d.assignee_name, avatar_color: d.assignee_color }} size={18} />}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+
+      {data.year && (
+        <section className="dash-panel dash-year">
+          <div className="dash-block-head"><h2>This financial year <span className="muted">({data.year.fy})</span></h2><span className="muted small">assigned vs completed</span></div>
+          <YearMatrix months={data.year.months} />
+        </section>
+      )}
+
       {listPopup && (
         <div className="modal-overlay" onClick={() => setListPopup(null)}>
           <div className="modal dash-listpopup" onClick={(e) => e.stopPropagation()}>
@@ -219,6 +275,57 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
           onClose={() => { setOpenTaskId(null); reload(); }}
         />
       )}
+    </div>
+  );
+}
+
+// Horizontal aging bar: how overdue things are, split into age buckets.
+function AgingBars({ title, data }) {
+  const b = data || {};
+  const buckets = [
+    ['0–15d', b.d15 || 0, 'age-a'],
+    ['15–30d', b.d30 || 0, 'age-b'],
+    ['30–60d', b.d60 || 0, 'age-c'],
+    ['60d+', b.d60plus || 0, 'age-d'],
+  ];
+  const total = b.total || 0;
+  return (
+    <div className="aging-block">
+      <div className="aging-head"><span>{title}</span><span className="muted">{total} overdue</span></div>
+      {total === 0 ? <div className="aging-clear">All clear 🎉</div> : (
+        <>
+          <div className="aging-bar">
+            {buckets.map(([lbl, n, cls]) => n > 0 && <span key={lbl} className={`aging-seg ${cls}`} style={{ flex: n }} title={`${lbl}: ${n}`} />)}
+          </div>
+          <div className="aging-legend">
+            {buckets.map(([lbl, n, cls]) => (
+              <span key={lbl} className="aging-key"><span className={`aging-dot ${cls}`} />{lbl} <strong>{n}</strong></span>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Financial-year month grid: assigned vs completed bars per month (Apr→Mar).
+function YearMatrix({ months = [] }) {
+  const max = Math.max(1, ...months.map((m) => Math.max(m.assigned, m.completed)));
+  return (
+    <div className="year-matrix">
+      {months.map((m) => (
+        <div key={m.key} className="year-col" title={`${m.label}: ${m.completed}/${m.assigned} completed/assigned`}>
+          <div className="year-bars">
+            <span className="year-bar assigned" style={{ height: `${(m.assigned / max) * 100}%` }} />
+            <span className="year-bar completed" style={{ height: `${(m.completed / max) * 100}%` }} />
+          </div>
+          <div className="year-lbl">{m.label}</div>
+        </div>
+      ))}
+      <div className="year-legend">
+        <span><span className="year-dot assigned" /> Assigned</span>
+        <span><span className="year-dot completed" /> Completed</span>
+      </div>
     </div>
   );
 }

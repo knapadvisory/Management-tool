@@ -1247,6 +1247,53 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .dash-side { display: flex; flex-direction: column; gap: 22px; }
 .dash-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
 
+/* KPI cards */
+.dash-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 22px; }
+.dash-kpi { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; color: var(--text); cursor: default; }
+button.dash-kpi { cursor: pointer; }
+button.dash-kpi:hover { border-color: var(--accent); }
+.dash-kpi-num { font-size: 28px; font-weight: 800; line-height: 1; }
+.dash-kpi-lbl { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.dash-kpi.warn .dash-kpi-num { color: var(--danger, #e01e5a); }
+.dash-kpi.ok .dash-kpi-num { color: var(--success, #2eb67d); }
+
+/* Analytics row */
+.dash-analytics { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 22px; align-items: start; }
+@media (max-width: 900px) { .dash-analytics { grid-template-columns: 1fr; } }
+.aging-block { margin: 6px 0 14px; }
+.aging-block:last-child { margin-bottom: 0; }
+.aging-head { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.aging-clear { font-size: 13px; color: var(--muted); }
+.aging-bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--surface-2); }
+.aging-seg { min-width: 4px; }
+.age-a { background: #f5c518; } .age-b { background: #f97316; } .age-c { background: #ef4444; } .age-d { background: #991b1b; }
+.aging-legend { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 7px; font-size: 12px; color: var(--muted); }
+.aging-key { display: inline-flex; align-items: center; gap: 5px; }
+.aging-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.closure-buckets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+.closure-bucket { background: var(--surface-2); border-radius: 8px; padding: 8px; text-align: center; }
+.closure-num { display: block; font-size: 18px; font-weight: 700; }
+.closure-lbl { font-size: 11px; color: var(--muted); }
+.closure-list { display: flex; flex-direction: column; }
+.closure-row { display: flex; align-items: center; gap: 10px; padding: 6px 2px; border-bottom: 1px solid var(--surface-2); font-size: 13px; }
+.closure-when { min-width: 96px; color: var(--muted); }
+.closure-when.soon { color: var(--danger, #e01e5a); font-weight: 600; }
+.closure-what { flex: 1; }
+/* FY matrix */
+.dash-year { margin-top: 22px; }
+.year-matrix { display: flex; align-items: flex-end; gap: 8px; height: 130px; position: relative; padding-top: 8px; }
+.year-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
+.year-bars { flex: 1; display: flex; align-items: flex-end; gap: 3px; width: 100%; justify-content: center; }
+.year-bar { width: 40%; max-width: 16px; border-radius: 3px 3px 0 0; min-height: 2px; }
+.year-bar.assigned { background: var(--surface-2); border: 1px solid var(--border); }
+.year-bar.completed { background: var(--accent); }
+.year-lbl { font-size: 10px; color: var(--muted); margin-top: 5px; }
+.year-legend { position: absolute; top: -4px; right: 0; display: flex; gap: 14px; font-size: 11px; color: var(--muted); }
+.year-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.year-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.year-dot.assigned { background: var(--surface-2); border: 1px solid var(--border); }
+.year-dot.completed { background: var(--accent); }
+
 /* Board summary */
 .board-summary { display: flex; gap: 10px; flex-wrap: wrap; }
 .board-col { flex: 1; min-width: 92px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; text-align: center; }

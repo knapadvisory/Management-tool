@@ -91,10 +91,64 @@ router.get('/', (req, res) => {
      ORDER BY a.id DESC LIMIT 12`
   ).all();
 
+  // Tasks closed this month (a period KPI, alongside the all-time done count).
+  const closedMonth = one(`SELECT COUNT(*) AS n FROM tasks t WHERE t.completed_at IS NOT NULL AND strftime('%Y-%m', t.completed_at) = strftime('%Y-%m','now')${scope}`).n;
+
+  // Overdue aging: how long overdue things have been sitting (0-15 / 15-30 /
+  // 30-60 / 60+ days) — for open tasks (scoped) and open compliance filings.
+  const ageBuckets = (dateExpr, from, extra = '') => one(`
+    SELECT
+      SUM(CASE WHEN julianday('now') - julianday(${dateExpr}) <= 15 THEN 1 ELSE 0 END) AS d15,
+      SUM(CASE WHEN julianday('now') - julianday(${dateExpr}) > 15 AND julianday('now') - julianday(${dateExpr}) <= 30 THEN 1 ELSE 0 END) AS d30,
+      SUM(CASE WHEN julianday('now') - julianday(${dateExpr}) > 30 AND julianday('now') - julianday(${dateExpr}) <= 60 THEN 1 ELSE 0 END) AS d60,
+      SUM(CASE WHEN julianday('now') - julianday(${dateExpr}) > 60 THEN 1 ELSE 0 END) AS d60plus,
+      COUNT(*) AS total
+    FROM ${from} WHERE ${extra}`);
+  const taskAging = ageBuckets('t.due_date', 'tasks t', `${OPEN} AND t.due_date IS NOT NULL AND t.due_date < date('now')${scope}`);
+  const filingAging = ageBuckets('d.due_date', `client_deadlines d JOIN clients c ON c.id = d.client_id`, `c.workspace_id = ${ws} AND d.completed = 0 AND d.due_date < date('now')`);
+
+  // Upcoming closures: compliance filings due in the next 15/30/45/60 days.
+  const closureBuckets = one(`
+    SELECT
+      SUM(CASE WHEN julianday(d.due_date) - julianday('now') <= 15 THEN 1 ELSE 0 END) AS d15,
+      SUM(CASE WHEN julianday(d.due_date) - julianday('now') > 15 AND julianday(d.due_date) - julianday('now') <= 30 THEN 1 ELSE 0 END) AS d30,
+      SUM(CASE WHEN julianday(d.due_date) - julianday('now') > 30 AND julianday(d.due_date) - julianday('now') <= 45 THEN 1 ELSE 0 END) AS d45,
+      SUM(CASE WHEN julianday(d.due_date) - julianday('now') > 45 AND julianday(d.due_date) - julianday('now') <= 60 THEN 1 ELSE 0 END) AS d60,
+      COUNT(*) AS total
+    FROM client_deadlines d JOIN clients c ON c.id = d.client_id
+    WHERE c.workspace_id = ${ws} AND d.completed = 0 AND d.due_date >= date('now') AND d.due_date <= date('now','+60 day')`);
+  const closureList = db.prepare(`
+    SELECT d.id, d.title, d.due_date, c.name AS client_name, u.name AS assignee_name, u.avatar_color AS assignee_color
+    FROM client_deadlines d JOIN clients c ON c.id = d.client_id LEFT JOIN users u ON u.id = d.assignee_id
+    WHERE c.workspace_id = ${ws} AND d.completed = 0 AND d.due_date >= date('now') AND d.due_date <= date('now','+60 day')
+    ORDER BY d.due_date LIMIT 12`).all();
+
+  // This financial year (India: Apr → Mar): tasks assigned vs completed per month.
+  const now = new Date();
+  const fyStart = (now.getUTCMonth() >= 3 ? now.getUTCFullYear() : now.getUTCFullYear() - 1);
+  const fyFrom = `${fyStart}-04-01`;
+  const fyTo = `${fyStart + 1}-04-01`;
+  const assignedByMonth = Object.fromEntries(db.prepare(
+    `SELECT strftime('%Y-%m', t.created_at) AS m, COUNT(*) AS n FROM tasks t
+     WHERE t.created_at >= '${fyFrom}' AND t.created_at < '${fyTo}'${scope} GROUP BY m`).all().map((r) => [r.m, r.n]));
+  const completedByMonth = Object.fromEntries(db.prepare(
+    `SELECT strftime('%Y-%m', t.completed_at) AS m, COUNT(*) AS n FROM tasks t
+     WHERE t.completed_at IS NOT NULL AND t.completed_at >= '${fyFrom}' AND t.completed_at < '${fyTo}'${scope} GROUP BY m`).all().map((r) => [r.m, r.n]));
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const yearMonths = Array.from({ length: 12 }, (_, i) => {
+    const mIdx = (3 + i) % 12;                 // Apr..Mar
+    const yr = fyStart + (mIdx < 3 ? 1 : 0);
+    const key = `${yr}-${String(mIdx + 1).padStart(2, '0')}`;
+    return { key, label: MON[mIdx], assigned: assignedByMonth[key] || 0, completed: completedByMonth[key] || 0 };
+  });
+
   res.json({
     role: isAdmin ? 'admin' : 'member',
-    summary: { open, overdue, due_soon: dueSoon, clients },
+    summary: { open, overdue, due_soon: dueSoon, clients, closed_month: closedMonth },
     upcoming, urgent, board, done_count: doneCount, all_tasks: allTasks, workload, activity,
+    aging: { tasks: taskAging, filings: filingAging },
+    closures: { buckets: closureBuckets, list: closureList },
+    year: { fy: `${fyStart}–${fyStart + 1}`, months: yearMonths },
   });
 });
 
