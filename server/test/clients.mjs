@@ -154,6 +154,20 @@ async function main() {
   const gstClients = listed.filter((c) => (c.tags || []).includes('GST'));
   check('clients can be segmented by tag (>=3 GST clients)', gstClients.length >= 3);
 
+  console.log('Client-master fields (rich import)');
+  const rich = await req('POST', '/api/clients', { token: a, body: {
+    name: 'Master Co', client_code: 'KNAP-042', constitution: 'LLP', firm: 'KNAP',
+    pan: 'AAACS9999F', tan: 'DELS99999E', cin: 'AAB-1234', contact_person: 'R. Rao',
+    gst_frequency: 'QRMP', fee_model: 'Per Filing', fee_amount: '5000',
+    turnover_band: '1-10 Cr', risk_rating: 'Medium', independence_flag: 'Yes',
+    onboarding_date: '01-Apr-2024', tags: ['GST'],
+  } });
+  check('rich fields are stored on create', rich.data.client_code === 'KNAP-042' && rich.data.constitution === 'LLP' && rich.data.fee_amount === '5000' && rich.data.gst_frequency === 'QRMP');
+  const richPatch = await req('PATCH', `/api/clients/${rich.data.id}`, { token: a, body: { risk_rating: 'High', fee_amount: '7500' } });
+  check('rich fields can be edited without clearing others', richPatch.data.risk_rating === 'High' && richPatch.data.fee_amount === '7500' && richPatch.data.client_code === 'KNAP-042');
+  const richBack = (await req('GET', `/api/clients/${rich.data.id}`, { token: b })).data.client;
+  check('rich fields survive a reload', richBack.tan === 'DELS99999E' && richBack.independence_flag === 'Yes');
+
   console.log('Custom compliance types');
   const t0 = await req('GET', '/api/clients/compliance-types', { token: a });
   check('compliance types start empty', Array.isArray(t0.data.types) && t0.data.types.length === 0);

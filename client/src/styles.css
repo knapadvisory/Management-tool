@@ -1604,7 +1604,13 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .chip-ghost { border-style: dashed; color: var(--muted); }
 .chip-add { border: 1px solid var(--accent); border-radius: 16px; padding: 5px 12px; font-size: 13px; min-width: 140px; background: var(--surface); color: var(--text); }
 .import-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.import-preview { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface); }
+.import-tag-summary { display: flex; gap: 6px; flex-wrap: wrap; }
 .client-tag { font-size: 11px; font-weight: 600; background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 2px 9px; }
+.service-checks { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.service-check { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--border); border-radius: 16px; font-size: 13px; cursor: pointer; user-select: none; background: var(--surface); }
+.service-check.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.service-check input { margin: 0; }
 .bulk-pick-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .bulk-search { flex: 1; min-width: 140px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; }
 .bulk-pick-head select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; }

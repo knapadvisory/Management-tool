@@ -55,17 +55,35 @@ const load = (req, res) => {
   return client;
 };
 
+// Free-text client-master fields, stored verbatim (trimmed).
+const TEXT_FIELDS = [
+  'email', 'phone', 'gstin', 'pan', 'address', 'notes',
+  'client_code', 'constitution', 'firm', 'tan', 'cin', 'contact_person',
+  'onboarding_date', 'gst_frequency', 'fee_model', 'fee_amount',
+  'turnover_band', 'risk_rating', 'independence_flag',
+];
+
 // Sanitize the writable client fields from a request body.
 function clientFields(body) {
   const out = {};
   if (body.name !== undefined) out.name = String(body.name).trim();
   if (body.type !== undefined) out.type = TYPES.includes(body.type) ? body.type : 'company';
   if (body.status !== undefined) out.status = STATUSES.includes(body.status) ? body.status : 'active';
-  for (const f of ['email', 'phone', 'gstin', 'pan', 'address', 'notes']) {
+  for (const f of TEXT_FIELDS) {
     if (body[f] !== undefined) out[f] = String(body[f] || '').trim();
   }
   return out;
 }
+
+// Build the full column set (with defaults) for an INSERT, so every code path
+// stays in sync as the schema grows.
+function insertRow(f, req) {
+  const row = { name: f.name, type: f.type || 'company', status: f.status || 'active', created_by: req.user.id, workspace_id: req.workspaceId };
+  for (const c of TEXT_FIELDS) row[c] = f[c] || '';
+  return row;
+}
+const INSERT_COLS = ['name', 'type', 'status', ...TEXT_FIELDS, 'created_by', 'workspace_id'];
+const insertClientSql = `INSERT INTO clients (${INSERT_COLS.join(', ')}) VALUES (${INSERT_COLS.map((c) => '@' + c).join(', ')})`;
 
 // --- Clients ---
 
@@ -77,14 +95,7 @@ router.get('/', (req, res) => {
 router.post('/', (req, res) => {
   const f = clientFields(req.body);
   if (!f.name) return res.status(400).json({ error: 'Client name is required' });
-  const info = db.prepare(`
-    INSERT INTO clients (name, type, status, email, phone, gstin, pan, address, notes, created_by, workspace_id)
-    VALUES (@name, @type, @status, @email, @phone, @gstin, @pan, @address, @notes, @created_by, @workspace_id)
-  `).run({
-    name: f.name, type: f.type || 'company', status: f.status || 'active',
-    email: f.email || '', phone: f.phone || '', gstin: f.gstin || '', pan: f.pan || '',
-    address: f.address || '', notes: f.notes || '', created_by: req.user.id, workspace_id: req.workspaceId,
-  });
+  const info = db.prepare(insertClientSql).run(insertRow(f, req));
   if (req.body.tags !== undefined) setTags(info.lastInsertRowid, req.body.tags);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
   res.status(201).json(clientWithMeta(db.prepare('SELECT * FROM clients WHERE id = ?').get(info.lastInsertRowid)));
@@ -126,21 +137,14 @@ router.post('/bulk', (req, res) => {
   const rows = Array.isArray(req.body.clients) ? req.body.clients : [];
   if (!rows.length) return res.status(400).json({ error: 'Provide at least one client' });
   const existing = new Set(db.prepare('SELECT LOWER(name) AS n FROM clients WHERE workspace_id = ?').all(req.workspaceId).map((r) => r.n));
-  const ins = db.prepare(`
-    INSERT INTO clients (name, type, status, email, phone, gstin, pan, address, notes, created_by, workspace_id)
-    VALUES (@name, @type, @status, @email, @phone, @gstin, @pan, @address, @notes, @created_by, @workspace_id)
-  `);
+  const ins = db.prepare(insertClientSql);
   let created = 0, skipped = 0;
   db.transaction(() => {
     for (const r of rows) {
       const f = clientFields(r);
       if (!f.name || existing.has(f.name.toLowerCase())) { skipped++; continue; }
       existing.add(f.name.toLowerCase());
-      const info = ins.run({
-        name: f.name, type: f.type || 'company', status: f.status || 'active',
-        email: f.email || '', phone: f.phone || '', gstin: f.gstin || '', pan: f.pan || '',
-        address: f.address || '', notes: f.notes || '', created_by: req.user.id, workspace_id: req.workspaceId,
-      });
+      const info = ins.run(insertRow(f, req));
       if (Array.isArray(r.tags) && r.tags.length) setTags(info.lastInsertRowid, r.tags);
       created++;
     }
@@ -236,10 +240,8 @@ router.patch('/:id', (req, res) => {
   const f = clientFields(req.body);
   if (f.name === '') return res.status(400).json({ error: 'Client name cannot be empty' });
   const merged = { ...client, ...f };
-  db.prepare(`
-    UPDATE clients SET name=@name, type=@type, status=@status, email=@email, phone=@phone,
-      gstin=@gstin, pan=@pan, address=@address, notes=@notes WHERE id=@id
-  `).run({ ...merged });
+  const sets = ['name', 'type', 'status', ...TEXT_FIELDS].map((c) => `${c}=@${c}`).join(', ');
+  db.prepare(`UPDATE clients SET ${sets} WHERE id=@id`).run(merged);
   if (req.body.tags !== undefined) setTags(client.id, req.body.tags);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
   res.json(clientWithMeta(db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id)));

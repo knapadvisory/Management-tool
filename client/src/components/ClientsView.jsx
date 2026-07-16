@@ -13,6 +13,81 @@ function fmtDate(d) {
 }
 const overdue = (d) => d && d < new Date().toISOString().slice(0, 10);
 
+// --- Client-master workbook import -----------------------------------------
+// A firm's "Client Master" sheet (e.g. KNAP's) carries far more than name/email:
+// identity fields plus a block of Yes/No service columns (GST, TDS, ITR …).
+// We map the identity columns onto our client record and turn every service
+// marked "Yes" into a tag, so the sheet immediately powers tag-based bulk
+// compliance (GST clients, TDS clients, …) with no manual tagging.
+
+const norm = (s) => String(s == null ? '' : s).trim();
+const isYes = (v) => /^(y|yes|true|1|applicable)$/i.test(norm(v));
+
+// Header label (lowercased) -> our client field.
+const KNAP_FIELDS = {
+  'client name (as per pan)': 'name', 'client name': 'name', 'name': 'name',
+  'client code': 'client_code', 'constitution': 'constitution', 'status': 'status',
+  'firm': 'firm', 'pan': 'pan', 'tan': 'tan',
+  'primary gstin': 'gstin', 'gstin': 'gstin', 'cin / llpin': 'cin', 'cin/llpin': 'cin',
+  'primary contact person': 'contact_person', 'contact person': 'contact_person',
+  'mobile': 'phone', 'phone': 'phone', 'email': 'email',
+  'principal place of business': 'address', 'address': 'address',
+  'gst return frequency': 'gst_frequency', 'fee model': 'fee_model',
+  'fee amount (rs.)': 'fee_amount', 'fee amount': 'fee_amount',
+  'turnover band (rs.)': 'turnover_band', 'turnover band': 'turnover_band',
+  'risk rating': 'risk_rating', 'independence flag (firm interest?)': 'independence_flag',
+  'date of onboarding': 'onboarding_date', 'remarks': 'notes',
+};
+// Yes/No service columns -> tag applied when the cell says Yes.
+const KNAP_SERVICE_TAGS = {
+  'gst': 'GST', 'tds': 'TDS', 'itr': 'ITR', 'bookkeeping': 'Bookkeeping',
+  'payroll': 'Payroll', 'audit': 'Audit', 'roc / company law': 'ROC', 'roc': 'ROC',
+};
+const statusFromSheet = (v) => {
+  const s = norm(v).toLowerCase();
+  if (s.startsWith('prospect')) return 'prospect';
+  if (s.startsWith('dormant') || s.startsWith('exit') || s.startsWith('inactive') || s.startsWith('closed')) return 'inactive';
+  return 'active';
+};
+const typeFromConstitution = (v) => (/individual|proprietor|huf/i.test(norm(v)) ? 'individual' : 'company');
+
+// Find the header row and return {header: string[], index}. Some sheets have a
+// category band ("IDENTITY", "SERVICES"…) above the real header, so we scan for
+// the row that actually names the columns.
+function findHeaderRow(rows) {
+  for (let i = 0; i < Math.min(rows.length, 8); i++) {
+    const cells = (rows[i] || []).map((c) => norm(c).toLowerCase());
+    if (cells.some((c) => c === 'name' || c.startsWith('client name') || c === 'client code')) return { header: cells, index: i };
+  }
+  return null;
+}
+
+// True when this looks like a rich client-master (has a service column), vs the
+// plain Name/GSTIN/Email/Phone/Tags template.
+const isClientMaster = (header) => header.some((h) => h in KNAP_SERVICE_TAGS) && header.some((h) => KNAP_FIELDS[h] === 'name');
+
+// Map a client-master sheet into our client objects (with derived tags).
+function mapClientMaster(rows) {
+  const found = findHeaderRow(rows);
+  if (!found) return [];
+  const { header, index } = found;
+  const out = [];
+  for (let r = index + 1; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const c = { tags: [] };
+    header.forEach((h, ci) => {
+      const val = norm(row[ci]);
+      if (KNAP_FIELDS[h] && val) c[KNAP_FIELDS[h]] = val;
+      if (KNAP_SERVICE_TAGS[h] && isYes(val)) c.tags.push(KNAP_SERVICE_TAGS[h]);
+    });
+    if (!c.name) continue;
+    c.type = typeFromConstitution(c.constitution);
+    c.status = statusFromSheet(c.status);
+    out.push(c);
+  }
+  return out;
+}
+
 export default function ClientsView({ user, users = [], onOpenTask }) {
   const [tab, setTab] = useState('clients');
   const [clients, setClients] = useState([]);
@@ -231,43 +306,79 @@ function ComplianceBoard({ staff = [], onOpenTask }) {
   );
 }
 
+// Columns of the downloadable client-master template (matches a firm's master
+// sheet: identity + service Yes/No columns that become tags on import).
+const TEMPLATE_COLS = [
+  'Client Code', 'Client Name (as per PAN)', 'Constitution', 'Status', 'Firm',
+  'PAN', 'TAN', 'Primary GSTIN', 'CIN / LLPIN', 'Primary Contact Person',
+  'Mobile', 'Email', 'Principal Place of Business',
+  'GST', 'TDS', 'ITR', 'Bookkeeping', 'Payroll', 'Audit', 'ROC / Company Law',
+  'GST Return Frequency', 'Fee Model', 'Fee Amount (Rs.)', 'Turnover Band (Rs.)',
+  'Risk Rating', 'Independence Flag (Firm Interest?)', 'Date of Onboarding', 'Remarks',
+];
+const TEMPLATE_SAMPLE = [
+  'KNAP-001', 'Sample Exports Private Limited', 'Private Limited', 'Active', 'KNAP',
+  'AAACS1234F', 'DELS12345E', '07AAACS1234F1Z5', 'U74999DL2020PTC123456', 'A. Sharma',
+  '9800000001', 'accounts@sampleexports.in', 'Noida, UP',
+  'Yes', 'Yes', 'Yes', 'Yes', 'No', 'Yes', 'Yes',
+  'Monthly', 'Monthly Retainer', '25000', '10-25 Cr',
+  'Low', 'No', '01-Apr-2024', 'Sample row — overwrite with your first client',
+];
+
 function BulkImportModal({ onClose, onDone }) {
   const [text, setText] = useState('');
+  const [fileClients, setFileClients] = useState(null); // structured rows from a client-master file
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const fileRef = useRef(null);
 
-  const parsed = text.split('\n').map((line) => {
+  const textClients = text.split('\n').map((line) => {
     const parts = line.split(/\t|,/).map((s) => s.trim());
     return {
       name: parts[0], gstin: parts[1] || '', email: parts[2] || '', phone: parts[3] || '',
       tags: (parts[4] || '').split(/[;|]/).map((s) => s.trim()).filter(Boolean),
     };
   }).filter((r) => r.name);
+  const clients = fileClients || textClients;
+  const tagCounts = {};
+  if (fileClients) fileClients.forEach((c) => (c.tags || []).forEach((t) => { tagCounts[t] = (tagCounts[t] || 0) + 1; }));
 
+  function csvCell(v) { return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
   function downloadTemplate() {
-    const csv = 'Name,GSTIN,Email,Phone,Tags (separate with ;)\nAcme Pvt Ltd,29ABCDE1234F1Z5,ops@acme.in,9876543210,GST;TDS\nBharat Traders,,,,GST;PF\n';
+    const csv = [TEMPLATE_COLS, TEMPLATE_SAMPLE].map((r) => r.map(csvCell).join(',')).join('\n') + '\n';
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a');
-    link.href = url; link.download = 'teamhub-clients-template.csv';
+    link.href = url; link.download = 'teamhub-client-master-template.csv';
     document.body.appendChild(link); link.click(); link.remove();
     URL.revokeObjectURL(url);
   }
 
-  // Load a filled template (.xlsx or .csv) into the text box for review.
+  // Load a filled sheet (.xlsx or .csv). A rich client-master is mapped straight
+  // to structured records (identity + tags); a plain list fills the text box.
   async function onFile(e) {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
-    setError(null);
+    setError(null); setFileClients(null);
     try {
       let rows;
       if (file.name.toLowerCase().endsWith('.xlsx')) {
         const readXlsxFile = (await import('read-excel-file/browser')).default;
-        rows = await readXlsxFile(file);
+        // Prefer a sheet literally named "Client Master" if the workbook has one.
+        let sheet;
+        try { sheet = (await readXlsxFile(file, { getSheets: true })).find((s) => /client master/i.test(s.name))?.name; } catch { /* single sheet */ }
+        rows = await readXlsxFile(file, sheet ? { sheet } : undefined);
       } else {
         rows = (await file.text()).split(/\r?\n/).map((l) => l.split(','));
       }
+      const found = findHeaderRow(rows);
+      if (found && isClientMaster(found.header)) {
+        const mapped = mapClientMaster(rows);
+        if (!mapped.length) { setError('No client rows found in the sheet.'); return; }
+        setFileClients(mapped); setText('');
+        return;
+      }
+      // Plain Name/GSTIN/Email/Phone/Tags list → editable text.
       const isHeader = rows.length && String(rows[0][0] || '').trim().toLowerCase() === 'name';
       const body = (isHeader ? rows.slice(1) : rows)
         .map((r) => (r || []).map((c) => (c == null ? '' : String(c)).trim()))
@@ -279,9 +390,9 @@ function BulkImportModal({ onClose, onDone }) {
   }
 
   async function submit() {
-    if (!parsed.length) return;
+    if (!clients.length) return;
     setBusy(true); setError(null);
-    try { onDone(await api('/clients/bulk', { method: 'POST', body: { clients: parsed } })); }
+    try { onDone(await api('/clients/bulk', { method: 'POST', body: { clients } })); }
     catch (err) { setError(err.message); setBusy(false); }
   }
 
@@ -294,15 +405,33 @@ function BulkImportModal({ onClose, onDone }) {
           <button type="button" className="btn btn-sm" onClick={() => fileRef.current?.click()}>⬆ Upload filled sheet</button>
           <input ref={fileRef} type="file" accept=".csv,.xlsx" hidden onChange={onFile} />
         </div>
-        <p className="muted" style={{ marginTop: 0 }}>Download the template, fill it in Excel, and upload it — or paste one client per line: <code>Name, GSTIN, Email, Phone, Tags</code>. Tag clients by compliance (e.g. <code>GST;TDS</code>) to bulk-select them later.</p>
-        <textarea className="bulk-textarea" rows={10} autoFocus value={text} onChange={(e) => setText(e.target.value)}
-          placeholder={'Acme Pvt Ltd, 29ABCDE1234F1Z5, ops@acme.in, 9876543210, GST;TDS\nBharat Traders, , , , GST;PF'} />
+        {fileClients ? (
+          <div className="import-preview">
+            <p className="muted" style={{ marginTop: 0 }}>
+              Read <strong>{fileClients.length}</strong> client{fileClients.length === 1 ? '' : 's'} from your client-master sheet. Services marked “Yes” become tags for bulk compliance:
+            </p>
+            <div className="import-tag-summary">
+              {Object.keys(tagCounts).length === 0
+                ? <span className="muted">No service tags detected.</span>
+                : Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).map(([t, n]) => (
+                    <span key={t} className="chip">{t} · {n}</span>
+                  ))}
+            </div>
+            <button type="button" className="btn btn-sm" style={{ marginTop: 10 }} onClick={() => setFileClients(null)}>Clear &amp; paste instead</button>
+          </div>
+        ) : (
+          <>
+            <p className="muted" style={{ marginTop: 0 }}>Upload your <strong>Client Master</strong> sheet (the service columns GST/TDS/ITR… auto-tag each client) — or paste one client per line: <code>Name, GSTIN, Email, Phone, Tags</code>. Tag by compliance (e.g. <code>GST;TDS</code>) to bulk-select later.</p>
+            <textarea className="bulk-textarea" rows={10} autoFocus value={text} onChange={(e) => setText(e.target.value)}
+              placeholder={'Acme Pvt Ltd, 29ABCDE1234F1Z5, ops@acme.in, 9876543210, GST;TDS\nBharat Traders, , , , GST;PF'} />
+          </>
+        )}
         {error && <div className="form-error">{error}</div>}
         <div className="modal-footer">
-          <span className="muted">{parsed.length} client{parsed.length === 1 ? '' : 's'} detected</span>
+          <span className="muted">{clients.length} client{clients.length === 1 ? '' : 's'} detected</span>
           <div className="footer-actions">
             <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" disabled={busy || !parsed.length} onClick={submit}>{busy ? 'Importing…' : `Import ${parsed.length}`}</button>
+            <button className="btn btn-primary" disabled={busy || !clients.length} onClick={submit}>{busy ? 'Importing…' : `Import ${clients.length}`}</button>
           </div>
         </div>
       </div>
@@ -441,7 +570,19 @@ function BulkDeadlinesModal({ clients, staff = [], onClose, onDone }) {
   );
 }
 
-const BLANK = { name: '', type: 'company', status: 'active', email: '', phone: '', gstin: '', pan: '', address: '', notes: '', tags: [] };
+const BLANK = {
+  name: '', type: 'company', status: 'active', email: '', phone: '', gstin: '', pan: '', address: '', notes: '', tags: [],
+  client_code: '', constitution: '', firm: '', tan: '', cin: '', contact_person: '',
+  gst_frequency: '', fee_model: '', fee_amount: '', turnover_band: '', risk_rating: '',
+  independence_flag: '', onboarding_date: '',
+};
+// Option lists mirror the workbook's "Dropdown Lists" sheet.
+const CONSTITUTIONS = ['Private Limited', 'LLP', 'Partnership', 'Proprietorship', 'HUF', 'Trust', 'Section 8', 'Individual', 'OPC'];
+const GST_FREQ = ['Monthly', 'QRMP', 'Composition', 'Not Registered'];
+const FEE_MODELS = ['Monthly Retainer', 'Quarterly', 'Per Filing', 'Annual', 'Hourly'];
+const RISKS = ['Low', 'Medium', 'High'];
+// The Yes/No service columns of the import become tags — offer them as checkboxes.
+const SERVICE_TAGS = ['GST', 'TDS', 'ITR', 'Bookkeeping', 'Payroll', 'Audit', 'ROC'];
 
 function ClientForm({ initial, onCancel, onSaved }) {
   const [form, setForm] = useState(() => ({ ...BLANK, ...(initial || {}), tags: initial?.tags || [] }));
@@ -449,11 +590,22 @@ function ClientForm({ initial, onCancel, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const hasTag = (t) => form.tags.some((x) => x.toLowerCase() === t.toLowerCase());
+  function toggleService(t) {
+    setForm((f) => ({ ...f, tags: hasTag(t) ? f.tags.filter((x) => x.toLowerCase() !== t.toLowerCase()) : [...f.tags, t] }));
+  }
   function addTag() {
     const t = tagInput.trim();
-    if (t && !form.tags.some((x) => x.toLowerCase() === t.toLowerCase())) setForm((f) => ({ ...f, tags: [...f.tags, t] }));
+    if (t && !hasTag(t)) setForm((f) => ({ ...f, tags: [...f.tags, t] }));
     setTagInput('');
   }
+  // Constitution implies the record type (individual vs company), like the import.
+  function setConstitution(e) {
+    const v = e.target.value;
+    setForm((f) => ({ ...f, constitution: v, type: /individual|proprietor|huf/i.test(v) ? 'individual' : 'company' }));
+  }
+  // Extra (non-service) tags shown in the free-tag editor.
+  const extraTags = form.tags.filter((t) => !SERVICE_TAGS.some((s) => s.toLowerCase() === t.toLowerCase()));
 
   async function save(e) {
     e.preventDefault();
@@ -470,32 +622,57 @@ function ClientForm({ initial, onCancel, onSaved }) {
   return (
     <form className="client-form" onSubmit={save}>
       <h2>{initial ? 'Edit client' : 'New client'}</h2>
-      <label className="field">Name
+      <label className="field">Name (as per PAN)
         <input autoFocus value={form.name} onChange={set('name')} placeholder="e.g. Acme Pvt Ltd" required />
       </label>
       <div className="field-row">
-        <label className="field">Type
-          <select value={form.type} onChange={set('type')}><option value="company">Company</option><option value="individual">Individual</option></select>
+        <label className="field">Client code<input value={form.client_code} onChange={set('client_code')} placeholder="e.g. KNAP-001" /></label>
+        <label className="field">Constitution
+          <select value={form.constitution} onChange={setConstitution}>
+            <option value="">—</option>
+            {CONSTITUTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
         </label>
+      </div>
+      <div className="field-row">
         <label className="field">Status
           <select value={form.status} onChange={set('status')}>
             {Object.entries(STATUS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>
+        <label className="field">Firm<input value={form.firm} onChange={set('firm')} /></label>
+      </div>
+      <div className="field-row">
+        <label className="field">Primary contact person<input value={form.contact_person} onChange={set('contact_person')} /></label>
+        <label className="field">Date of onboarding<input value={form.onboarding_date} onChange={set('onboarding_date')} placeholder="e.g. 01-Apr-2024" /></label>
       </div>
       <div className="field-row">
         <label className="field">Email<input type="email" value={form.email} onChange={set('email')} /></label>
-        <label className="field">Phone<input value={form.phone} onChange={set('phone')} /></label>
+        <label className="field">Mobile<input value={form.phone} onChange={set('phone')} /></label>
       </div>
       <div className="field-row">
-        <label className="field">GSTIN<input value={form.gstin} onChange={set('gstin')} /></label>
+        <label className="field">Primary GSTIN<input value={form.gstin} onChange={set('gstin')} /></label>
         <label className="field">PAN<input value={form.pan} onChange={set('pan')} /></label>
       </div>
-      <label className="field">Address<input value={form.address} onChange={set('address')} /></label>
+      <div className="field-row">
+        <label className="field">TAN<input value={form.tan} onChange={set('tan')} /></label>
+        <label className="field">CIN / LLPIN<input value={form.cin} onChange={set('cin')} /></label>
+      </div>
+      <label className="field">Principal place of business<input value={form.address} onChange={set('address')} /></label>
       <div className="field">
-        <span>Tags <span className="muted">— which compliances apply (GST, TDS, PF…) so you can bulk-select this segment</span></span>
+        <span>Services <span className="muted">— what we do for this client. Each ticked service becomes a tag so you can bulk-assign its compliance.</span></span>
+        <div className="service-checks">
+          {SERVICE_TAGS.map((t) => (
+            <label key={t} className={`service-check ${hasTag(t) ? 'on' : ''}`}>
+              <input type="checkbox" checked={hasTag(t)} onChange={() => toggleService(t)} /> {t}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <span>Other tags <span className="muted">— e.g. PF, ESI, or any segment of your own</span></span>
         <div className="tags-row">
-          {form.tags.map((t) => (
+          {extraTags.map((t) => (
             <span key={t} className="task-tag removable">{t}<button type="button" onClick={() => setForm((f) => ({ ...f, tags: f.tags.filter((x) => x !== t) }))}>✕</button></span>
           ))}
           <input className="tag-inline" placeholder="+ tag" value={tagInput}
@@ -503,7 +680,40 @@ function ClientForm({ initial, onCancel, onSaved }) {
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }} onBlur={addTag} />
         </div>
       </div>
-      <label className="field">Notes / summary<textarea rows={2} value={form.notes} onChange={set('notes')} /></label>
+      <div className="field-row">
+        <label className="field">GST return frequency
+          <select value={form.gst_frequency} onChange={set('gst_frequency')}>
+            <option value="">—</option>
+            {GST_FREQ.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </label>
+        <label className="field">Turnover band<input value={form.turnover_band} onChange={set('turnover_band')} placeholder="e.g. 10-25 Cr" /></label>
+      </div>
+      <div className="field-row">
+        <label className="field">Fee model
+          <select value={form.fee_model} onChange={set('fee_model')}>
+            <option value="">—</option>
+            {FEE_MODELS.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </label>
+        <label className="field">Fee amount (₹)<input value={form.fee_amount} onChange={set('fee_amount')} inputMode="numeric" /></label>
+      </div>
+      <div className="field-row">
+        <label className="field">Risk rating
+          <select value={form.risk_rating} onChange={set('risk_rating')}>
+            <option value="">—</option>
+            {RISKS.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </label>
+        <label className="field">Independence flag
+          <select value={form.independence_flag} onChange={set('independence_flag')}>
+            <option value="">—</option>
+            <option value="No">No</option>
+            <option value="Yes">Yes (firm interest)</option>
+          </select>
+        </label>
+      </div>
+      <label className="field">Remarks / summary<textarea rows={2} value={form.notes} onChange={set('notes')} /></label>
       {error && <div className="form-error">{error}</div>}
       <div className="editor-actions">
         <button className="btn btn-primary" disabled={busy || !form.name.trim()}>{busy ? 'Saving…' : (initial ? 'Save' : 'Create client')}</button>
@@ -559,10 +769,25 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
         </div>
       </div>
 
-      {(c.gstin || c.pan || c.address || c.notes) && (
+      {[c.gstin, c.pan, c.tan, c.cin, c.client_code, c.constitution, c.firm, c.contact_person,
+        c.gst_frequency, c.fee_model, c.fee_amount, c.turnover_band, c.risk_rating,
+        c.independence_flag, c.onboarding_date, c.address, c.notes].some(Boolean) && (
         <div className="client-facts">
+          {c.client_code && <div><span className="muted">Code</span> {c.client_code}</div>}
+          {c.constitution && <div><span className="muted">Constitution</span> {c.constitution}</div>}
+          {c.firm && <div><span className="muted">Firm</span> {c.firm}</div>}
           {c.gstin && <div><span className="muted">GSTIN</span> {c.gstin}</div>}
           {c.pan && <div><span className="muted">PAN</span> {c.pan}</div>}
+          {c.tan && <div><span className="muted">TAN</span> {c.tan}</div>}
+          {c.cin && <div><span className="muted">CIN / LLPIN</span> {c.cin}</div>}
+          {c.contact_person && <div><span className="muted">Contact</span> {c.contact_person}</div>}
+          {c.gst_frequency && <div><span className="muted">GST freq.</span> {c.gst_frequency}</div>}
+          {c.fee_model && <div><span className="muted">Fee model</span> {c.fee_model}{c.fee_amount ? ` · ₹${c.fee_amount}` : ''}</div>}
+          {!c.fee_model && c.fee_amount && <div><span className="muted">Fee</span> ₹{c.fee_amount}</div>}
+          {c.turnover_band && <div><span className="muted">Turnover</span> {c.turnover_band}</div>}
+          {c.risk_rating && <div><span className="muted">Risk</span> {c.risk_rating}</div>}
+          {isYes(c.independence_flag) && <div><span className="due-warn">⚑ Independence flag</span></div>}
+          {c.onboarding_date && <div><span className="muted">Onboarded</span> {c.onboarding_date}</div>}
           {c.address && <div><span className="muted">Address</span> {c.address}</div>}
           {c.notes && <div className="client-facts-notes">{c.notes}</div>}
         </div>

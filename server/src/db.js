@@ -447,6 +447,14 @@ ensureColumn('tasks', 'client_id', 'INTEGER REFERENCES clients(id)');
 ensureColumn('client_deadlines', 'assignee_id', 'INTEGER REFERENCES users(id)');
 ensureColumn('client_deadlines', 'task_id', 'INTEGER REFERENCES tasks(id)');
 
+// Richer client master fields (imported from a firm's client-master workbook).
+// All optional; existing rows keep '' defaults.
+for (const [col] of [
+  ['client_code'], ['constitution'], ['firm'], ['tan'], ['cin'],
+  ['contact_person'], ['onboarding_date'], ['gst_frequency'], ['fee_model'],
+  ['fee_amount'], ['turnover_band'], ['risk_rating'], ['independence_flag'],
+]) ensureColumn('clients', col, "TEXT DEFAULT ''");
+
 // Indexes on migration-added columns must come after the columns exist,
 // otherwise upgrading an existing database fails on startup.
 db.exec(`
