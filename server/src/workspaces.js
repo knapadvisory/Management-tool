@@ -65,6 +65,7 @@ export function deleteWorkspace(id) {
       run(`DELETE FROM task_checklist WHERE task_id IN (${tasks})`);
       run(`DELETE FROM task_watchers WHERE task_id IN (${tasks})`);
       run(`DELETE FROM task_assignees WHERE task_id IN (${tasks})`);
+      run('DELETE FROM time_entries WHERE workspace_id = @w');
       run(`DELETE FROM task_messages WHERE task_id IN (${tasks})`);
       run(`DELETE FROM task_reminders WHERE task_id IN (${tasks})`);
       run(`DELETE FROM task_template_steps WHERE template_id IN (${tpl})`);

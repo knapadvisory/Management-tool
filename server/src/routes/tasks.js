@@ -4,6 +4,7 @@ import { publicUser } from '../auth.js';
 import { createNotification } from '../notifications.js';
 import { nextDueDate } from '../reminders.js';
 import { completeDeadlinesForTask } from '../compliance.js';
+import { timeForTask } from './time.js';
 
 const router = Router();
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -309,7 +310,7 @@ router.get('/:id', (req, res) => {
   `).all(task.id).map(publicUser);
   const attachments = db.prepare('SELECT id, original_name, mime_type, size FROM attachments WHERE task_id = ? ORDER BY id').all(task.id);
   const reminders = db.prepare('SELECT id, remind_at, sent FROM task_reminders WHERE task_id = ? ORDER BY remind_at').all(task.id);
-  res.json({ task: taskWithMeta(task), comments, activity, checklist, watchers, attachments, reminders });
+  res.json({ task: taskWithMeta(task), comments, activity, checklist, watchers, attachments, reminders, time: timeForTask(task.id) });
 });
 
 router.patch('/:id', (req, res) => {

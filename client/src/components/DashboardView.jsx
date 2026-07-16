@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
 import TaskModal from './TaskModal.jsx';
 import Clock from './Clock.jsx';
+import { fmtDuration } from '../time.js';
 import { t } from '../i18n.js';
 
 const PRIO = {
@@ -43,7 +44,7 @@ function timeAgo(iso) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-export default function DashboardView({ user, users = [], onOpenTasks, onOpenActivity }) {
+export default function DashboardView({ user, users = [], onOpenTasks, onOpenActivity, onOpenTimesheet }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [workflows, setWorkflows] = useState([]);
@@ -118,6 +119,11 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
         <div className="dash-kpi">
           <span className="dash-kpi-num">{s.clients ?? 0}</span><span className="dash-kpi-lbl">Active clients</span>
         </div>
+        {data.hours && (
+          <button className="dash-kpi" onClick={() => onOpenTimesheet?.()}>
+            <span className="dash-kpi-num">{fmtDuration(data.hours.month)}</span><span className="dash-kpi-lbl">Logged this month</span>
+          </button>
+        )}
       </div>
 
       {data.upcoming.length > 0 && (
@@ -187,6 +193,26 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
                       </div>
                       <div className="workload-bar"><span style={{ width: `${(w.count / max) * 100}%`, background: w.avatar_color }} /></div>
                     </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {isAdmin && data.resource_performance?.length > 0 && (
+            <section className="dash-panel">
+              <div className="dash-block-head"><h2>Resource performance <span className="muted small">this month</span></h2></div>
+              <div className="workload">
+                {data.resource_performance.map((r) => {
+                  const max = Math.max(...data.resource_performance.map((x) => x.minutes), 1);
+                  return (
+                    <div key={r.id} className="workload-row" style={{ cursor: 'default' }}>
+                      <div className="workload-top">
+                        <span className="workload-name"><Avatar user={r} size={20} /> {r.name}</span>
+                        <span className="muted">{fmtDuration(r.minutes)} · {r.tasks} task{r.tasks === 1 ? '' : 's'}</span>
+                      </div>
+                      <div className="workload-bar"><span style={{ width: `${(r.minutes / max) * 100}%`, background: r.avatar_color }} /></div>
+                    </div>
                   );
                 })}
               </div>

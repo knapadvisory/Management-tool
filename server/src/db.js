@@ -255,6 +255,24 @@ CREATE TABLE IF NOT EXISTS task_assignees (
   PRIMARY KEY (task_id, user_id)
 );
 
+-- Timesheets: time logged by a user against a task (and, through it, a client).
+-- A running timer has ended_at NULL / is_running 1; at most one per user.
+CREATE TABLE IF NOT EXISTS time_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+  client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+  description TEXT DEFAULT '',
+  entry_date TEXT NOT NULL DEFAULT (date('now')),
+  minutes INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT,
+  ended_at TEXT,
+  is_running INTEGER NOT NULL DEFAULT 0,
+  billable INTEGER NOT NULL DEFAULT 1,
+  workspace_id INTEGER REFERENCES workspaces(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Reusable task blueprints for repeatable client processes.
 CREATE TABLE IF NOT EXISTS task_templates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -494,6 +512,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tasks_workspace ON tasks(workspace_id);
   CREATE INDEX IF NOT EXISTS idx_messages_workspace ON messages(workspace_id);
   CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees(user_id);
+  CREATE INDEX IF NOT EXISTS idx_time_entries_user ON time_entries(user_id);
+  CREATE INDEX IF NOT EXISTS idx_time_entries_task ON time_entries(task_id);
+  CREATE INDEX IF NOT EXISTS idx_time_entries_client ON time_entries(client_id);
 `);
 
 // Seed the multi-assignee junction from the existing single assignee_id so

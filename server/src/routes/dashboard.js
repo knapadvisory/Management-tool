@@ -142,6 +142,28 @@ router.get('/', (req, res) => {
     return { key, label: MON[mIdx], assigned: assignedByMonth[key] || 0, completed: completedByMonth[key] || 0 };
   });
 
+  // Hours logged by the caller (timesheets): today / this week / this month.
+  const mins = (clause) => one(`SELECT COALESCE(SUM(minutes),0) AS m FROM time_entries WHERE user_id = ${uid} AND workspace_id = ${ws} AND is_running = 0 AND ${clause}`).m;
+  const hours = {
+    today: mins(`entry_date = date('now')`),
+    week: mins(`entry_date >= date('now','weekday 1','-7 day')`),
+    month: mins(`strftime('%Y-%m', entry_date) = strftime('%Y-%m','now')`),
+  };
+
+  // Resource performance (admins): this month's hours + tasks worked per person.
+  let resourcePerformance = [];
+  if (isAdmin) {
+    resourcePerformance = db.prepare(
+      `SELECT u.id, u.name, u.avatar_color, u.avatar_url,
+        COALESCE(SUM(te.minutes), 0) AS minutes,
+        COUNT(DISTINCT te.task_id) AS tasks
+       FROM users u
+       LEFT JOIN time_entries te ON te.user_id = u.id AND te.is_running = 0 AND te.workspace_id = ${ws} AND strftime('%Y-%m', te.entry_date) = strftime('%Y-%m','now')
+       WHERE u.active = 1 AND u.role != 'guest' AND u.workspace_id = ${ws}
+       GROUP BY u.id HAVING SUM(te.minutes) > 0 ORDER BY minutes DESC`
+    ).all();
+  }
+
   res.json({
     role: isAdmin ? 'admin' : 'member',
     summary: { open, overdue, due_soon: dueSoon, clients, closed_month: closedMonth },
@@ -149,6 +171,7 @@ router.get('/', (req, res) => {
     aging: { tasks: taskAging, filings: filingAging },
     closures: { buckets: closureBuckets, list: closureList },
     year: { fy: `${fyStart}–${fyStart + 1}`, months: yearMonths },
+    hours, resource_performance: resourcePerformance,
   });
 });
 

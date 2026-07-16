@@ -26,6 +26,7 @@ import searchRouter from './routes/search.js';
 import filesRouter from './routes/files.js';
 import driveRouter from './routes/drive.js';
 import dashboardRouter from './routes/dashboard.js';
+import timeRouter from './routes/time.js';
 import pushRouter from './routes/push.js';
 import setupSocket from './socket.js';
 import { startReminderScheduler, startAutoArchiveScheduler } from './reminders.js';
@@ -318,6 +319,7 @@ app.use('/api/search', requireAuth, blockGuests, searchRouter);
 app.use('/api/files', requireAuth, blockGuests, filesRouter);
 app.use('/api/drive', requireAuth, blockGuests, driveRouter);
 app.use('/api/dashboard', requireAuth, blockGuests, dashboardRouter);
+app.use('/api/time', requireAuth, blockGuests, timeRouter);
 app.use('/api/push', requireAuth, pushRouter);
 app.use('/api/clients', requireAuth, blockGuests, clientsRouter);
 

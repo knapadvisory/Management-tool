@@ -7,7 +7,7 @@ import { getPrefs } from './prefs.js';
 const STR = {
   en: {
     'nav.home': 'Home', 'nav.dms': 'DMs', 'nav.people': 'People', 'nav.activity': 'Activity',
-    'nav.files': 'Files', 'nav.tasks': 'Tasks', 'nav.clients': 'Clients', 'nav.workflows': 'Workflows', 'nav.admin': 'Admin',
+    'nav.files': 'Files', 'nav.tasks': 'Tasks', 'nav.clients': 'Clients', 'nav.timesheet': 'Timesheet', 'nav.workflows': 'Workflows', 'nav.admin': 'Admin',
     'sidebar.channels': 'Channels', 'action.search': 'Search messages', 'action.settings': 'Settings', 'action.signout': 'Sign out',
     'files.shared': 'Shared files', 'files.drive': 'Drive', 'people.team': 'Team', 'people.collabs': 'Collabs',
     'settings.title': 'Settings', 'settings.profile': 'Profile', 'settings.appearance': 'Appearance', 'settings.notifications': 'Notifications',

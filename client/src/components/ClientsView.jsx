@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api, uploadFiles, fileUrl } from '../api.js';
 import { getSocket } from '../socket.js';
 import Avatar from './Avatar.jsx';
+import { LogTimeModal } from './TimesheetView.jsx';
+import { fmtDuration, emitTimeChanged } from '../time.js';
 
 const fmtBytes = (n) => {
   if (!n && n !== 0) return '';
@@ -813,6 +815,7 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
     ['tasks', `Tasks${tasks.length ? ` (${tasks.length})` : ''}`],
     ['deadlines', `Compliance${data.deadlines?.length ? ` (${data.deadlines.length})` : ''}`],
     ['documents', `Documents${documents.length ? ` (${documents.length})` : ''}`],
+    ['time', `Time${data.time?.total_minutes ? ` (${fmtDuration(data.time.total_minutes)})` : ''}`],
     ['contacts', `Contacts${data.contacts?.length ? ` (${data.contacts.length})` : ''}`],
     ['notes', 'Discussion'],
   ];
@@ -892,6 +895,7 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
         {tab === 'documents' && (
           <Documents clientId={clientId} documents={documents} onChange={(docs) => { setData((x) => ({ ...x, documents: docs })); onChanged?.(); }} />
         )}
+        {tab === 'time' && <ClientTime clientId={clientId} time={data.time} onChange={load} />}
         {tab === 'contacts' && (
           <Contacts clientId={clientId} contacts={data.contacts} onChange={(c2) => setData((x) => ({ ...x, contacts: c2 }))} />
         )}
@@ -988,6 +992,27 @@ function Documents({ clientId, documents, onChange }) {
           <button className="icon-btn" title="Remove" onClick={() => del(d.id)}>✕</button>
         </div>
       ))}
+    </section>
+  );
+}
+
+function ClientTime({ clientId, time, onChange }) {
+  const [logging, setLogging] = useState(false);
+  const t = time || { total_minutes: 0, billable_minutes: 0, entries: [] };
+  return (
+    <section className="client-section">
+      <h3>Time <span className="muted">· {fmtDuration(t.total_minutes)} total{t.billable_minutes ? `, ${fmtDuration(t.billable_minutes)} billable` : ''}</span>
+        <button className="btn btn-sm" onClick={() => setLogging(true)}>＋ Log time</button>
+      </h3>
+      {t.entries.length === 0 && <div className="empty-hint">No time logged for this client yet. Time logged on the client's tasks shows here too.</div>}
+      {t.entries.map((e) => (
+        <div key={e.id} className="time-entry">
+          <span className="te-dur">{fmtDuration(e.minutes)}</span>
+          <span className="te-who">{e.user?.name}{e.task ? <span className="muted"> · {e.task.title}</span> : ''}{e.description ? <span className="muted"> · {e.description}</span> : ''}</span>
+          <span className="muted small">{e.entry_date}</span>
+        </div>
+      ))}
+      {logging && <LogTimeModal clientId={clientId} onClose={() => setLogging(false)} onDone={() => { setLogging(false); emitTimeChanged(); onChange?.(); }} />}
     </section>
   );
 }

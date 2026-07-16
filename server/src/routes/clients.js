@@ -2,6 +2,7 @@ import { Router } from 'express';
 import db, { getSetting, setSetting } from '../db.js';
 import { publicUser } from '../auth.js';
 import { completeDeadline } from '../compliance.js';
+import { timeForClient } from './time.js';
 
 // Custom compliance filing names, per workspace (on top of the built-in ones
 // the client offers). Stored as a JSON array in app_settings.
@@ -240,7 +241,7 @@ router.get('/:id', (req, res) => {
     FROM attachments a LEFT JOIN users u ON u.id = a.uploader_id
     WHERE a.client_id = ? ORDER BY a.id DESC
   `).all(client.id);
-  res.json({ client: clientWithMeta(client), contacts, notes, deadlines: deadlinesFor(client.id), documents });
+  res.json({ client: clientWithMeta(client), contacts, notes, deadlines: deadlinesFor(client.id), documents, time: timeForClient(client.id) });
 });
 
 // --- Documents (files uploaded via /api/uploads, then filed here) ---

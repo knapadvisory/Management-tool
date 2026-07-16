@@ -10,6 +10,7 @@ import ChatView from './components/ChatView.jsx';
 import TasksBoard from './components/TasksBoard.jsx';
 import WorkflowsView from './components/WorkflowsView.jsx';
 import ClientsView from './components/ClientsView.jsx';
+import TimesheetView from './components/TimesheetView.jsx';
 import AdminPanel from './components/AdminPanel.jsx';
 import Messenger from './components/Messenger.jsx';
 import PeopleView from './components/PeopleView.jsx';
@@ -386,6 +387,7 @@ export default function App() {
             users={users}
             onOpenTasks={() => setView({ type: 'tasks' })}
             onOpenActivity={() => setView({ type: 'activity' })}
+            onOpenTimesheet={() => setView({ type: 'timesheet' })}
           />
         )}
         {view?.type === 'channel' && (
@@ -419,6 +421,7 @@ export default function App() {
         {view?.type === 'clients' && (
           <ClientsView user={user} users={users} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
         )}
+        {view?.type === 'timesheet' && <TimesheetView user={user} />}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'admin' && user.role === 'admin' && (
           <AdminPanel user={user} />

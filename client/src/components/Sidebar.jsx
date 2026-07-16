@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
+import TimeTracker from './TimeTracker.jsx';
 import { t } from '../i18n.js';
 
 export default function Sidebar({
@@ -56,6 +57,11 @@ export default function Sidebar({
         <Avatar user={user} size={28} online />
         <span className="me-name">{user.name}</span>
         <span className="me-edit">⚙</span>
+      </button>
+
+      <TimeTracker />
+      <button className={`nav-item ${view?.type === 'timesheet' ? 'active' : ''}`} onClick={() => onSelectView('timesheet')}>
+        <span className="nav-logo">⏱️</span> {t('nav.timesheet')}
       </button>
 
       <nav className="sidebar-nav">

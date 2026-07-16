@@ -6,6 +6,8 @@ import TaskChat from './TaskChat.jsx';
 import RemindersEditor from './RemindersEditor.jsx';
 import StatusControl from './StatusControl.jsx';
 import AssigneePicker from './AssigneePicker.jsx';
+import { LogTimeModal } from './TimesheetView.jsx';
+import { fmtDuration, emitTimeChanged } from '../time.js';
 
 export default function TaskModal({ taskId, user, users, workflows = [], projects = [], clients = [], onClose, inline = false }) {
   const [tab, setTab] = useState('chat');
@@ -16,6 +18,9 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   const [watchers, setWatchers] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [reminders, setReminders] = useState([]);
+  const [time, setTime] = useState({ total_minutes: 0, entries: [] });
+  const [logTime, setLogTime] = useState(false);
+  const [running, setRunning] = useState(null);
   const [comment, setComment] = useState('');
   const [description, setDescription] = useState('');
   const [newItem, setNewItem] = useState('');
@@ -38,8 +43,17 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
     setWatchers(d.watchers);
     setAttachments(d.attachments);
     setReminders(d.reminders || []);
+    setTime(d.time || { total_minutes: 0, entries: [] });
     setDescription(d.task.description || '');
+    api('/time/running').then((r) => setRunning(r.running)).catch(() => {});
   }, [taskId, onClose]);
+
+  async function toggleTimer() {
+    if (running && running.task?.id === taskId) await api('/time/stop', { method: 'POST' });
+    else await api('/time/start', { method: 'POST', body: { task_id: taskId } });
+    emitTimeChanged();
+    load();
+  }
 
   useEffect(() => { load(); }, [load]);
 
@@ -251,6 +265,26 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
           <RemindersEditor items={reminders} dueDate={task.due_date} onAdd={addReminder} onRemove={removeReminder} />
         </div>
 
+        <div className="time-section">
+          <div className="checklist-head">
+            <h4>Time <span className="muted">· {fmtDuration(time.total_minutes)} logged</span></h4>
+            <div className="time-actions">
+              <button className={`btn btn-sm ${running && running.task?.id === taskId ? 'btn-danger' : ''}`} onClick={toggleTimer}>
+                {running && running.task?.id === taskId ? '⏹ Stop timer' : '▶ Start timer'}
+              </button>
+              <button className="btn btn-sm" onClick={() => setLogTime(true)}>＋ Log time</button>
+            </div>
+          </div>
+          {time.entries.length === 0 && <div className="empty-hint">No time logged on this task yet.</div>}
+          {time.entries.slice(0, 6).map((e) => (
+            <div key={e.id} className="time-entry">
+              <span className="te-dur">{fmtDuration(e.minutes)}</span>
+              <span className="te-who">{e.user?.name}{e.description ? <span className="muted"> · {e.description}</span> : ''}</span>
+              <span className="muted small">{e.entry_date}</span>
+            </div>
+          ))}
+        </div>
+
         <div className="watchers-row">
           <span className="muted">Watchers:</span>
           {watchers.map((w) => <Avatar key={w.id} user={w} size={24} />)}
@@ -304,6 +338,11 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
               : <span className="muted">Only an admin can delete a task</span>}
           </div>
         </div>
+        {logTime && (
+          <LogTimeModal taskId={taskId} contextLabel={task.title}
+            onClose={() => setLogTime(false)}
+            onDone={() => { setLogTime(false); emitTimeChanged(); load(); }} />
+        )}
     </div>
   );
 
