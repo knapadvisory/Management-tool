@@ -424,7 +424,12 @@ function TaskList({ tasks, onOpenTask, empty, detailed, currentUserId }) {
                 </span>
               </span>
             </span>
-            {t.due_date && <span className={`dash-task-due tone-${b.tone}`}>{b.text}</span>}
+            {t.due_date && (
+              <span className="dash-task-duewrap">
+                <span className="dash-task-date">{fmtDay(t.due_date)}</span>
+                <span className={`dash-task-due tone-${b.tone}`}>{b.text}</span>
+              </span>
+            )}
           </button>
         );
       })}
