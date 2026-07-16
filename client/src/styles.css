@@ -175,23 +175,15 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .avatar-photo { object-fit: cover; background: var(--surface-2); }
 .profile-photo-actions { display: flex; gap: 8px; margin-top: 8px; }
 
-/* Time Tracker (sidebar) */
-.time-tracker { display: flex; align-items: center; gap: 8px; width: calc(100% - 24px); margin: 4px 12px 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 13px; }
-.time-tracker:hover { border-color: var(--accent); }
-.time-tracker.on { background: #10361f; border-color: #2eb67d; color: #d7f5e5; }
-.time-tracker .tt-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-.time-tracker.on .tt-dot { background: #2eb67d; animation: tt-pulse 1.4s infinite; }
+/* Clock in / out card */
+.clock-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 20px; margin-bottom: 18px; }
+.clock-card.in { border-color: #2eb67d; background: linear-gradient(0deg, rgba(46,182,125,.06), rgba(46,182,125,.06)); }
+.clock-status { display: flex; align-items: center; gap: 12px; }
+.clock-dot { width: 12px; height: 12px; border-radius: 50%; background: #2eb67d; }
+.clock-dot.off { background: var(--muted); }
+.clock-card.in .clock-dot { animation: tt-pulse 1.4s infinite; }
 @keyframes tt-pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
-.time-tracker .tt-clock { font-variant-numeric: tabular-nums; font-weight: 700; }
-.time-tracker .tt-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; opacity: .85; }
-.time-tracker .tt-action { flex-shrink: 0; }
-
-/* Time entries (task modal / client tab) */
-.time-section { margin: 8px 0; padding-top: 8px; border-top: 1px solid var(--border); }
-.time-actions { display: flex; gap: 8px; }
-.time-entry { display: flex; align-items: center; gap: 10px; padding: 5px 2px; border-bottom: 1px solid var(--surface-2); font-size: 13px; }
-.te-dur { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 56px; }
-.te-who { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.clock-big { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* Timesheet view */
 .timesheet-view { padding: 22px 26px; max-width: 900px; }

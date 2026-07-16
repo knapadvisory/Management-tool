@@ -121,7 +121,7 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
         </div>
         {data.hours && (
           <button className="dash-kpi" onClick={() => onOpenTimesheet?.()}>
-            <span className="dash-kpi-num">{fmtDuration(data.hours.month)}</span><span className="dash-kpi-lbl">Logged this month</span>
+            <span className="dash-kpi-num">{fmtDuration(data.hours.month)}</span><span className="dash-kpi-lbl">Hours this month</span>
           </button>
         )}
       </div>
@@ -209,7 +209,7 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
                     <div key={r.id} className="workload-row" style={{ cursor: 'default' }}>
                       <div className="workload-top">
                         <span className="workload-name"><Avatar user={r} size={20} /> {r.name}</span>
-                        <span className="muted">{fmtDuration(r.minutes)} · {r.tasks} task{r.tasks === 1 ? '' : 's'}</span>
+                        <span className="muted">{fmtDuration(r.minutes)}</span>
                       </div>
                       <div className="workload-bar"><span style={{ width: `${(r.minutes / max) * 100}%`, background: r.avatar_color }} /></div>
                     </div>
