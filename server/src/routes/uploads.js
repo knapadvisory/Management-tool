@@ -111,6 +111,8 @@ router.get('/:id', (req, res) => {
     // The shared Drive is workspace-wide (already scoped above).
   } else if (att.is_avatar) {
     // Profile photos are visible to the whole workspace (already scoped above).
+  } else if (att.client_id) {
+    // Client documents are visible to the workspace's staff (scoped above).
   } else if (att.uploader_id !== userId) {
     return res.status(403).json({ error: 'Not allowed' });
   }

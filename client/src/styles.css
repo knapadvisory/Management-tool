@@ -1628,6 +1628,25 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .chip-ghost { border-style: dashed; color: var(--muted); }
 .chip-add { border: 1px solid var(--accent); border-radius: 16px; padding: 5px 12px; font-size: 13px; min-width: 140px; background: var(--surface); color: var(--text); }
+/* Client 360 — single-file view */
+.c360-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 14px 0; }
+.c360-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: default; color: var(--text); }
+button.c360-stat { cursor: pointer; }
+button.c360-stat:hover { border-color: var(--accent); }
+.c360-stat.warn .c360-num { color: var(--danger, #e01e5a); }
+.c360-num { font-size: 20px; font-weight: 700; line-height: 1.1; }
+.c360-num.c360-next { font-size: 14px; font-weight: 600; }
+.c360-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.c360-tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.c360-tab { border: none; background: none; padding: 9px 14px; font-size: 14px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.c360-tab:hover { color: var(--text); }
+.c360-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.c360-line { display: flex; justify-content: space-between; gap: 10px; padding: 7px 2px; border-bottom: 1px solid var(--surface-2); font-size: 14px; }
+.doc-row { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-bottom: 1px solid var(--surface-2); }
+.doc-name { flex: 1; color: var(--text); text-decoration: none; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-name:hover { color: var(--accent); text-decoration: underline; }
+.link-btn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+
 .import-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .import-preview { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface); }
 .import-tag-summary { display: flex; gap: 6px; flex-wrap: wrap; }

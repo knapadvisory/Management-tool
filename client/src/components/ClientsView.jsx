@@ -1,7 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api } from '../api.js';
+import { api, uploadFiles, fileUrl } from '../api.js';
 import { getSocket } from '../socket.js';
 import Avatar from './Avatar.jsx';
+
+const fmtBytes = (n) => {
+  if (!n && n !== 0) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+};
 
 const STATUS = { active: 'Active', prospect: 'Prospect', inactive: 'Inactive' };
 const REC = { none: 'One-off', monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
@@ -723,10 +730,57 @@ function ClientForm({ initial, onCancel, onSaved }) {
   );
 }
 
+const overdueDl = (d) => d && !d.completed && overdue(d.due_date);
+
+function ClientFacts({ c }) {
+  const has = [c.gstin, c.pan, c.tan, c.cin, c.client_code, c.constitution, c.firm, c.contact_person,
+    c.gst_frequency, c.fee_model, c.fee_amount, c.turnover_band, c.risk_rating,
+    c.independence_flag, c.onboarding_date, c.address, c.notes].some(Boolean);
+  if (!has) return <div className="empty-hint">No profile details yet — use ✏ Edit to add them.</div>;
+  return (
+    <div className="client-facts">
+      {c.client_code && <div><span className="muted">Code</span> {c.client_code}</div>}
+      {c.constitution && <div><span className="muted">Constitution</span> {c.constitution}</div>}
+      {c.firm && <div><span className="muted">Firm</span> {c.firm}</div>}
+      {c.gstin && <div><span className="muted">GSTIN</span> {c.gstin}</div>}
+      {c.pan && <div><span className="muted">PAN</span> {c.pan}</div>}
+      {c.tan && <div><span className="muted">TAN</span> {c.tan}</div>}
+      {c.cin && <div><span className="muted">CIN / LLPIN</span> {c.cin}</div>}
+      {c.contact_person && <div><span className="muted">Contact</span> {c.contact_person}</div>}
+      {c.gst_frequency && <div><span className="muted">GST freq.</span> {c.gst_frequency}</div>}
+      {c.fee_model && <div><span className="muted">Fee model</span> {c.fee_model}{c.fee_amount ? ` · ₹${c.fee_amount}` : ''}</div>}
+      {!c.fee_model && c.fee_amount && <div><span className="muted">Fee</span> ₹{c.fee_amount}</div>}
+      {c.turnover_band && <div><span className="muted">Turnover</span> {c.turnover_band}</div>}
+      {c.risk_rating && <div><span className="muted">Risk</span> {c.risk_rating}</div>}
+      {isYes(c.independence_flag) && <div><span className="due-warn">⚑ Independence flag</span></div>}
+      {c.onboarding_date && <div><span className="muted">Onboarded</span> {c.onboarding_date}</div>}
+      {c.address && <div><span className="muted">Address</span> {c.address}</div>}
+      {c.notes && <div className="client-facts-notes">{c.notes}</div>}
+    </div>
+  );
+}
+
+function LinkedTasks({ tasks, onOpenTask }) {
+  return (
+    <section className="client-section">
+      {tasks.length === 0 && <div className="empty-hint">No tasks linked to this client yet.</div>}
+      {tasks.map((t) => (
+        <button key={t.id} className={`client-task ${t.archived ? 'archived' : ''}`} onClick={() => onOpenTask?.(t.id)}>
+          <span className={`ct-dot p-${t.priority}`} />
+          <span className="ct-title">{t.title}</span>
+          <span className="ct-stage muted">{t.is_done ? '✓ Done' : t.stage}</span>
+          {t.assignee && <Avatar user={t.assignee} size={20} />}
+        </button>
+      ))}
+    </section>
+  );
+}
+
 function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpenTask }) {
   const [data, setData] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [editing, setEditing] = useState(false);
+  const [tab, setTab] = useState('overview');
 
   const load = useCallback(async () => {
     const d = await api(`/clients/${clientId}`);
@@ -735,12 +789,16 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
     setTasks(t.tasks);
   }, [clientId]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setTab('overview'); }, [clientId]);
 
   if (!data) return <div className="boot">Loading…</div>;
   const c = data.client;
+  const documents = data.documents || [];
+  const openTasks = tasks.filter((t) => !t.is_done && !t.archived).length;
+  const overdueCount = (data.deadlines || []).filter(overdueDl).length;
 
   async function remove() {
-    if (!confirm(`Delete ${c.name}? Their tasks stay but are unlinked. Contacts, notes and deadlines are removed.`)) return;
+    if (!confirm(`Delete ${c.name}? Their tasks stay but are unlinked. Contacts, notes, documents and deadlines are removed.`)) return;
     await api(`/clients/${clientId}`, { method: 'DELETE' });
     onDeleted();
   }
@@ -749,6 +807,15 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
     return <div className="client-detail"><ClientForm initial={c} onCancel={() => setEditing(false)}
       onSaved={() => { setEditing(false); load(); onChanged?.(); }} /></div>;
   }
+
+  const TABS = [
+    ['overview', 'Overview'],
+    ['tasks', `Tasks${tasks.length ? ` (${tasks.length})` : ''}`],
+    ['deadlines', `Compliance${data.deadlines?.length ? ` (${data.deadlines.length})` : ''}`],
+    ['documents', `Documents${documents.length ? ` (${documents.length})` : ''}`],
+    ['contacts', `Contacts${data.contacts?.length ? ` (${data.contacts.length})` : ''}`],
+    ['notes', 'Discussion'],
+  ];
 
   return (
     <div className="client-detail">
@@ -769,48 +836,69 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
         </div>
       </div>
 
-      {[c.gstin, c.pan, c.tan, c.cin, c.client_code, c.constitution, c.firm, c.contact_person,
-        c.gst_frequency, c.fee_model, c.fee_amount, c.turnover_band, c.risk_rating,
-        c.independence_flag, c.onboarding_date, c.address, c.notes].some(Boolean) && (
-        <div className="client-facts">
-          {c.client_code && <div><span className="muted">Code</span> {c.client_code}</div>}
-          {c.constitution && <div><span className="muted">Constitution</span> {c.constitution}</div>}
-          {c.firm && <div><span className="muted">Firm</span> {c.firm}</div>}
-          {c.gstin && <div><span className="muted">GSTIN</span> {c.gstin}</div>}
-          {c.pan && <div><span className="muted">PAN</span> {c.pan}</div>}
-          {c.tan && <div><span className="muted">TAN</span> {c.tan}</div>}
-          {c.cin && <div><span className="muted">CIN / LLPIN</span> {c.cin}</div>}
-          {c.contact_person && <div><span className="muted">Contact</span> {c.contact_person}</div>}
-          {c.gst_frequency && <div><span className="muted">GST freq.</span> {c.gst_frequency}</div>}
-          {c.fee_model && <div><span className="muted">Fee model</span> {c.fee_model}{c.fee_amount ? ` · ₹${c.fee_amount}` : ''}</div>}
-          {!c.fee_model && c.fee_amount && <div><span className="muted">Fee</span> ₹{c.fee_amount}</div>}
-          {c.turnover_band && <div><span className="muted">Turnover</span> {c.turnover_band}</div>}
-          {c.risk_rating && <div><span className="muted">Risk</span> {c.risk_rating}</div>}
-          {isYes(c.independence_flag) && <div><span className="due-warn">⚑ Independence flag</span></div>}
-          {c.onboarding_date && <div><span className="muted">Onboarded</span> {c.onboarding_date}</div>}
-          {c.address && <div><span className="muted">Address</span> {c.address}</div>}
-          {c.notes && <div className="client-facts-notes">{c.notes}</div>}
+      {/* One-click complete picture: everything about this client on one file. */}
+      <div className="c360-stats">
+        <button className={`c360-stat ${tab === 'tasks' ? 'on' : ''}`} onClick={() => setTab('tasks')}>
+          <span className="c360-num">{openTasks}</span><span className="c360-lbl">Open tasks</span>
+        </button>
+        <button className={`c360-stat ${overdueCount ? 'warn' : ''}`} onClick={() => setTab('deadlines')}>
+          <span className="c360-num">{overdueCount}</span><span className="c360-lbl">Overdue filings</span>
+        </button>
+        <button className="c360-stat" onClick={() => setTab('documents')}>
+          <span className="c360-num">{documents.length}</span><span className="c360-lbl">Documents</span>
+        </button>
+        <div className="c360-stat">
+          <span className="c360-num">{c.fee_amount ? `₹${c.fee_amount}` : '—'}</span><span className="c360-lbl">{c.fee_model || 'Fee'}</span>
         </div>
-      )}
+        <div className="c360-stat">
+          <span className="c360-num c360-next">{data.deadlines?.find((d) => !d.completed)?.title || '—'}</span>
+          <span className="c360-lbl">Next filing</span>
+        </div>
+      </div>
 
-      <Deadlines clientId={clientId} deadlines={data.deadlines} staff={staff} onOpenTask={onOpenTask}
-        onChange={(d) => { setData((x) => ({ ...x, deadlines: d })); onChanged?.(); }} />
-      <Contacts clientId={clientId} contacts={data.contacts} onChange={(c2) => setData((x) => ({ ...x, contacts: c2 }))} />
-
-      <section className="client-section">
-        <h3>Linked tasks <span className="count-pill">{tasks.length}</span></h3>
-        {tasks.length === 0 && <div className="empty-hint">No tasks linked to this client yet.</div>}
-        {tasks.map((t) => (
-          <button key={t.id} className={`client-task ${t.archived ? 'archived' : ''}`} onClick={() => onOpenTask?.(t.id)}>
-            <span className={`ct-dot p-${t.priority}`} />
-            <span className="ct-title">{t.title}</span>
-            <span className="ct-stage muted">{t.is_done ? '✓ Done' : t.stage}</span>
-            {t.assignee && <Avatar user={t.assignee} size={20} />}
-          </button>
+      <div className="c360-tabs">
+        {TABS.map(([k, label]) => (
+          <button key={k} className={`c360-tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{label}</button>
         ))}
-      </section>
+      </div>
 
-      <Notes clientId={clientId} notes={data.notes} user={user} onChange={(n) => setData((x) => ({ ...x, notes: n }))} />
+      <div className="c360-body">
+        {tab === 'overview' && (
+          <>
+            <ClientFacts c={c} />
+            <section className="client-section">
+              <h3>Upcoming compliance</h3>
+              {(!data.deadlines || data.deadlines.filter((d) => !d.completed).length === 0)
+                ? <div className="empty-hint">No open filings. <button className="link-btn" onClick={() => setTab('deadlines')}>Add one</button>.</div>
+                : data.deadlines.filter((d) => !d.completed).slice(0, 4).map((d) => (
+                    <div key={d.id} className="c360-line">
+                      <span className={overdueDl(d) ? 'due-warn' : ''}>⏳ {d.title}</span>
+                      <span className="muted">{fmtDate(d.due_date)}{d.assignee_name ? ` · ${d.assignee_name}` : ''}</span>
+                    </div>
+                  ))}
+            </section>
+            <section className="client-section">
+              <h3>Recent tasks</h3>
+              {tasks.length === 0 ? <div className="empty-hint">No linked tasks yet.</div>
+                : <LinkedTasks tasks={tasks.slice(0, 5)} onOpenTask={onOpenTask} />}
+            </section>
+          </>
+        )}
+        {tab === 'tasks' && <LinkedTasks tasks={tasks} onOpenTask={onOpenTask} />}
+        {tab === 'deadlines' && (
+          <Deadlines clientId={clientId} deadlines={data.deadlines} staff={staff} onOpenTask={onOpenTask}
+            onChange={(d) => { setData((x) => ({ ...x, deadlines: d })); onChanged?.(); }} />
+        )}
+        {tab === 'documents' && (
+          <Documents clientId={clientId} documents={documents} onChange={(docs) => { setData((x) => ({ ...x, documents: docs })); onChanged?.(); }} />
+        )}
+        {tab === 'contacts' && (
+          <Contacts clientId={clientId} contacts={data.contacts} onChange={(c2) => setData((x) => ({ ...x, contacts: c2 }))} />
+        )}
+        {tab === 'notes' && (
+          <Notes clientId={clientId} notes={data.notes} user={user} onChange={(n) => setData((x) => ({ ...x, notes: n }))} />
+        )}
+      </div>
     </div>
   );
 }
@@ -860,6 +948,46 @@ function Deadlines({ clientId, deadlines, staff = [], onOpenTask, onChange }) {
         </select>
         <button className="btn btn-sm btn-primary" disabled={!title.trim() || !due}>Add</button>
       </form>
+    </section>
+  );
+}
+
+function Documents({ clientId, documents, onChange }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const fileRef = useRef(null);
+
+  async function onFiles(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    setBusy(true); setError(null);
+    try {
+      const uploaded = await uploadFiles(files);
+      const docs = await api(`/clients/${clientId}/documents`, { method: 'POST', body: { attachment_ids: uploaded.map((a) => a.id) } });
+      onChange(docs);
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  }
+  async function del(id) {
+    if (!confirm('Remove this document?')) return;
+    onChange(await api(`/clients/${clientId}/documents/${id}`, { method: 'DELETE' }));
+  }
+
+  return (
+    <section className="client-section">
+      <h3>Documents
+        <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? 'Uploading…' : '⬆ Upload'}</button>
+        <input ref={fileRef} type="file" multiple hidden onChange={onFiles} />
+      </h3>
+      {error && <div className="form-error">{error}</div>}
+      {documents.length === 0 && !busy && <div className="empty-hint">No documents filed for this client yet.</div>}
+      {documents.map((d) => (
+        <div key={d.id} className="doc-row">
+          <a className="doc-name" href={fileUrl(d.id)} target="_blank" rel="noreferrer">📄 {d.original_name}</a>
+          <span className="muted small">{fmtBytes(d.size)}{d.uploaded_by ? ` · ${d.uploaded_by}` : ''}</span>
+          <button className="icon-btn" title="Remove" onClick={() => del(d.id)}>✕</button>
+        </div>
+      ))}
     </section>
   );
 }

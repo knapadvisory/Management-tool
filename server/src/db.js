@@ -440,6 +440,9 @@ ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
 // Marks an attachment as a profile photo so it is viewable workspace-wide
 // (normal unlinked uploads are visible only to their uploader).
 ensureColumn('attachments', 'is_avatar', 'INTEGER DEFAULT 0');
+// A document filed against a client (the client's document drawer). Visible to
+// the whole workspace's staff, like other client data.
+ensureColumn('attachments', 'client_id', 'INTEGER REFERENCES clients(id)');
 // Collabs are private group spaces (a specialised channel) with their own
 // owner/moderators and permission settings.
 ensureColumn('channels', 'is_collab', 'INTEGER NOT NULL DEFAULT 0');

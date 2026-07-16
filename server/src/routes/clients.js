@@ -46,7 +46,8 @@ function clientWithMeta(c) {
     WHERE client_id = ? AND completed = 0 ORDER BY due_date LIMIT 1
   `).get(c.id) || null;
   const contactCount = db.prepare('SELECT COUNT(*) AS n FROM client_contacts WHERE client_id = ?').get(c.id).n;
-  return { ...c, open_task_count: openTasks, next_deadline: nextDeadline, contact_count: contactCount, tags: tagsFor(c.id) };
+  const documentCount = db.prepare('SELECT COUNT(*) AS n FROM attachments WHERE client_id = ?').get(c.id).n;
+  return { ...c, open_task_count: openTasks, next_deadline: nextDeadline, contact_count: contactCount, document_count: documentCount, tags: tagsFor(c.id) };
 }
 
 const load = (req, res) => {
@@ -234,7 +235,38 @@ router.get('/:id', (req, res) => {
     SELECT n.*, u.name AS user_name, u.avatar_color FROM client_notes n
     JOIN users u ON u.id = n.user_id WHERE n.client_id = ? ORDER BY n.id DESC
   `).all(client.id);
-  res.json({ client: clientWithMeta(client), contacts, notes, deadlines: deadlinesFor(client.id) });
+  const documents = db.prepare(`
+    SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, u.name AS uploaded_by
+    FROM attachments a LEFT JOIN users u ON u.id = a.uploader_id
+    WHERE a.client_id = ? ORDER BY a.id DESC
+  `).all(client.id);
+  res.json({ client: clientWithMeta(client), contacts, notes, deadlines: deadlinesFor(client.id), documents });
+});
+
+// --- Documents (files uploaded via /api/uploads, then filed here) ---
+router.post('/:id/documents', (req, res) => {
+  const client = load(req, res);
+  if (!client) return;
+  const ids = Array.isArray(req.body.attachment_ids) ? req.body.attachment_ids : [];
+  const link = db.prepare('UPDATE attachments SET client_id = ? WHERE id = ? AND uploader_id = ? AND client_id IS NULL AND task_id IS NULL AND message_id IS NULL AND task_message_id IS NULL');
+  for (const aid of ids) link.run(client.id, aid, req.user.id);
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
+  res.status(201).json(db.prepare(`
+    SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, u.name AS uploaded_by
+    FROM attachments a LEFT JOIN users u ON u.id = a.uploader_id
+    WHERE a.client_id = ? ORDER BY a.id DESC
+  `).all(client.id));
+});
+
+router.delete('/:id/documents/:attId', (req, res) => {
+  const client = load(req, res);
+  if (!client) return;
+  db.prepare('DELETE FROM attachments WHERE id = ? AND client_id = ?').run(req.params.attId, client.id);
+  res.json(db.prepare(`
+    SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, u.name AS uploaded_by
+    FROM attachments a LEFT JOIN users u ON u.id = a.uploader_id
+    WHERE a.client_id = ? ORDER BY a.id DESC
+  `).all(client.id));
 });
 
 router.patch('/:id', (req, res) => {

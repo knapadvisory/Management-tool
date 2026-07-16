@@ -168,6 +168,21 @@ async function main() {
   const richBack = (await req('GET', `/api/clients/${rich.data.id}`, { token: b })).data.client;
   check('rich fields survive a reload', richBack.tan === 'DELS99999E' && richBack.independence_flag === 'Yes');
 
+  console.log('Client documents (360 view)');
+  const docCid = rich.data.id;
+  const fd = new FormData();
+  fd.append('files', new Blob(['engagement letter'], { type: 'text/plain' }), 'engagement.txt');
+  const up = await (await fetch(`${BASE}/api/uploads`, { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: fd })).json();
+  const docLink = await req('POST', `/api/clients/${docCid}/documents`, { token: a, body: { attachment_ids: [up.attachments[0].id] } });
+  check('a document can be filed against a client', docLink.status === 201 && docLink.data.length === 1 && docLink.data[0].original_name === 'engagement.txt');
+  const withDoc = await req('GET', `/api/clients/${docCid}`, { token: b });
+  check('the document appears on the client file for teammates', withDoc.data.documents.length === 1);
+  check('client document_count reflects the filed document', withDoc.data.client.document_count === 1);
+  const docDl = await fetch(`${BASE}/api/uploads/${up.attachments[0].id}?token=${b}`);
+  check('a teammate can download the client document', docDl.status === 200);
+  const rmDoc = await req('DELETE', `/api/clients/${docCid}/documents/${up.attachments[0].id}`, { token: a });
+  check('a document can be removed', rmDoc.data.length === 0);
+
   console.log('Custom compliance types');
   const t0 = await req('GET', '/api/clients/compliance-types', { token: a });
   check('compliance types start empty', Array.isArray(t0.data.types) && t0.data.types.length === 0);
@@ -181,7 +196,7 @@ async function main() {
   check('a custom type can be removed', !t4.data.types.includes('ROC filing'));
 
   console.log('Permissions & cleanup');
-  const memberDelete = await req('DELETE', `/api/clients/${cid}`, { token: b });
+  const memberDelete = await req('DELETE', `/api/clients/${docCid}`, { token: b });
   check('a member cannot delete a client', memberDelete.status === 403);
   const adminDelete = await req('DELETE', `/api/clients/${cid}`, { token: a });
   check('an admin can delete a client', adminDelete.status === 200);
