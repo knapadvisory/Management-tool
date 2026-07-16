@@ -34,6 +34,20 @@ export async function uploadToDrive(files, folderId = null, sharedWith = []) {
   return data.files;
 }
 
+// Upload a profile photo; returns the updated public user.
+export async function uploadAvatar(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/uploads/avatar', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: fd,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Upload failed');
+  return data.user;
+}
+
 // Authenticated file URL usable directly in <img src> / <a href>.
 export function fileUrl(id) {
   return `/api/uploads/${id}?token=${encodeURIComponent(getToken())}`;

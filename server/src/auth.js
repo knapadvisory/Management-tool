@@ -8,9 +8,9 @@ export const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3a
 
 export function publicUser(u) {
   if (!u) return null;
-  const { id, name, email, avatar_color, title, role, active, approved, deleted, deactivated_at, theme, accent, workspace_id } = u;
+  const { id, name, email, avatar_color, avatar_url, title, role, active, approved, deleted, deactivated_at, theme, accent, workspace_id } = u;
   return {
-    id, name, email, avatar_color, title, role: role || 'member', active: active ?? 1, approved: approved ?? 1,
+    id, name, email, avatar_color, avatar_url: avatar_url || '', title, role: role || 'member', active: active ?? 1, approved: approved ?? 1,
     deleted: deleted ?? 0, deactivated_at: deactivated_at || null,
     theme: theme || 'light', accent: accent || '#4f46e5', workspace_id,
   };
@@ -115,8 +115,10 @@ export function joinGeneral(workspaceId, userId) {
 
 // Self-service profile edit: a user updates their own name, title and avatar
 // colour. Only the provided fields change.
-export function updateOwnProfile(userId, { name, title, avatar_color, theme, accent }) {
+export function updateOwnProfile(userId, { name, title, avatar_color, theme, accent, avatar_url }) {
   const sets = [], vals = [];
+  // Profile photo: the id of an is_avatar attachment, or '' to remove it.
+  if (avatar_url !== undefined) { sets.push('avatar_url = ?'); vals.push(String(avatar_url || '').slice(0, 100)); }
   if (name !== undefined) {
     if (!String(name).trim()) throw Object.assign(new Error('Name is required'), { status: 400 });
     sets.push('name = ?'); vals.push(String(name).trim());

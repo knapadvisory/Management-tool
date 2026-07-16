@@ -66,7 +66,12 @@ export default function TaskListView({ tasks, onOpen }) {
                   title={t.status_reason || ''}>{statusMeta(t.status).label}</span>
               </td>
               <td>{t.creator ? <span className="list-assignee"><Avatar user={t.creator} size={20} /> {t.creator.name}</span> : <span className="muted">—</span>}</td>
-              <td>{t.assignee ? <span className="list-assignee"><Avatar user={t.assignee} size={20} /> {t.assignee.name}</span> : <span className="muted">—</span>}</td>
+              <td>{(() => {
+                const as = t.assignees?.length ? t.assignees : (t.assignee ? [t.assignee] : []);
+                if (!as.length) return <span className="muted">—</span>;
+                if (as.length === 1) return <span className="list-assignee"><Avatar user={as[0]} size={20} /> {as[0].name}</span>;
+                return <span className="list-assignee">{as.slice(0, 4).map((a) => <Avatar key={a.id} user={a} size={20} />)}{as.length > 4 ? ` +${as.length - 4}` : ''}</span>;
+              })()}</td>
               <td><span className={`priority priority-${t.priority}`}>{t.priority}</span></td>
               <td>{t.due_date ? <span className={`due ${dueStatus(t.due_date)}`}>{t.due_date}</span> : <span className="muted">—</span>}</td>
               <td>{t.checklist_total > 0 ? `${t.checklist_done}/${t.checklist_total}` : <span className="muted">—</span>}</td>

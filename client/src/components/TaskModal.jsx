@@ -5,6 +5,7 @@ import Avatar from './Avatar.jsx';
 import TaskChat from './TaskChat.jsx';
 import RemindersEditor from './RemindersEditor.jsx';
 import StatusControl from './StatusControl.jsx';
+import AssigneePicker from './AssigneePicker.jsx';
 
 export default function TaskModal({ taskId, user, users, workflows = [], projects = [], clients = [], onClose, inline = false }) {
   const [tab, setTab] = useState('chat');
@@ -126,7 +127,7 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   if (!task) return null;
   const workflow = workflows.find((w) => w.id === task.workflow_id) || workflows[0];
   const watching = watchers.some((w) => w.id === user.id);
-  const canArchive = user.role === 'admin' || task.creator?.id === user.id || task.assignee?.id === user.id;
+  const canArchive = user.role === 'admin' || task.creator?.id === user.id || (task.assignees || []).some((a) => a.id === user.id);
   const doneCount = checklist.filter((i) => i.is_done).length;
   const progress = checklist.length ? Math.round((doneCount / checklist.length) * 100) : 0;
 
@@ -152,11 +153,9 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
               {(workflow?.stages || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
-          <label>Assignee
-            <select value={task.assignee?.id ?? ''} onChange={(e) => update({ assignee_id: e.target.value ? Number(e.target.value) : null })}>
-              <option value="">Unassigned</option>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+          <label>Assignees
+            <AssigneePicker users={users} value={(task.assignees || []).map((a) => a.id)}
+              onChange={(ids) => update({ assignee_ids: ids })} />
           </label>
           <label>Project
             <select value={task.project?.id ?? ''} onChange={(e) => update({ project_id: e.target.value ? Number(e.target.value) : null })}>

@@ -172,6 +172,20 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 6px; color: #fff; font-weight: 700;
 }
+.avatar-photo { object-fit: cover; background: var(--surface-2); }
+.profile-photo-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+/* Multi-assignee picker */
+.assignee-picker { display: flex; flex-direction: column; gap: 6px; }
+.assignee-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.assignee-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px 2px 3px; border: 1px solid var(--border); border-radius: 14px; font-size: 12px; background: var(--surface); }
+.assignee-chip button { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 12px; line-height: 1; padding: 0 2px; }
+.assignee-chip button:hover { color: var(--danger, #e01e5a); }
+/* Stacked assignee avatars on cards / rows */
+.task-assignees { display: inline-flex; align-items: center; }
+.task-assignees .task-person { margin-left: -6px; }
+.task-assignees .task-person:first-child { margin-left: 0; }
+.task-assignees .avatar-wrap { border: 2px solid var(--surface); border-radius: 8px; }
 .presence-dot {
   position: absolute; bottom: -2px; right: -2px; width: 9px; height: 9px;
   border-radius: 50%; border: 2px solid var(--sidebar-bg);

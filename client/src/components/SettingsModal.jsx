@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { api } from '../api.js';
+import React, { useState, useRef } from 'react';
+import { api, uploadAvatar } from '../api.js';
 import Avatar from './Avatar.jsx';
 import { ACCENTS, applyTheme, saveLocalTheme } from '../theme.js';
 import { notificationsSupported, notificationPermission, requestNotificationPermission, desktopEnabled, setDesktopEnabled } from '../desktopNotify.js';
@@ -60,8 +60,11 @@ function ProfilePanel({ user, colors, onSaved }) {
   const [name, setName] = useState(user.name || '');
   const [title, setTitle] = useState(user.title || '');
   const [color, setColor] = useState(user.avatar_color);
+  const [avatarUrl, setAvatarUrl] = useState(user.avatar_url || '');
   const [saving, setSaving] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const photoRef = useRef(null);
   const palette = colors.length ? colors : [user.avatar_color];
   const dirty = name.trim() !== (user.name || '') || (title.trim() || '') !== (user.title || '') || color !== user.avatar_color;
 
@@ -74,14 +77,39 @@ function ProfilePanel({ user, colors, onSaved }) {
     } catch (e) { setMsg({ err: true, text: e.message }); } finally { setSaving(false); }
   }
 
+  async function onPhoto(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { setMsg({ err: true, text: 'Please choose an image file.' }); return; }
+    if (file.size > 5 * 1024 * 1024) { setMsg({ err: true, text: 'Image must be under 5 MB.' }); return; }
+    setPhotoBusy(true); setMsg(null);
+    try {
+      const u = await uploadAvatar(file);
+      setAvatarUrl(u.avatar_url); onSaved(u); setMsg({ err: false, text: 'Photo updated.' });
+    } catch (e2) { setMsg({ err: true, text: e2.message }); } finally { setPhotoBusy(false); }
+  }
+  async function removePhoto() {
+    setPhotoBusy(true); setMsg(null);
+    try {
+      const { user: u } = await api('/auth/me', { method: 'PATCH', body: { avatar_url: '' } });
+      setAvatarUrl(''); onSaved(u); setMsg({ err: false, text: 'Photo removed.' });
+    } catch (e) { setMsg({ err: true, text: e.message }); } finally { setPhotoBusy(false); }
+  }
+
   return (
     <div>
       <h3 className="settings-title">Profile</h3>
       <div className="profile-head">
-        <Avatar user={{ name: name || user.name, avatar_color: color }} size={56} />
+        <Avatar user={{ name: name || user.name, avatar_color: color, avatar_url: avatarUrl }} size={64} />
         <div className="profile-head-meta">
           <div className="profile-head-name">{name || user.name}</div>
           <div className="muted">{user.email}{user.role === 'admin' ? ' · Admin' : ''}</div>
+          <div className="profile-photo-actions">
+            <button type="button" className="btn btn-sm" disabled={photoBusy} onClick={() => photoRef.current?.click()}>{photoBusy ? 'Uploading…' : (avatarUrl ? 'Change photo' : 'Upload photo')}</button>
+            {avatarUrl && <button type="button" className="btn btn-sm" disabled={photoBusy} onClick={removePhoto}>Remove</button>}
+            <input ref={photoRef} type="file" accept="image/*" hidden onChange={onPhoto} />
+          </div>
         </div>
       </div>
       <label className="profile-label">Display name</label>

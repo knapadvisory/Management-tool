@@ -22,7 +22,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
   const [tags, setTags] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [view, setView] = useState('board'); // board | list | calendar
-  const [filters, setFilters] = useState({ project_id: '', tag: '', mine: false, due: '', watching: false, status: '' });
+  const [filters, setFilters] = useState({ project_id: '', tag: '', mine: false, due: '', watching: false, status: '', assignee_id: '', creator_id: '' });
   const [openTaskId, setOpenTaskId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
@@ -137,8 +137,11 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
   const in7YMD = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 7); return localYMD(d); })();
 
   // Client-side filtering keeps the board responsive to live updates.
+  const assigneesOf = (t) => (t.assignees?.length ? t.assignees : (t.assignee ? [t.assignee] : []));
   const visibleTasks = tasks.filter((t) => {
-    if (filters.mine && t.assignee?.id !== user.id) return false;
+    if (filters.mine && !assigneesOf(t).some((a) => a.id === user.id)) return false;
+    if (filters.assignee_id && !assigneesOf(t).some((a) => a.id === Number(filters.assignee_id))) return false;
+    if (filters.creator_id && t.creator?.id !== Number(filters.creator_id)) return false;
     if (filters.project_id && t.project?.id !== Number(filters.project_id)) return false;
     if (filters.tag && !t.tags?.includes(filters.tag)) return false;
     if (filters.watching && !t.watcher_ids?.includes(user.id)) return false;
@@ -194,6 +197,14 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
         <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))} title="Filter by status">
           <option value="">All statuses</option>
           {TASK_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
+        <select value={filters.assignee_id} onChange={(e) => setFilters((f) => ({ ...f, assignee_id: e.target.value }))} title="Filter by who it's assigned to">
+          <option value="">All assignees</option>
+          {(users || []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        <select value={filters.creator_id} onChange={(e) => setFilters((f) => ({ ...f, creator_id: e.target.value }))} title="Filter by who assigned it">
+          <option value="">Any assigner</option>
+          {(users || []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
         <select value={filters.due} onChange={(e) => setFilters((f) => ({ ...f, due: e.target.value }))} title="Filter by due date">
           <option value="">Any date</option>

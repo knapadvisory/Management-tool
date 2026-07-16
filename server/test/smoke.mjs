@@ -238,6 +238,27 @@ async function main() {
   const rewatch = await req('POST', `/api/tasks/${dtId}/watch`, { token: b });
   check('watcher re-added', rewatch.data.watcher_ids.includes(bobId));
 
+  // Multiple assignees: create with a list, both become assignees + watchers.
+  const multi = await req('POST', '/api/tasks', {
+    token: a,
+    body: { title: 'Team job', workflow_id: wf.data.id, assignee_ids: [1, bobId], priority: 'medium' },
+  });
+  check('task created with two assignees', multi.status === 201 && multi.data.assignees.length === 2);
+  check('both assignees are watchers', multi.data.watcher_ids.includes(1) && multi.data.watcher_ids.includes(bobId));
+  check('primary assignee mirrors the first of the list', multi.data.assignee?.id === 1);
+  const byAssignee = await req('GET', `/api/tasks?assignee_id=${bobId}`, { token: a });
+  check('filter by assignee finds a secondary assignee', byAssignee.data.tasks.some((t) => t.id === multi.data.id));
+  const byCreator = await req('GET', '/api/tasks?creator_id=1', { token: a });
+  check('filter by assigner (creator) works', byCreator.data.tasks.some((t) => t.id === multi.data.id));
+  const bobSees = await req('GET', '/api/tasks', { token: b });
+  check('a co-assignee sees the task in their list', bobSees.data.tasks.some((t) => t.id === multi.data.id));
+  const reassign = await req('PATCH', `/api/tasks/${multi.data.id}`, { token: a, body: { assignee_ids: [bobId] } });
+  check('assignee set can be narrowed to one', reassign.data.assignees.length === 1 && reassign.data.assignees[0].id === bobId);
+  const legacy = await req('PATCH', `/api/tasks/${multi.data.id}`, { token: a, body: { assignee_id: 1 } });
+  check('legacy single assignee_id still works', legacy.data.assignees.length === 1 && legacy.data.assignee?.id === 1);
+  const unassign = await req('PATCH', `/api/tasks/${multi.data.id}`, { token: a, body: { assignee_ids: [] } });
+  check('all assignees can be cleared', unassign.data.assignees.length === 0 && unassign.data.assignee === null);
+
   const tfd = new FormData();
   tfd.append('files', new Blob(['spec doc'], { type: 'text/plain' }), 'spec.txt');
   const tup = await (await fetch(BASE + '/api/uploads', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: tfd })).json();

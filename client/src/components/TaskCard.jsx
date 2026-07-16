@@ -16,12 +16,17 @@ export function dueStatus(due) {
 
 // From the viewer's perspective: is this task theirs, allotted to them, or one
 // they allotted to someone else?
+function assigneesOf(task) {
+  return task.assignees?.length ? task.assignees : (task.assignee ? [task.assignee] : []);
+}
 function relationship(task, me) {
-  const c = task.creator?.id, a = task.assignee?.id;
-  if (a === me && c === me) return { text: 'Mine', cls: 'self' };
-  if (a === me) return { text: 'For you', cls: 'to-me' };       // allotted to me by someone
-  if (c === me && a && a !== me) return { text: 'You allotted', cls: 'by-me' }; // I allotted to someone
-  if (c === me && !a) return { text: 'You created', cls: 'by-me' };
+  const c = task.creator?.id;
+  const ids = assigneesOf(task).map((a) => a.id);
+  const iAmAssignee = ids.includes(me);
+  if (iAmAssignee && c === me) return { text: 'Mine', cls: 'self' };
+  if (iAmAssignee) return { text: 'For you', cls: 'to-me' };       // allotted to me by someone
+  if (c === me && ids.length) return { text: 'You allotted', cls: 'by-me' }; // I allotted to someone
+  if (c === me) return { text: 'You created', cls: 'by-me' };
   return null; // not involving me (e.g. an admin viewing everyone's tasks)
 }
 const firstName = (u) => (u ? u.name.split(' ')[0] : null);
@@ -30,8 +35,9 @@ export default function TaskCard({ task, onOpen, draggable, onDragStart, current
   const due = dueStatus(task.due_date);
   const watching = task.watcher_ids?.includes(currentUserId);
   const rel = relationship(task, currentUserId);
-  const { creator, assignee } = task;
-  const samePerson = creator && assignee && creator.id === assignee.id;
+  const { creator } = task;
+  const assignees = assigneesOf(task);
+  const samePerson = creator && assignees.length === 1 && creator.id === assignees[0].id;
   return (
     <div
       className="task-card"
@@ -89,9 +95,15 @@ export default function TaskCard({ task, onOpen, draggable, onDragStart, current
               </span>
             )}
             <span className="task-arrow" aria-hidden>→</span>
-            {assignee ? (
-              <span className="task-person" title={`Allotted to ${assignee.name}`}>
-                <Avatar user={assignee} size={18} /><span className="task-person-name">{firstName(assignee)}</span>
+            {assignees.length ? (
+              <span className="task-assignees" title={`Allotted to ${assignees.map((a) => a.name).join(', ')}`}>
+                {assignees.slice(0, 3).map((a) => (
+                  <span key={a.id} className="task-person">
+                    <Avatar user={a} size={18} />
+                    {assignees.length === 1 && <span className="task-person-name">{firstName(a)}</span>}
+                  </span>
+                ))}
+                {assignees.length > 3 && <span className="task-person-name">+{assignees.length - 3}</span>}
               </span>
             ) : (
               <span className="task-person muted">Unassigned</span>

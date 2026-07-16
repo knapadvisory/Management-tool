@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { api, uploadFiles } from '../api.js';
 import StepsEditor from './StepsEditor.jsx';
 import RemindersEditor from './RemindersEditor.jsx';
+import AssigneePicker from './AssigneePicker.jsx';
 import { parseQuickAdd } from '../quickparse.js';
 
 export default function NewTaskModal({ workflows, projects, clients = [], users, templates, defaultWorkflowId, onClose, onCreated }) {
@@ -10,11 +11,11 @@ export default function NewTaskModal({ workflows, projects, clients = [], users,
     workflow_id: defaultWorkflowId || workflows[0]?.id || '',
     project_id: '',
     client_id: '',
-    assignee_id: '',
     priority: 'medium',
     due_date: '',
     recurrence: 'none',
   });
+  const [assigneeIds, setAssigneeIds] = useState([]);
   const [tags, setTags] = useState([]);
   const [steps, setSteps] = useState([]);
   const [reminders, setReminders] = useState([]); // array of ISO strings
@@ -89,7 +90,7 @@ export default function NewTaskModal({ workflows, projects, clients = [], users,
           workflow_id: Number(form.workflow_id),
           project_id: form.project_id ? Number(form.project_id) : null,
           client_id: form.client_id ? Number(form.client_id) : null,
-          assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
+          assignee_ids: assigneeIds,
           priority: p.priority || form.priority,
           due_date: form.due_date || p.due_date || null,
           recurrence: form.recurrence,
@@ -157,13 +158,11 @@ export default function NewTaskModal({ workflows, projects, clients = [], users,
             )}
           </div>
 
+          <label className="field">Assignees
+            <AssigneePicker users={users} value={assigneeIds} onChange={setAssigneeIds} />
+          </label>
+
           <div className="field-row">
-            <label className="field">Assignee
-              <select value={form.assignee_id} onChange={set('assignee_id')}>
-                <option value="">Unassigned</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </label>
             <label className="field">Priority
               <select value={form.priority} onChange={set('priority')}>
                 <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>

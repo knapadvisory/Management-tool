@@ -184,7 +184,10 @@ router.post('/deadlines/bulk', (req, res) => {
       if (createTasks && stage) {
         const tInfo = insTask.run(`${title} — ${client.name}`, wf.id, cid, stage.id, assignee_id, req.user.id, due_date, req.workspaceId);
         insWatch.run(tInfo.lastInsertRowid, req.user.id);
-        if (assignee_id) insWatch.run(tInfo.lastInsertRowid, assignee_id);
+        if (assignee_id) {
+          insWatch.run(tInfo.lastInsertRowid, assignee_id);
+          db.prepare('INSERT OR IGNORE INTO task_assignees (task_id, user_id) VALUES (?, ?)').run(tInfo.lastInsertRowid, assignee_id);
+        }
         db.prepare('UPDATE client_deadlines SET task_id = ? WHERE id = ?').run(tInfo.lastInsertRowid, dlInfo.lastInsertRowid);
         tasks++;
       }
@@ -397,7 +400,10 @@ router.post('/:id/deadlines/:did/task', (req, res) => {
   `).run(`${dl.title} — ${client.name}`, '', wf.id, client.id, stage.id, dl.assignee_id || null, req.user.id, dl.due_date, req.workspaceId);
   const taskId = info.lastInsertRowid;
   db.prepare('INSERT OR IGNORE INTO task_watchers (task_id, user_id) VALUES (?, ?)').run(taskId, req.user.id);
-  if (dl.assignee_id) db.prepare('INSERT OR IGNORE INTO task_watchers (task_id, user_id) VALUES (?, ?)').run(taskId, dl.assignee_id);
+  if (dl.assignee_id) {
+    db.prepare('INSERT OR IGNORE INTO task_watchers (task_id, user_id) VALUES (?, ?)').run(taskId, dl.assignee_id);
+    db.prepare('INSERT OR IGNORE INTO task_assignees (task_id, user_id) VALUES (?, ?)').run(taskId, dl.assignee_id);
+  }
   db.prepare('UPDATE client_deadlines SET task_id = ? WHERE id = ?').run(taskId, dl.id);
   res.status(201).json({ task_id: taskId, deadlines: deadlinesFor(client.id) });
 });

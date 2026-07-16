@@ -5,7 +5,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import db from '../db.js';
-import { verifyToken, requireAuth } from '../auth.js';
+import { verifyToken, requireAuth, publicUser } from '../auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
@@ -23,8 +23,28 @@ const upload = multer({
   storage,
   limits: { fileSize: 25 * 1024 * 1024, files: 10 }, // 25 MB per file
 });
+// Avatars: images only, 5 MB cap.
+const avatarUpload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+});
 
 const router = Router();
+
+// Upload a profile photo and set it as the current user's avatar in one step.
+// Marked is_avatar so every workspace member can load it via <img>.
+router.post('/avatar', requireAuth, avatarUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Please choose an image (max 5 MB).' });
+  const info = db.prepare(`
+    INSERT INTO attachments (uploader_id, stored_name, original_name, mime_type, size, workspace_id, is_avatar)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
+  `).run(req.user.id, req.file.filename, req.file.originalname, req.file.mimetype, req.file.size, req.workspaceId);
+  db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(String(info.lastInsertRowid), req.user.id);
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
+  res.status(201).json({ user: publicUser(updated) });
+});
 
 // Upload one or more files. They start unattached; a subsequent
 // message:send (or task) links them by id.
@@ -89,6 +109,8 @@ router.get('/:id', (req, res) => {
     if (!canSeeTask(task)) return res.status(403).json({ error: 'Not allowed' });
   } else if (att.is_drive) {
     // The shared Drive is workspace-wide (already scoped above).
+  } else if (att.is_avatar) {
+    // Profile photos are visible to the whole workspace (already scoped above).
   } else if (att.uploader_id !== userId) {
     return res.status(403).json({ error: 'Not allowed' });
   }

@@ -6,6 +6,13 @@ const router = Router();
 
 const getUser = (id) => (id ? db.prepare('SELECT * FROM users WHERE id = ?').get(id) : null);
 
+function assigneesFor(t) {
+  const rows = db.prepare('SELECT u.* FROM task_assignees ta JOIN users u ON u.id = ta.user_id WHERE ta.task_id = ? ORDER BY u.name').all(t.id).map(publicUser);
+  if (rows.length) return rows;
+  const primary = t.assignee_id ? publicUser(getUser(t.assignee_id)) : null;
+  return primary ? [primary] : [];
+}
+
 function liteTask(t) {
   const stage = db.prepare('SELECT name FROM workflow_stages WHERE id = ?').get(t.stage_id);
   const project = t.project_id ? db.prepare('SELECT name, color FROM projects WHERE id = ?').get(t.project_id) : null;
@@ -13,6 +20,7 @@ function liteTask(t) {
     id: t.id, title: t.title, priority: t.priority, due_date: t.due_date, status: t.status,
     stage: stage?.name || null,
     assignee: publicUser(getUser(t.assignee_id)),
+    assignees: assigneesFor(t),
     creator: publicUser(getUser(t.creator_id)),
     project,
   };
@@ -26,7 +34,7 @@ router.get('/', (req, res) => {
   const ws = Number(req.workspaceId); // integer from the JWT — safe to inline
   // Every task query is scoped to the workspace first, then to visibility.
   const scope = ` AND t.workspace_id = ${ws}` + (isAdmin ? '' :
-    ` AND (t.creator_id = ${uid} OR t.assignee_id = ${uid} OR EXISTS (SELECT 1 FROM task_watchers w WHERE w.task_id = t.id AND w.user_id = ${uid}))`);
+    ` AND (t.creator_id = ${uid} OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ${uid}) OR EXISTS (SELECT 1 FROM task_watchers w WHERE w.task_id = t.id AND w.user_id = ${uid}))`);
   const OPEN = `t.status NOT IN ('completed','cancelled')`;
 
   const rows = (sql) => db.prepare(sql).all();
@@ -65,8 +73,10 @@ router.get('/', (req, res) => {
   let workload = [];
   if (isAdmin) {
     workload = db.prepare(
-      `SELECT u.id, u.name, u.avatar_color, COUNT(t.id) AS count
-       FROM users u LEFT JOIN tasks t ON t.assignee_id = u.id AND t.status NOT IN ('completed','cancelled') AND t.workspace_id = ${ws}
+      `SELECT u.id, u.name, u.avatar_color, u.avatar_url, COUNT(t.id) AS count
+       FROM users u
+       LEFT JOIN task_assignees ta ON ta.user_id = u.id
+       LEFT JOIN tasks t ON t.id = ta.task_id AND t.status NOT IN ('completed','cancelled') AND t.archived_at IS NULL AND t.workspace_id = ${ws}
        WHERE u.active = 1 AND u.role != 'guest' AND u.workspace_id = ${ws} GROUP BY u.id HAVING count > 0 ORDER BY count DESC`
     ).all();
   }

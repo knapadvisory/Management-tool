@@ -246,6 +246,15 @@ CREATE TABLE IF NOT EXISTS task_watchers (
   PRIMARY KEY (task_id, user_id)
 );
 
+-- A task can be assigned to several people. tasks.assignee_id is kept as the
+-- "primary" (first) assignee for backward compatibility; this junction holds
+-- the full set. Every assignee is also a watcher.
+CREATE TABLE IF NOT EXISTS task_assignees (
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (task_id, user_id)
+);
+
 -- Reusable task blueprints for repeatable client processes.
 CREATE TABLE IF NOT EXISTS task_templates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -415,6 +424,11 @@ ensureColumn('users', 'approved', 'INTEGER NOT NULL DEFAULT 1');
 // Per-user appearance: colour mode ('light'|'dark'|'system') and accent hex.
 ensureColumn('users', 'theme', "TEXT NOT NULL DEFAULT 'light'");
 ensureColumn('users', 'accent', "TEXT NOT NULL DEFAULT '#4f46e5'");
+// Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
+ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
+// Marks an attachment as a profile photo so it is viewable workspace-wide
+// (normal unlinked uploads are visible only to their uploader).
+ensureColumn('attachments', 'is_avatar', 'INTEGER DEFAULT 0');
 // Collabs are private group spaces (a specialised channel) with their own
 // owner/moderators and permission settings.
 ensureColumn('channels', 'is_collab', 'INTEGER NOT NULL DEFAULT 0');
@@ -465,6 +479,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_channels_workspace ON channels(workspace_id);
   CREATE INDEX IF NOT EXISTS idx_tasks_workspace ON tasks(workspace_id);
   CREATE INDEX IF NOT EXISTS idx_messages_workspace ON messages(workspace_id);
+  CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees(user_id);
+`);
+
+// Seed the multi-assignee junction from the existing single assignee_id so
+// tasks created before this feature keep their assignee. Idempotent.
+db.exec(`
+  INSERT OR IGNORE INTO task_assignees (task_id, user_id)
+  SELECT id, assignee_id FROM tasks WHERE assignee_id IS NOT NULL;
 `);
 
 // Backfill: if a database predates workspaces, move all existing data into a
