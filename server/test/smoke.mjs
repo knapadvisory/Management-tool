@@ -740,6 +740,14 @@ async function main() {
   check('dashboard carries a task summary', typeof dashA.data.summary.open === 'number' && Array.isArray(dashA.data.board));
   check('admin dashboard includes team workload', Array.isArray(dashA.data.workload));
   check('dashboard lists recent activity', Array.isArray(dashA.data.activity));
+  // Overdue is computed against the caller's local date (?today=), not UTC —
+  // so a task due 2026-07-16 is overdue on 2026-07-17 but not on 2026-07-16.
+  await req('POST', '/api/tasks', { token: a, body: { title: 'Boundary due', workflow_id: wf.data.id, due_date: '2026-07-16' } });
+  const onDay = await req('GET', '/api/dashboard?today=2026-07-16', { token: a });
+  const nextDay = await req('GET', '/api/dashboard?today=2026-07-17', { token: a });
+  check('a task is not overdue on its due date', (nextDay.data.summary.overdue - onDay.data.summary.overdue) === 1);
+  check('overdue uses the client-supplied local date', nextDay.data.summary.overdue > onDay.data.summary.overdue);
+
   const dashB = await req('GET', '/api/dashboard', { token: b });
   check('member dashboard reports the member role', dashB.data.role === 'member');
   check('member dashboard exposes no team workload', dashB.data.workload.length === 0);

@@ -55,7 +55,10 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
   const [taskHits, setTaskHits] = useState(null);       // null = not searching
   const searchTimer = React.useRef(null);
 
-  const reload = () => api('/dashboard').then(setData).catch(() => {});
+  // The caller's LOCAL date, so overdue/aging are computed in the user's time
+  // zone (not the server's UTC) — otherwise counts are off around midnight.
+  const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const reload = () => api(`/dashboard?today=${localToday()}`).then(setData).catch(() => {});
 
   // Search tasks (by title or client) across the firm, like the global search.
   useEffect(() => {
@@ -75,7 +78,7 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
 
   useEffect(() => {
     let alive = true;
-    api('/dashboard').then((d) => { if (alive) { setData(d); setLoading(false); } }).catch(() => { if (alive) setLoading(false); });
+    api(`/dashboard?today=${localToday()}`).then((d) => { if (alive) { setData(d); setLoading(false); } }).catch(() => { if (alive) setLoading(false); });
     api('/workflows').then((d) => alive && setWorkflows(d.workflows || d || [])).catch(() => {});
     api('/projects').then((d) => alive && setProjects(d.projects || d || [])).catch(() => {});
     return () => { alive = false; };
@@ -86,14 +89,26 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
   // Open a small popup listing a filtered set of tasks (board column / a
   // teammate's workload). Pulls the in-scope task list, which respects role.
   const OPEN = (t) => !['completed', 'cancelled'].includes(t.status);
+  const liteMap = (t) => ({
+    id: t.id, title: t.title, priority: t.priority, due_date: t.due_date, status: t.status,
+    stage: t.stage?.name, assignee: t.assignee, creator: t.creator, project: t.project,
+  });
   async function openList(title, pred) {
     try {
       const d = await api('/tasks');
-      const tasks = (d.tasks || []).filter(pred).map((t) => ({
-        id: t.id, title: t.title, priority: t.priority, due_date: t.due_date, status: t.status,
-        stage: t.stage?.name, assignee: t.assignee, creator: t.creator, project: t.project,
-      }));
-      setListPopup({ title, tasks });
+      setListPopup({ title, tasks: (d.tasks || []).filter(pred).map(liteMap) });
+    } catch { /* ignore */ }
+  }
+  // Tasks completed this month — includes archived ones (a completed task
+  // auto-archives after 7 days, so "closed this month" spans both lists).
+  async function openClosedThisMonth() {
+    try {
+      const month = localToday().slice(0, 7);
+      const [act, arch] = await Promise.all([api('/tasks'), api('/tasks?archived=1')]);
+      const done = [...(act.tasks || []), ...(arch.tasks || [])]
+        .filter((t) => t.completed_at && String(t.completed_at).slice(0, 7) === month)
+        .map(liteMap);
+      setListPopup({ title: 'Closed this month', tasks: done });
     } catch { /* ignore */ }
   }
 
@@ -132,17 +147,12 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
         <button className={`dash-kpi ${s.overdue ? 'warn' : ''}`} onClick={() => openList('Overdue', (t) => t.due_date && daysUntil(t.due_date) < 0 && OPEN(t))}>
           <span className="dash-kpi-num">{s.overdue}</span><span className="dash-kpi-lbl">Overdue tasks</span>
         </button>
-        <button className="dash-kpi ok" onClick={() => openList('Completed', (t) => t.status === 'completed')}>
+        <button className="dash-kpi ok" onClick={openClosedThisMonth}>
           <span className="dash-kpi-num">{s.closed_month ?? 0}</span><span className="dash-kpi-lbl">Closed this month</span>
         </button>
         <div className="dash-kpi">
           <span className="dash-kpi-num">{s.clients ?? 0}</span><span className="dash-kpi-lbl">Active clients</span>
         </div>
-        {data.hours && (
-          <button className="dash-kpi" onClick={() => onOpenTimesheet?.()}>
-            <span className="dash-kpi-num">{fmtDuration(data.hours.month)}</span><span className="dash-kpi-lbl">Hours this month</span>
-          </button>
-        )}
       </div>
 
       {data.upcoming.length > 0 && (
