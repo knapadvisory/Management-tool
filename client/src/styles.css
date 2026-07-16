@@ -241,6 +241,17 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 }
 .toast-error { background: var(--danger); }
 
+/* Dismissible notification pop-ups (top-right stack) */
+.notif-popups { position: fixed; top: 16px; right: 16px; z-index: 120; display: flex; flex-direction: column; gap: 10px; max-width: min(360px, calc(100vw - 32px)); }
+.notif-popup { display: flex; align-items: stretch; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.22); overflow: hidden; animation: popup-in .18s ease-out; }
+.notif-popup-body { flex: 1; display: flex; align-items: center; gap: 10px; padding: 11px 12px; background: none; border: none; text-align: left; cursor: pointer; color: inherit; font-size: 13.5px; }
+.notif-popup-body:hover { background: var(--surface-2); }
+.notif-popup-icon { font-size: 18px; flex-shrink: 0; }
+.notif-popup-text { line-height: 1.35; }
+.notif-popup-close { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 12px; font-size: 14px; }
+.notif-popup-close:hover { color: var(--text); background: var(--surface-2); }
+@keyframes popup-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+
 /* ---------- Tasks board ---------- */
 .board-page, .workflows-page { display: flex; flex-direction: column; height: 100%; padding: 20px; overflow: hidden; }
 .workflows-page { overflow-y: auto; }

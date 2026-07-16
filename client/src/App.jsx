@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, getToken, setToken, clearToken } from './api.js';
 import { connectSocket, disconnectSocket, getSocket } from './socket.js';
 import { initPush } from './capacitorPush.js';
+import { initWebPush } from './webpush.js';
 import { showDesktopNotification } from './desktopNotify.js';
 import Login from './components/Login.jsx';
 import Sidebar from './components/Sidebar.jsx';
@@ -13,6 +14,7 @@ import AdminPanel from './components/AdminPanel.jsx';
 import Messenger from './components/Messenger.jsx';
 import PeopleView from './components/PeopleView.jsx';
 import ActivityView from './components/ActivityView.jsx';
+import NotificationPopups from './components/NotificationPopups.jsx';
 import FilesView from './components/FilesView.jsx';
 import CallManager from './components/CallManager.jsx';
 import GroupCallManager from './components/GroupCallManager.jsx';
@@ -54,6 +56,7 @@ export default function App() {
   // view: { type: 'channel', channel } | { type: 'tasks' } | { type: 'workflows' }
   const [view, setView] = useState(null);
   const [toast, setToast] = useState(null);
+  const [popups, setPopups] = useState([]); // dismissible corner pop-ups
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -64,11 +67,20 @@ export default function App() {
   // Always-current pointer to selectNotification, so desktop-notification
   // clicks navigate using the latest state (channels, etc.).
   const selectNotifRef = useRef(null);
+  const viewRef = useRef(null); // latest view, for socket handlers
 
   const showToast = useCallback((text) => {
     setToast(text);
     setTimeout(() => setToast(null), 4000);
   }, []);
+
+  // A dismissible corner pop-up for an incoming notification (kept to the last
+  // few, auto-expiring after 8s).
+  const pushPopup = useCallback((notification) => {
+    setPopups((ps) => [...ps.filter((p) => p.id !== notification.id), { id: notification.id, notification }].slice(-3));
+    setTimeout(() => setPopups((ps) => ps.filter((p) => p.id !== notification.id)), 8000);
+  }, []);
+  const dismissPopup = useCallback((id) => setPopups((ps) => ps.filter((p) => p.id !== id)), []);
 
   const refreshChannels = useCallback(async () => {
     const data = await api('/channels');
@@ -120,16 +132,16 @@ export default function App() {
     socket.on('notification:new', ({ notification, unread_count }) => {
       setNotifications((ns) => [notification, ...ns].slice(0, 50));
       setUnreadCount(unread_count);
-      if (notification.type === 'task_reminder') showToast(`🔔 ${notification.text}`);
-      // Native desktop alert (only when the tab is in the background). Group-chat
-      // messages are too frequent to pop — they still land in the Activity feed.
-      if (notification.type !== 'channel_msg') {
-        showDesktopNotification('TeamHub', {
-          body: notification.text,
-          tag: `notif-${notification.id}`,
-          onClick: () => selectNotifRef.current?.(notification),
-        });
-      }
+      // Don't pop for the conversation you're already looking at.
+      const viewingChannel = viewRef.current?.type === 'channel' ? viewRef.current.channel?.id : null;
+      const forOpenChannel = notification.channel_id && notification.channel_id === viewingChannel;
+      if (!forOpenChannel) pushPopup(notification);
+      // Native desktop alert (fires only when the tab is backgrounded).
+      showDesktopNotification('TeamHub', {
+        body: notification.text,
+        tag: `notif-${notification.id}`,
+        onClick: () => selectNotifRef.current?.(notification),
+      });
     });
 
     refreshNotifications();
@@ -147,6 +159,12 @@ export default function App() {
 
   // Keep the desktop-notification click handler pointed at the latest state.
   useEffect(() => { selectNotifRef.current = selectNotification; });
+
+  // Viewing a channel/DM marks it read, clearing its sidebar badge.
+  useEffect(() => {
+    viewRef.current = view;
+    if (view?.type === 'channel' && view.channel?.id) markChannelRead(view.channel.id);
+  }, [view, markChannelRead]);
 
   function handleAuth({ token, user, workspace }) {
     setToken(token);
@@ -210,7 +228,27 @@ export default function App() {
         setView(ch ? { type: 'channel', channel: ch } : { type: 'messenger' });
       }
     }).then((fn) => { cleanup = fn; });
+    // Browser (Chrome/Edge/Firefox) web push — no-op on native / unsupported.
+    initWebPush();
     return () => { cleanup?.(); };
+  }, [user]);
+
+  // Deep-link from a web-push notification click (#channel-N / #task-N).
+  useEffect(() => {
+    if (!user) return undefined;
+    const route = () => {
+      const cm = window.location.hash.match(/^#channel-(\d+)/);
+      const tm = window.location.hash.match(/^#task-(\d+)/);
+      if (cm) {
+        const ch = channelsRef.current.find((c) => c.id === Number(cm[1]));
+        if (ch) { setView({ type: 'channel', channel: ch }); window.location.hash = ''; }
+      } else if (tm) {
+        setView({ type: 'tasks' }); setTaskToOpen(Number(tm[1])); window.location.hash = '';
+      }
+    };
+    route();
+    window.addEventListener('hashchange', route);
+    return () => window.removeEventListener('hashchange', route);
   }, [user]);
 
   async function selectNotification(n) {
@@ -233,6 +271,21 @@ export default function App() {
     setNotifications((ns) => ns.map((x) => ({ ...x, is_read: true })));
     setUnreadCount(0);
   }
+
+  // Opening a conversation clears its unread notifications (server + local),
+  // so the Messages/channel badges reflect what's actually unread.
+  const markChannelRead = useCallback((channelId) => {
+    setNotifications((ns) => {
+      let dec = 0;
+      const next = ns.map((n) => {
+        if (n.channel_id === channelId && !n.is_read) { dec++; return { ...n, is_read: true }; }
+        return n;
+      });
+      if (dec) setUnreadCount((c) => Math.max(0, c - dec));
+      return next;
+    });
+    api(`/channels/${channelId}/read`, { method: 'POST' }).catch(() => {});
+  }, []);
 
   // Mark one notification read without navigating (used by the Activity pane).
   function markNotificationRead(n) {
@@ -391,6 +444,7 @@ export default function App() {
         />
       )}
       {toast && <div className="toast">{toast}</div>}
+      <NotificationPopups popups={popups} onOpen={(n) => { dismissPopup(n.id); selectNotification(n); }} onClose={dismissPopup} />
     </div>
   );
 }

@@ -55,6 +55,12 @@ SMTP_SECURE="${SMTP_SECURE:-}"
 FCM_PROJECT_ID="${FCM_PROJECT_ID:-}"
 FCM_CLIENT_EMAIL="${FCM_CLIENT_EMAIL:-}"
 FCM_PRIVATE_KEY="${FCM_PRIVATE_KEY:-}"
+# Browser Web Push (Chrome/Edge/Firefox). Optional — if left blank the server
+# generates a VAPID key pair on first boot and persists it, so browser push
+# works with no setup. Set these only to pin your own keys.
+WEB_PUSH_PUBLIC_KEY="${WEB_PUSH_PUBLIC_KEY:-}"
+WEB_PUSH_PRIVATE_KEY="${WEB_PUSH_PRIVATE_KEY:-}"
+WEB_PUSH_SUBJECT="${WEB_PUSH_SUBJECT:-}"
 EOF
 
 # Clean up a broken Caddy apt source from earlier script versions, if present.
@@ -98,6 +104,9 @@ docker run -d --name teamhub --restart unless-stopped \
   ${FCM_PROJECT_ID:+-e FCM_PROJECT_ID="$FCM_PROJECT_ID"} \
   ${FCM_CLIENT_EMAIL:+-e FCM_CLIENT_EMAIL="$FCM_CLIENT_EMAIL"} \
   ${FCM_PRIVATE_KEY:+-e FCM_PRIVATE_KEY="$FCM_PRIVATE_KEY"} \
+  ${WEB_PUSH_PUBLIC_KEY:+-e WEB_PUSH_PUBLIC_KEY="$WEB_PUSH_PUBLIC_KEY"} \
+  ${WEB_PUSH_PRIVATE_KEY:+-e WEB_PUSH_PRIVATE_KEY="$WEB_PUSH_PRIVATE_KEY"} \
+  ${WEB_PUSH_SUBJECT:+-e WEB_PUSH_SUBJECT="$WEB_PUSH_SUBJECT"} \
   -v teamhub-data:/data \
   teamhub:latest
 

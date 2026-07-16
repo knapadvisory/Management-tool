@@ -9,7 +9,7 @@ import { Server } from 'socket.io';
 import db from './db.js';
 import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, workspaceSignupCodeRequired, allowedSignupDomains, createWorkspaceAdmin, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, createPasswordReset, findPasswordReset, applyPasswordReset, userByEmail, AVATAR_COLORS } from './auth.js';
 import { emailEnabled, sendMail, layout, button } from './email.js';
-import { pushEnabled } from './push.js';
+import { pushEnabled, getVapidPublicKey } from './push.js';
 import { createWorkspace, workspaceBySlug, workspaceById, publicWorkspace, deleteWorkspace } from './workspaces.js';
 import { isPlatformAdmin, PLATFORM_WORKSPACE_ID, findUsableCompanyCode, consumeCompanyCode, createCompanyCode, listCompanyCodes, revokeCompanyCode, findUsableInvite, consumeInvite } from './codes.js';
 import channelsRouter from './routes/channels.js';
@@ -72,6 +72,7 @@ app.get('/api/config', (req, res) => {
     company_code_required: true,
     email_enabled: emailEnabled(),
     push_enabled: pushEnabled(),
+    vapid_public_key: getVapidPublicKey(),
     avatar_colors: AVATAR_COLORS,
     ice_servers: iceServers(),
   });

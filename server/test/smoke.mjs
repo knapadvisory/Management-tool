@@ -627,6 +627,15 @@ async function main() {
   check('a device can register for push', pushReg.status === 200 && pushReg.data.push_enabled === false);
   const pushNoToken = await req('POST', '/api/push/register', { token: b, body: {} });
   check('push registration requires a token', pushNoToken.status === 400);
+  // Browser Web Push (VAPID): config exposes a public key, subscribe/unsubscribe work.
+  const cfg2 = await req('GET', '/api/config');
+  check('config exposes a VAPID public key for web push', typeof cfg2.data.vapid_public_key === 'string' && cfg2.data.vapid_public_key.length > 20);
+  const webSub = await req('POST', '/api/push/web/subscribe', { token: b, body: { subscription: { endpoint: 'https://fcm.example/ep1', keys: { p256dh: 'x'.repeat(80), auth: 'y'.repeat(20) } } } });
+  check('a browser can register a web-push subscription', webSub.status === 200 && webSub.data.ok);
+  const webBad = await req('POST', '/api/push/web/subscribe', { token: b, body: { subscription: {} } });
+  check('web-push subscribe without an endpoint is rejected', webBad.status === 400);
+  const webUnsub = await req('POST', '/api/push/web/unsubscribe', { token: b, body: { endpoint: 'https://fcm.example/ep1' } });
+  check('a browser can unsubscribe from web push', webUnsub.status === 200);
   // Creating a notification with a token on file must not throw when FCM is off.
   const pingTask = await req('POST', '/api/tasks', { token: a, body: { title: 'Ping Bob', workflow_id: wf.data.id, assignee_id: bobId } });
   check('notifying a push-registered user still works with FCM disabled', pingTask.status === 201);

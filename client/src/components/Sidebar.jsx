@@ -17,6 +17,16 @@ export default function Sidebar({
   const isOnline = (id) => onlineIds.includes(id);
   const activeChannelId = view?.type === 'channel' ? view.channel.id : null;
 
+  // Unread reflection: derive per-section badges from the notification inbox so
+  // Messages and Tasks show what's waiting, not just the Activity feed.
+  const unread = notifications.filter((n) => !n.is_read);
+  const unreadByChannel = {};
+  for (const n of unread) if (n.channel_id) unreadByChannel[n.channel_id] = (unreadByChannel[n.channel_id] || 0) + 1;
+  const dmChannelIds = new Set(dms.map((c) => c.id));
+  const dmUnread = unread.filter((n) => n.type === 'dm' || (n.channel_id && dmChannelIds.has(n.channel_id))).length;
+  const tasksUnread = unread.filter((n) => (n.type || '').startsWith('task')).length;
+  const badge = (n) => (n > 0 ? <span className="nav-badge">{n > 9 ? '9+' : n}</span> : null);
+
   async function createChannel(e) {
     e.preventDefault();
     setError(null);
@@ -60,6 +70,7 @@ export default function Sidebar({
           onClick={() => onSelectView('messenger')}
         >
           <span className="nav-logo">💬</span> {t('nav.dms')}
+          {badge(dmUnread)}
         </button>
         <button
           className={`nav-item ${(view?.type === 'team' || view?.type === 'collabs') ? 'active' : ''}`}
@@ -85,6 +96,7 @@ export default function Sidebar({
           onClick={() => onSelectView('tasks')}
         >
           ☑ {t('nav.tasks')}
+          {badge(tasksUnread)}
         </button>
         <button
           className={`nav-item ${view?.type === 'clients' ? 'active' : ''}`}
@@ -127,10 +139,11 @@ export default function Sidebar({
         {regularChannels.map((c) => (
           <button
             key={c.id}
-            className={`nav-item ${activeChannelId === c.id ? 'active' : ''}`}
+            className={`nav-item ${activeChannelId === c.id ? 'active' : ''} ${unreadByChannel[c.id] ? 'has-unread' : ''}`}
             onClick={() => onSelectChannel(c)}
           >
             <span className="hash">#</span> {c.name}
+            {badge(unreadByChannel[c.id] || 0)}
           </button>
         ))}
         {joinable.map((c) => (

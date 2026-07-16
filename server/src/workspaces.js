@@ -83,6 +83,8 @@ export function deleteWorkspace(id) {
       run('DELETE FROM channels WHERE workspace_id = @w');
       run('DELETE FROM workspace_invite_codes WHERE workspace_id = @w');
       run('DELETE FROM company_registration_codes WHERE used_by_workspace = @w');
+      run('DELETE FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE workspace_id = @w)');
+      run('DELETE FROM web_push_subscriptions WHERE user_id IN (SELECT id FROM users WHERE workspace_id = @w)');
       run('DELETE FROM users WHERE workspace_id = @w');
       run('DELETE FROM workspaces WHERE id = @w');
     });

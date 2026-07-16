@@ -1,7 +1,23 @@
 import { Router } from 'express';
-import { registerToken, unregisterToken, pushEnabled } from '../push.js';
+import { registerToken, unregisterToken, pushEnabled, registerWebPush, unregisterWebPush, getVapidPublicKey } from '../push.js';
 
 const router = Router();
+
+// Browser Web Push: the frontend subscribes here after asking permission.
+router.get('/vapid', (req, res) => {
+  res.json({ public_key: getVapidPublicKey() });
+});
+router.post('/web/subscribe', (req, res) => {
+  const sub = req.body?.subscription;
+  if (!sub?.endpoint) return res.status(400).json({ error: 'A push subscription is required' });
+  registerWebPush(req.user.id, sub);
+  res.json({ ok: true });
+});
+router.post('/web/unsubscribe', (req, res) => {
+  const endpoint = req.body?.endpoint;
+  if (endpoint) unregisterWebPush(req.user.id, String(endpoint));
+  res.json({ ok: true });
+});
 
 // The mobile app registers its FCM device token here after login.
 router.post('/register', (req, res) => {

@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import db from './db.js';
+import webpush from 'web-push';
+import db, { getSetting, setSetting } from './db.js';
 
 /**
  * Mobile push via Firebase Cloud Messaging (HTTP v1). Configured from a service
@@ -68,7 +69,12 @@ async function sendToToken(token, message) {
  * Fire a push to all of a user's registered devices. Fire-and-forget; never
  * throws. `data` values must be strings (FCM requirement) so taps can route.
  */
-export function sendPushToUser(userId, { title, body, data = {} }) {
+export function sendPushToUser(userId, payload) {
+  sendFcmToUser(userId, payload);
+  sendWebPushToUser(userId, payload);
+}
+
+function sendFcmToUser(userId, { title, body, data = {} }) {
   if (!pushEnabled() || !userId) return;
   const tokens = db.prepare('SELECT token FROM push_tokens WHERE user_id = ?').all(userId).map((r) => r.token);
   if (!tokens.length) return;
@@ -81,6 +87,68 @@ export function sendPushToUser(userId, { title, body, data = {} }) {
   (async () => {
     for (const token of tokens) {
       try { await sendToToken(token, message); } catch { /* offline / transient — skip */ }
+    }
+  })();
+}
+
+// --- Browser Web Push (VAPID) ---------------------------------------------
+// VAPID keys are read from env, else generated once and persisted in settings,
+// so browser push works out of the box (no manual key setup) while still being
+// overridable via WEB_PUSH_PUBLIC_KEY / WEB_PUSH_PRIVATE_KEY.
+let vapid = null;
+function getVapid() {
+  if (vapid) return vapid;
+  let pub = (process.env.WEB_PUSH_PUBLIC_KEY || '').trim();
+  let priv = (process.env.WEB_PUSH_PRIVATE_KEY || '').trim();
+  if (!pub || !priv) {
+    pub = getSetting('vapid_public_key');
+    priv = getSetting('vapid_private_key');
+  }
+  if (!pub || !priv) {
+    const keys = webpush.generateVAPIDKeys();
+    pub = keys.publicKey; priv = keys.privateKey;
+    setSetting('vapid_public_key', pub);
+    setSetting('vapid_private_key', priv);
+  }
+  const subject = (process.env.WEB_PUSH_SUBJECT || 'mailto:admin@teamhub.local').trim();
+  webpush.setVapidDetails(subject, pub, priv);
+  vapid = { publicKey: pub, privateKey: priv };
+  return vapid;
+}
+
+export function getVapidPublicKey() {
+  try { return getVapid().publicKey; } catch { return ''; }
+}
+
+export function registerWebPush(userId, sub) {
+  if (!userId || !sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) return;
+  db.prepare(`
+    INSERT INTO web_push_subscriptions (endpoint, user_id, p256dh, auth) VALUES (?, ?, ?, ?)
+    ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth
+  `).run(sub.endpoint, userId, sub.keys.p256dh, sub.keys.auth);
+}
+
+export function unregisterWebPush(userId, endpoint) {
+  db.prepare('DELETE FROM web_push_subscriptions WHERE endpoint = ? AND user_id = ?').run(endpoint, userId);
+}
+
+function sendWebPushToUser(userId, { title, body, data = {} }) {
+  if (!userId) return;
+  const rows = db.prepare('SELECT endpoint, p256dh, auth FROM web_push_subscriptions WHERE user_id = ?').all(userId);
+  if (!rows.length) return;
+  getVapid();
+  const json = JSON.stringify({ title: title || 'TeamHub', body: body || '', data });
+  (async () => {
+    for (const r of rows) {
+      const subscription = { endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } };
+      try {
+        await webpush.sendNotification(subscription, json);
+      } catch (err) {
+        // 404/410 = the browser dropped the subscription — prune it.
+        if (err?.statusCode === 404 || err?.statusCode === 410) {
+          db.prepare('DELETE FROM web_push_subscriptions WHERE endpoint = ?').run(r.endpoint);
+        }
+      }
     }
   })();
 }

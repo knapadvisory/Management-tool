@@ -3,6 +3,7 @@ import { api, uploadAvatar } from '../api.js';
 import Avatar from './Avatar.jsx';
 import { ACCENTS, applyTheme, saveLocalTheme } from '../theme.js';
 import { notificationsSupported, notificationPermission, requestNotificationPermission, desktopEnabled, setDesktopEnabled } from '../desktopNotify.js';
+import { enableWebPush } from '../webpush.js';
 import { getPrefs, setPref } from '../prefs.js';
 import { LANGUAGES, timeZones } from '../i18nData.js';
 import { t, notifyLangChange } from '../i18n.js';
@@ -184,12 +185,14 @@ function NotificationsPanel() {
       if (p !== 'granted') { setEnabled(false); setDesktopEnabled(false); return; }
     }
     setEnabled(on); setDesktopEnabled(on);
+    // Also (un)register the browser for background Web Push.
+    if (on) enableWebPush().catch(() => {});
   }
 
   return (
     <div>
       <h3 className="settings-title">Notifications</h3>
-      <p className="muted settings-hint">Desktop alerts appear when TeamHub is in the background — for @mentions, DMs, task assignments, task activity and reminders.</p>
+      <p className="muted settings-hint">Alerts appear for @mentions, DMs, task assignments, task activity and reminders — as a desktop notification while the tab is backgrounded, and as a background push (Chrome/Edge/Firefox) even when TeamHub is closed.</p>
       {!supported ? (
         <p className="form-error">This browser doesn’t support desktop notifications.</p>
       ) : (

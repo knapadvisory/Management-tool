@@ -327,6 +327,17 @@ CREATE TABLE IF NOT EXISTS push_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id);
 
+-- Browser (Web Push / VAPID) subscriptions, so Chrome/Edge/Firefox get push
+-- even when the tab is closed. One row per browser endpoint.
+CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+  endpoint TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_web_push_user ON web_push_subscriptions(user_id);
+
 -- Simple key/value store for workspace-wide settings the admin controls
 -- (e.g. which email domains may self-register as members).
 CREATE TABLE IF NOT EXISTS app_settings (
