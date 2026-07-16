@@ -419,7 +419,7 @@ export default function App() {
           <FilesView user={user} users={users} initialMode={view.type === 'drive' ? 'drive' : 'files'} />
         )}
         {view?.type === 'clients' && (
-          <ClientsView user={user} users={users} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
+          <ClientsView user={user} users={users} initialClientId={view.clientId} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
         )}
         {view?.type === 'timesheet' && <TimesheetView user={user} />}
         {view?.type === 'workflows' && <WorkflowsView />}
@@ -437,6 +437,8 @@ export default function App() {
             if (ch) setView({ type: 'channel', channel: ch });
             setSearchOpen(false);
           }}
+          onSelectClient={(id) => { setView({ type: 'clients', clientId: id }); setSearchOpen(false); }}
+          onSelectTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); setSearchOpen(false); }}
         />
       )}
       {settings && (

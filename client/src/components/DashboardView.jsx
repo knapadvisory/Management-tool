@@ -51,8 +51,27 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
   const [projects, setProjects] = useState([]);
   const [openTaskId, setOpenTaskId] = useState(null);   // task detail popup
   const [listPopup, setListPopup] = useState(null);     // { title, tasks } popup
+  const [taskQuery, setTaskQuery] = useState('');
+  const [taskHits, setTaskHits] = useState(null);       // null = not searching
+  const searchTimer = React.useRef(null);
 
   const reload = () => api('/dashboard').then(setData).catch(() => {});
+
+  // Search tasks (by title or client) across the firm, like the global search.
+  useEffect(() => {
+    clearTimeout(searchTimer.current);
+    if (taskQuery.trim().length < 2) { setTaskHits(null); return undefined; }
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const d = await api(`/search?q=${encodeURIComponent(taskQuery.trim())}`);
+        setTaskHits((d.tasks || []).map((t) => ({
+          id: t.id, title: t.title, priority: t.priority, due_date: t.due_date, status: t.status,
+          stage: t.stage, project: t.client_name ? { name: t.client_name, color: '#6b7280' } : null,
+        })));
+      } catch { setTaskHits([]); }
+    }, 220);
+    return () => clearTimeout(searchTimer.current);
+  }, [taskQuery]);
 
   useEffect(() => {
     let alive = true;
@@ -172,8 +191,14 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
           )}
 
           <section className="dash-panel">
-            <div className="dash-block-head"><h2>{t('dash.allopen')}</h2><span className="pill-count">{data.all_tasks.length}</span></div>
-            <TaskList tasks={data.all_tasks} onOpenTask={openTask} empty="No open tasks." detailed currentUserId={user.id} />
+            <div className="dash-block-head">
+              <h2>{taskHits ? 'Task search' : t('dash.allopen')}</h2>
+              <input className="dash-task-search" placeholder="🔍 Search tasks or a client's tasks…"
+                value={taskQuery} onChange={(e) => setTaskQuery(e.target.value)} />
+              {!taskHits && <span className="pill-count">{data.all_tasks.length}</span>}
+            </div>
+            <TaskList tasks={taskHits ?? data.all_tasks} onOpenTask={openTask}
+              empty={taskHits ? 'No tasks match your search.' : 'No open tasks.'} detailed currentUserId={user.id} />
           </section>
         </div>
 

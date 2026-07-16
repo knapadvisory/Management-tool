@@ -95,10 +95,10 @@ function mapClientMaster(rows) {
   return out;
 }
 
-export default function ClientsView({ user, users = [], onOpenTask }) {
+export default function ClientsView({ user, users = [], onOpenTask, initialClientId = null }) {
   const [tab, setTab] = useState('clients');
   const [clients, setClients] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState(initialClientId);
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -120,6 +120,11 @@ export default function ClientsView({ user, users = [], onOpenTask }) {
     socket?.on('clients:changed', onChanged);
     return () => socket?.off('clients:changed', onChanged);
   }, [load]);
+
+  // Open a specific client when arrived at via global search.
+  useEffect(() => {
+    if (initialClientId != null) { setTab('clients'); setCreating(false); setSelectedId(initialClientId); }
+  }, [initialClientId]);
 
   const q = query.trim().toLowerCase();
   const visible = clients.filter((c) =>

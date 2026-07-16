@@ -689,6 +689,15 @@ async function main() {
   const search = await req('GET', `/api/search?q=${encodeURIComponent('review')}`, { token: b });
   check('search finds the message', search.data.results.some((r) => r.id === msgId));
 
+  // Global search also spans clients and tasks (title or linked client name).
+  const sc = await req('POST', '/api/clients', { token: a, body: { name: 'Searchable Traders', gstin: '29ZZSRC1234Z1Z5' } });
+  await req('POST', '/api/tasks', { token: a, body: { title: 'Quarterly GST for Searchable', workflow_id: wf.data.id, client_id: sc.data.id } });
+  const gs = await req('GET', `/api/search?q=${encodeURIComponent('Searchable')}`, { token: a });
+  check('global search finds matching clients', gs.data.clients.some((c) => c.id === sc.data.id));
+  check('global search finds tasks by title', gs.data.tasks.some((t) => t.title.includes('Quarterly GST')));
+  const byClientName = await req('GET', `/api/search?q=${encodeURIComponent('Searchable Traders')}`, { token: a });
+  check('global search surfaces a client’s tasks by client name', byClientName.data.tasks.some((t) => t.client_id === sc.data.id));
+
   const del = await req('DELETE', `/api/channels/${generalId}/messages/${msgId}`, { token: a });
   check('message soft-deleted, content cleared', del.data.is_deleted && del.data.content === '');
 
