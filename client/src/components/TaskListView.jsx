@@ -5,6 +5,12 @@ import { statusMeta } from '../status.js';
 
 const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 
+// Days between the due date and actual completion (null if either is missing).
+function delayDays(due, completedAt) {
+  if (!due || !completedAt) return null;
+  return Math.round((new Date(completedAt.slice(0, 10) + 'T00:00:00') - new Date(due + 'T00:00:00')) / 86400000);
+}
+
 export default function TaskListView({ tasks, onOpen }) {
   const [sort, setSort] = useState({ key: 'updated', dir: -1 });
 
@@ -22,6 +28,7 @@ export default function TaskListView({ tasks, onOpen }) {
         case 'assignee': av = a.assignee?.name || '~'; bv = b.assignee?.name || '~'; break;
         case 'creator': av = a.creator?.name || '~'; bv = b.creator?.name || '~'; break;
         case 'due': av = a.due_date || '9999'; bv = b.due_date || '9999'; break;
+        case 'completed': av = a.completed_at || '9999'; bv = b.completed_at || '9999'; break;
         default: av = a.updated_at; bv = b.updated_at;
       }
       return av < bv ? dir : av > bv ? -dir : 0;
@@ -48,6 +55,8 @@ export default function TaskListView({ tasks, onOpen }) {
             {header('assignee', 'Allotted to')}
             {header('priority', 'Priority')}
             {header('due', 'Due')}
+            {header('completed', 'Completed')}
+            <th>Delay</th>
             <th>Progress</th>
           </tr>
         </thead>
@@ -74,10 +83,16 @@ export default function TaskListView({ tasks, onOpen }) {
               })()}</td>
               <td><span className={`priority priority-${t.priority}`}>{t.priority}</span></td>
               <td>{t.due_date ? <span className={`due ${dueStatus(t.due_date)}`}>{t.due_date}</span> : <span className="muted">—</span>}</td>
+              <td>{t.completed_at ? <span className="list-completed">{t.completed_at.slice(0, 10)}</span> : <span className="muted">—</span>}</td>
+              <td>{(() => {
+                const d = delayDays(t.due_date, t.completed_at);
+                if (d == null) return <span className="muted">—</span>;
+                return d > 0 ? <span className="delay-late">{d}d late</span> : <span className="delay-ontime">On time</span>;
+              })()}</td>
               <td>{t.checklist_total > 0 ? `${t.checklist_done}/${t.checklist_total}` : <span className="muted">—</span>}</td>
             </tr>
           ))}
-          {tasks.length === 0 && <tr><td colSpan={9} className="muted" style={{ padding: 20 }}>No tasks match these filters.</td></tr>}
+          {tasks.length === 0 && <tr><td colSpan={11} className="muted" style={{ padding: 20 }}>No tasks match these filters.</td></tr>}
         </tbody>
       </table>
     </div>

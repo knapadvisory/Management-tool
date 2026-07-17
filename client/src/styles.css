@@ -362,6 +362,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .task-table tbody tr:hover { background: var(--surface-2); }
 .list-title { font-weight: 600; display: inline; }
 .list-assignee { display: inline-flex; align-items: center; gap: 6px; }
+.list-completed { font-variant-numeric: tabular-nums; color: var(--muted); }
 
 /* Calendar view — fills the available area so the whole month is always
    visible without manual zoom; day cells scroll internally if busy. */
