@@ -92,6 +92,7 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
   const liteMap = (t) => ({
     id: t.id, title: t.title, priority: t.priority, due_date: t.due_date, status: t.status,
     stage: t.stage?.name, assignee: t.assignee, creator: t.creator, project: t.project,
+    completed_at: t.completed_at,
   });
   async function openList(title, pred) {
     try {
@@ -108,7 +109,7 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
       const done = [...(act.tasks || []), ...(arch.tasks || [])]
         .filter((t) => t.completed_at && String(t.completed_at).slice(0, 7) === month)
         .map(liteMap);
-      setListPopup({ title: 'Closed this month', tasks: done });
+      setListPopup({ title: 'Closed this month', tasks: done, mode: 'closed' });
     } catch { /* ignore */ }
   }
 
@@ -323,7 +324,9 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
               <button className="icon-btn" onClick={() => setListPopup(null)}>✕</button>
             </div>
             <div className="dash-listpopup-body">
-              <TaskList tasks={listPopup.tasks} onOpenTask={(id) => { setListPopup(null); openTask(id); }} empty="No tasks here." detailed currentUserId={user.id} />
+              {listPopup.mode === 'closed'
+                ? <ClosedList tasks={listPopup.tasks} onOpenTask={(id) => { setListPopup(null); openTask(id); }} />
+                : <TaskList tasks={listPopup.tasks} onOpenTask={(id) => { setListPopup(null); openTask(id); }} empty="No tasks here." detailed currentUserId={user.id} />}
             </div>
           </div>
         </div>
@@ -399,6 +402,38 @@ function dashRel(t, me) {
   if (c === me && a && a !== me) return { text: 'You allotted', cls: 'by-me' };
   if (c === me && !a) return { text: 'You created', cls: 'by-me' };
   return null;
+}
+
+// "Closed this month" list: due date, actual completion date, and delay.
+function ClosedList({ tasks, onOpenTask }) {
+  if (!tasks.length) return <p className="muted" style={{ padding: 12 }}>No tasks completed this month.</p>;
+  const delayDays = (due, done) => {
+    if (!due || !done) return null;
+    return Math.round((new Date(done.slice(0, 10) + 'T00:00:00') - new Date(due + 'T00:00:00')) / 86400000);
+  };
+  return (
+    <div className="closed-table">
+      <div className="closed-row closed-head">
+        <span>Task</span><span>Due</span><span>Completed</span><span>Delay</span>
+      </div>
+      {tasks.map((t) => {
+        const p = PRIO[t.priority] || PRIO.medium;
+        const d = delayDays(t.due_date, t.completed_at);
+        return (
+          <button key={t.id} className="closed-row" onClick={() => onOpenTask(t.id)}>
+            <span className="closed-title"><span className={`prio-dot ${p.cls}`} />{t.title}</span>
+            <span className="closed-cell">{t.due_date ? fmtDay(t.due_date) : <span className="muted">—</span>}</span>
+            <span className="closed-cell">{t.completed_at ? fmtDay(t.completed_at.slice(0, 10)) : <span className="muted">—</span>}</span>
+            <span className="closed-cell">
+              {d == null ? <span className="muted">—</span>
+                : d > 0 ? <span className="delay-late">{d}d late</span>
+                : <span className="delay-ontime">On time</span>}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function TaskList({ tasks, onOpenTask, empty, detailed, currentUserId }) {

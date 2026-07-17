@@ -1366,6 +1366,21 @@ button.dash-kpi:hover { border-color: var(--accent); }
 .workload-row:hover { background: var(--surface-2); }
 .dash-listpopup { width: min(560px, 94vw); max-height: 80vh; display: flex; flex-direction: column; }
 .dash-listpopup-body { overflow-y: auto; }
+.dash-listpopup:has(.closed-table) { width: min(680px, 96vw); }
+.closed-table { display: flex; flex-direction: column; }
+.closed-row { display: grid; grid-template-columns: 1fr 96px 96px 84px; gap: 10px; align-items: center;
+  width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border);
+  padding: 10px 6px; font-size: 13.5px; color: var(--text); cursor: pointer; }
+button.closed-row:hover { background: var(--surface-2); }
+.closed-head { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; cursor: default; position: sticky; top: 0; background: var(--surface); }
+.closed-title { display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.closed-cell { font-variant-numeric: tabular-nums; }
+.delay-late { color: var(--danger, #e01e5a); font-weight: 600; }
+.delay-ontime { color: var(--success, #2eb67d); font-weight: 600; }
+@media (max-width: 560px) {
+  .closed-row { grid-template-columns: 1fr 72px 72px; }
+  .closed-row > :nth-child(4) { display: none; }
+}
 .dash-task-duewrap { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
 .dash-task-date { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .dash-task-due { font-size: 12px; font-weight: 600; white-space: nowrap; padding: 2px 8px; border-radius: 20px; }
