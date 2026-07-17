@@ -327,6 +327,9 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 /* ---------- Task depth: filters, views, cards ---------- */
 .btn-sm { padding: 5px 10px; font-size: 13px; }
 .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* Keep the accent background on hover — otherwise the generic .btn:hover
+   (higher specificity) turns it light while the text stays white (invisible). */
+.btn.active:hover:not(:disabled) { background: var(--accent-hover, var(--accent)); border-color: var(--accent); color: #fff; }
 .board-select { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .board-select select { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); font-weight: 400; color: var(--text); }
 .all-boards-hint { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--muted); font-size: 14px; padding: 40px 20px; max-width: 620px; margin: 0 auto; line-height: 1.6; }
