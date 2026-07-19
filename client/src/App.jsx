@@ -249,6 +249,37 @@ export default function App() {
     return () => { cleanup?.(); };
   }, [user]);
 
+  // Android hardware back button: navigate *within* the app instead of the
+  // default (which, in a WebView with no browser history, just drops out of the
+  // app). Adding a backButton listener makes Capacitor hand control to us.
+  // Priority: close the topmost open modal → close the mobile drawer → return
+  // to the dashboard → and only a press at the root backgrounds the app.
+  const backStateRef = useRef({});
+  backStateRef.current = { view, drawerOpen };
+  useEffect(() => {
+    if (!window.Capacitor?.isNativePlatform?.()) return undefined;
+    let remove;
+    (async () => {
+      let CapApp;
+      try { ({ App: CapApp } = await import('@capacitor/app')); } catch { return; }
+      const h = await CapApp.addListener('backButton', () => {
+        // 1. Any open modal — they all render .modal-overlay with onClick=onClose,
+        //    so clicking the topmost overlay dismisses it.
+        const overlays = document.querySelectorAll('.modal-overlay');
+        if (overlays.length) { overlays[overlays.length - 1].click(); return; }
+        // 2. Mobile sidebar drawer.
+        if (backStateRef.current.drawerOpen) { setDrawerOpen(false); return; }
+        // 3. Any section other than the dashboard goes home first.
+        const v = backStateRef.current.view;
+        if (v && v.type !== 'dashboard') { setView({ type: 'dashboard' }); return; }
+        // 4. At the root: background the app, like a normal Android back press.
+        if (CapApp.minimizeApp) CapApp.minimizeApp(); else CapApp.exitApp();
+      });
+      remove = () => h.remove();
+    })();
+    return () => { remove?.(); };
+  }, []);
+
   // Deep-link from a web-push notification click (#channel-N / #task-N).
   useEffect(() => {
     if (!user) return undefined;
