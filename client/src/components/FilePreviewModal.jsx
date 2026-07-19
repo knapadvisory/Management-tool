@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
 import { fileUrl } from '../api.js';
 import { formatBytes } from '../format.js';
@@ -41,7 +41,9 @@ export default function FilePreviewModal({ file, files = [], onNavigate, onClose
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const touch = React.useRef(null);
+  // Body-level swipe navigation for non-image previews (images get their own
+  // swipe via ZoomableImage so it can coexist with pinch/pan).
+  const touch = useRef(null);
   const onTouchStart = (e) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; };
   const onTouchEnd = (e) => {
     if (!touch.current) return;
@@ -112,14 +114,20 @@ export default function FilePreviewModal({ file, files = [], onNavigate, onClose
             <button className="icon-btn" onClick={onClose}>✕</button>
           </div>
         </div>
-        <div className="preview-body" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <div className="preview-body"
+          onTouchStart={isImage ? undefined : onTouchStart}
+          onTouchEnd={isImage ? undefined : onTouchEnd}>
           {canNav && idx > 0 && (
-            <button className="preview-nav prev" onClick={() => go(-1)} aria-label="Previous">‹</button>
+            <button className="preview-nav prev" onClick={() => go(-1)} aria-label="Previous">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
           )}
           {canNav && idx < list.length - 1 && (
-            <button className="preview-nav next" onClick={() => go(1)} aria-label="Next">›</button>
+            <button className="preview-nav next" onClick={() => go(1)} aria-label="Next">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
           )}
-          {isImage && <img className="preview-image" src={url} alt={file.original_name} />}
+          {isImage && <ZoomableImage src={url} alt={file.original_name} onSwipe={(dir) => go(dir)} />}
           {isPdf && <iframe className="preview-frame" src={url} title={file.original_name} />}
 
           {state.kind === 'loading' && <p className="muted" style={{ margin: 'auto' }}>Loading preview…</p>}
@@ -158,6 +166,95 @@ export default function FilePreviewModal({ file, files = [], onNavigate, onClose
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Google-Photos-style image viewer for touch: pinch to zoom, double-tap to
+// toggle zoom, drag to pan when zoomed. When at 1x, a horizontal swipe calls
+// onSwipe(±1) to move to the previous/next file. Mouse/desktop just shows the
+// image (navigation there is via the on-screen arrows and ← / → keys).
+function ZoomableImage({ src, alt, onSwipe }) {
+  const wrapRef = useRef(null);
+  const imgRef = useRef(null);
+  const s = useRef({ scale: 1, x: 0, y: 0, mode: null, startDist: 0, startScale: 1, startX: 0, startY: 0, startTx: 0, startTy: 0, lastTap: 0, moved: false });
+
+  const apply = () => {
+    if (imgRef.current) {
+      const st = s.current;
+      imgRef.current.style.transform = `translate3d(${st.x}px, ${st.y}px, 0) scale(${st.scale})`;
+      imgRef.current.style.cursor = st.scale > 1 ? 'grab' : 'auto';
+    }
+  };
+  const reset = () => { s.current.scale = 1; s.current.x = 0; s.current.y = 0; apply(); };
+
+  useEffect(() => { reset(); }, [src]);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return undefined;
+    const clamp = (v) => Math.min(5, Math.max(1, v));
+    const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+    const onStart = (e) => {
+      const st = s.current; st.moved = false;
+      if (e.touches.length === 2) {
+        st.mode = 'pinch'; st.startDist = dist(e.touches) || 1; st.startScale = st.scale;
+      } else if (e.touches.length === 1) {
+        const now = Date.now();
+        if (now - st.lastTap < 300) { st.mode = 'dtap'; }
+        else { st.mode = st.scale > 1 ? 'pan' : 'swipe'; }
+        st.lastTap = now;
+        st.startX = e.touches[0].clientX; st.startY = e.touches[0].clientY;
+        st.startTx = st.x; st.startTy = st.y;
+      }
+    };
+    const onMove = (e) => {
+      const st = s.current;
+      if (st.mode === 'pinch' && e.touches.length === 2) {
+        e.preventDefault();
+        st.scale = clamp(st.startScale * (dist(e.touches) / st.startDist));
+        apply(); st.moved = true;
+      } else if (st.mode === 'pan' && e.touches.length === 1) {
+        e.preventDefault();
+        st.x = st.startTx + (e.touches[0].clientX - st.startX);
+        st.y = st.startTy + (e.touches[0].clientY - st.startY);
+        apply(); st.moved = true;
+      } else if (st.mode === 'swipe' && e.touches.length === 1) {
+        if (Math.abs(e.touches[0].clientX - st.startX) > 8) st.moved = true;
+      }
+    };
+    const onEnd = (e) => {
+      const st = s.current;
+      if (st.mode === 'dtap') {
+        st.scale = st.scale > 1 ? 1 : 2.5;
+        if (st.scale === 1) { st.x = 0; st.y = 0; }
+        apply();
+      } else if (st.mode === 'swipe' && st.moved) {
+        const dx = e.changedTouches[0].clientX - st.startX;
+        const dy = e.changedTouches[0].clientY - st.startY;
+        if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) onSwipe?.(dx < 0 ? 1 : -1);
+      } else if (st.mode === 'pinch' && st.scale <= 1.02) {
+        reset();
+      }
+      st.mode = null;
+    };
+
+    el.addEventListener('touchstart', onStart, { passive: false });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd, { passive: false });
+    el.addEventListener('touchcancel', onEnd, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, [onSwipe]);
+
+  return (
+    <div className="zoom-wrap" ref={wrapRef}>
+      <img ref={imgRef} className="preview-image" src={src} alt={alt} draggable={false} />
     </div>
   );
 }
