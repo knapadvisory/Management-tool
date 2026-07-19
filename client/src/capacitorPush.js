@@ -7,6 +7,19 @@ import { api } from './api.js';
 export async function initPush(onOpen) {
   if (!Capacitor?.isNativePlatform?.()) return () => {};
 
+  // Only register for FCM push when the server is actually configured to send
+  // it. Calling PushNotifications.register() without Firebase configured throws
+  // a native "Default FirebaseApp is not initialized" error that Capacitor
+  // re-raises on a background thread — which crashes the whole app. Gating on
+  // the server's push_enabled flag avoids that and means push turns on
+  // automatically once Firebase/FCM is wired up, with no app change needed.
+  try {
+    const cfg = await api('/config');
+    if (!cfg?.push_enabled) return () => {};
+  } catch {
+    return () => {}; // can't confirm push is configured — don't risk the crash
+  }
+
   let PushNotifications;
   try {
     ({ PushNotifications } = await import('@capacitor/push-notifications'));
