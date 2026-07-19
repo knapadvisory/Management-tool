@@ -526,7 +526,7 @@ export default function FilesView({ user, users = [], initialMode = 'files' }) {
         <div className="files-drop-overlay"><div className="files-drop-inner">⬆<br />Drop files to upload here</div></div>
       )}
 
-      {preview && <FilePreviewModal file={preview} onClose={() => setPreview(null)} />}
+      {preview && <FilePreviewModal file={preview} files={sorted} onNavigate={setPreview} onClose={() => setPreview(null)} />}
       {details && <FileDetails file={details} onClose={() => setDetails(null)} onOpen={() => { setPreview(details); setDetails(null); }} />}
       {folderDetails && <FolderDetails folder={folderDetails} onClose={() => setFolderDetails(null)} onOpen={() => { openFolder(folderDetails.id); setFolderDetails(null); }} />}
       {moving && (

@@ -403,7 +403,7 @@ export default function App() {
           setView({ type: 'channel', channel });
         }}
         onLogout={logout}
-        onOpenSettings={(section) => setSettings({ section: section || 'profile' })}
+        onOpenSettings={(section) => { setSettings({ section: section || 'profile' }); setDrawerOpen(false); }}
         darkMode={user.theme === 'dark'}
         onToggleTheme={toggleDarkMode}
         onOpenSearch={() => setSearchOpen(true)}

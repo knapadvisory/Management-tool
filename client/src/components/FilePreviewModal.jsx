@@ -17,8 +17,40 @@ function normalizeSheets(raw) {
 // In-app preview for common file types. Images / PDFs render natively; text,
 // CSV, Excel (.xlsx) and Word (.docx) are rendered in-browser (the heavier
 // parsers load on demand). Anything else offers a download.
-export default function FilePreviewModal({ file, onClose }) {
+export default function FilePreviewModal({ file, files = [], onNavigate, onClose }) {
   const url = fileUrl(file.id);
+
+  // Navigate between files in the current folder like a photo viewer:
+  // ← / → keys, on-screen chevrons, and horizontal swipe on touch.
+  const list = Array.isArray(files) && files.length ? files : [file];
+  const idx = Math.max(0, list.findIndex((f) => f.id === file.id));
+  const canNav = !!onNavigate && list.length > 1;
+  const go = (delta) => {
+    if (!canNav) return;
+    const next = list[idx + delta];
+    if (next) onNavigate(next);
+  };
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowLeft') go(-1);
+      else if (e.key === 'ArrowRight') go(1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  const touch = React.useRef(null);
+  const onTouchStart = (e) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; };
+  const onTouchEnd = (e) => {
+    if (!touch.current) return;
+    const dx = e.changedTouches[0].clientX - touch.current.x;
+    const dy = e.changedTouches[0].clientY - touch.current.y;
+    touch.current = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1);
+  };
+
   const mime = file.mime_type || '';
   const ext = (file.original_name.split('.').pop() || '').toLowerCase();
   const isImage = mime.startsWith('image/');
@@ -74,12 +106,19 @@ export default function FilePreviewModal({ file, onClose }) {
         <div className="modal-header">
           <strong className="preview-name" title={file.original_name}>{file.original_name}</strong>
           <div className="preview-head-actions">
+            {canNav && <span className="muted preview-count">{idx + 1} / {list.length}</span>}
             <span className="muted">{file.size ? formatBytes(file.size) : ''}</span>
             <a className="btn btn-sm" href={url} download={file.original_name}>⬇ Download</a>
             <button className="icon-btn" onClick={onClose}>✕</button>
           </div>
         </div>
-        <div className="preview-body">
+        <div className="preview-body" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+          {canNav && idx > 0 && (
+            <button className="preview-nav prev" onClick={() => go(-1)} aria-label="Previous">‹</button>
+          )}
+          {canNav && idx < list.length - 1 && (
+            <button className="preview-nav next" onClick={() => go(1)} aria-label="Next">›</button>
+          )}
           {isImage && <img className="preview-image" src={url} alt={file.original_name} />}
           {isPdf && <iframe className="preview-frame" src={url} title={file.original_name} />}
 
