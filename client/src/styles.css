@@ -1668,15 +1668,31 @@ button.closed-row:hover { background: var(--surface-2); }
 .code-row .btn, .code-row .icon-btn { flex: none; }
 
 /* --- Landing / homepage --- */
-.landing { max-width: 560px; text-align: center; padding: 20px; }
-.landing-title { font-size: 32px; line-height: 1.2; margin: 0 0 14px; }
-.landing-sub { font-size: 15px; line-height: 1.5; color: var(--text); opacity: .8; margin: 0 0 28px; }
+/* Public landing (home) — one-page, so it top-aligns and scrolls. */
+.auth-main.is-landing { justify-content: flex-start; padding: 0; }
+.landing { width: 100%; max-width: 1060px; margin: 0 auto; padding: 12px 20px 32px; }
+.landing-hero { text-align: center; padding: 28px 8px 36px; }
+.landing-eyebrow {
+  display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--accent);
+  background: var(--accent-soft, rgba(79,70,229,.12)); padding: 5px 12px; border-radius: 999px; margin-bottom: 18px;
+}
+.landing-title { font-size: 40px; line-height: 1.12; letter-spacing: -.02em; margin: 0 auto 16px; max-width: 720px; }
+.landing-sub { font-size: 17px; line-height: 1.55; color: var(--text); opacity: .78; margin: 0 auto 28px; max-width: 640px; }
 .landing-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-.landing-primary { padding: 13px 24px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.landing-primary { padding: 13px 26px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
 .landing-primary:hover { background: var(--accent-hover); }
-.landing-secondary { padding: 13px 24px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.landing-secondary { padding: 13px 26px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
 .landing-secondary:hover { background: var(--surface-2); }
-.landing-note { font-size: 13px; margin-top: 22px; line-height: 1.5; }
+.landing-note { font-size: 13px; margin-top: 20px; line-height: 1.5; }
+.landing-features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 8px; }
+.landing-feature { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px 20px; text-align: left; }
+.landing-feature-icon { font-size: 26px; margin-bottom: 10px; }
+.landing-feature h3 { font-size: 16px; margin: 0 0 6px; }
+.landing-feature p { font-size: 14px; line-height: 1.5; color: var(--text); opacity: .72; margin: 0; }
+.landing-footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 40px; padding-top: 22px; border-top: 1px solid var(--border); }
+@media (max-width: 860px) { .landing-features { grid-template-columns: repeat(2, 1fr); } .landing-title { font-size: 32px; } .landing-sub { font-size: 15px; } }
+@media (max-width: 560px) { .landing-features { grid-template-columns: 1fr; } .landing-title { font-size: 26px; } .landing-hero { padding: 20px 4px 28px; } }
 
 /* Sign out pinned at the bottom of the Settings rail — always visible. */
 .settings-signout { margin-top: 8px; border-top: 1px solid var(--border); border-radius: 0 0 8px 8px; color: var(--danger); font-weight: 600; }
