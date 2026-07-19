@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, getToken, setToken, clearToken } from './api.js';
 import { connectSocket, disconnectSocket, getSocket } from './socket.js';
 import { initPush } from './capacitorPush.js';
+import { usePullToRefresh } from './usePullToRefresh.js';
 import { initWebPush } from './webpush.js';
 import { showDesktopNotification } from './desktopNotify.js';
 import Login from './components/Login.jsx';
@@ -65,6 +66,11 @@ export default function App() {
   const [avatarColors, setAvatarColors] = useState([]);
   const [settings, setSettings] = useState(null); // null or { section }
   const [drawerOpen, setDrawerOpen] = useState(false); // mobile sidebar drawer
+
+  // Pull-to-refresh for the native app (a plain browser already has its own).
+  const isNativeApp = typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.();
+  const reloadApp = useCallback(() => { window.location.reload(); }, []);
+  const { ref: mainRef, pull: ptrPull, refreshing: ptrBusy } = usePullToRefresh(reloadApp, isNativeApp);
   // Always-current pointer to selectNotification, so desktop-notification
   // clicks navigate using the latest state (channels, etc.).
   const selectNotifRef = useRef(null);
@@ -406,7 +412,14 @@ export default function App() {
         onSelectNotification={selectNotification}
         onMarkAllRead={markAllRead}
       />
-      <main className="main">
+      <main className="main" ref={mainRef}>
+        {isNativeApp && (ptrPull > 0 || ptrBusy) && (
+          <div className="ptr" style={{ height: ptrPull }}>
+            <span className={`ptr-icon ${ptrBusy ? 'ptr-spin' : ''}`}>
+              {ptrBusy ? '↻' : ptrPull >= 70 ? '↑' : '↓'}
+            </span>
+          </div>
+        )}
         <div className="mobile-topbar">
           <button className="mobile-menu-btn" aria-label="Menu" onClick={() => setDrawerOpen(true)}>☰</button>
           <span className="mobile-topbar-title">{workspace?.name || 'TeamHub'}</span>
@@ -458,6 +471,30 @@ export default function App() {
           <AdminPanel user={user} />
         )}
       </main>
+      <nav className="mobile-tabbar">
+        {[
+          { type: 'dashboard', icon: '🏠', label: 'Home' },
+          { type: 'tasks', icon: '🗂️', label: 'Tasks' },
+          { type: 'messenger', icon: '💬', label: 'Chat', match: (t) => t === 'messenger' || t === 'channel' },
+          { type: 'clients', icon: '🏢', label: 'Clients' },
+        ].map((t) => {
+          const active = t.match ? t.match(view?.type) : view?.type === t.type;
+          return (
+            <button
+              key={t.type}
+              className={`tabbar-btn ${active ? 'active' : ''}`}
+              onClick={() => { setView({ type: t.type }); setDrawerOpen(false); }}
+            >
+              <span className="tabbar-icon">{t.icon}</span>
+              <span className="tabbar-label">{t.label}</span>
+            </button>
+          );
+        })}
+        <button className="tabbar-btn" onClick={() => setDrawerOpen(true)}>
+          <span className="tabbar-icon">☰</span>
+          <span className="tabbar-label">More</span>
+        </button>
+      </nav>
       <CallManager user={user} />
       <GroupCallManager user={user} users={users} />
       {searchOpen && (
