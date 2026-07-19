@@ -100,7 +100,7 @@ export default function TaskCard({ task, onOpen, draggable, onDragStart, current
                 {assignees.slice(0, 3).map((a) => (
                   <span key={a.id} className="task-person">
                     <Avatar user={a} size={18} />
-                    {assignees.length === 1 && <span className="task-person-name">{firstName(a)}</span>}
+                    <span className="task-person-name">{firstName(a)}</span>
                   </span>
                 ))}
                 {assignees.length > 3 && <span className="task-person-name">+{assignees.length - 3}</span>}
