@@ -234,6 +234,14 @@ export default function App() {
     setCollabs([]);
     setNotifications([]);
     setUnreadCount(0);
+    // Reset transient UI so the next sign-in lands on a clean Home, not
+    // whatever overlay was open when the user signed out (the Sign-out button
+    // lives inside Settings, so this modal in particular used to re-open).
+    setSettings(null);
+    setSearchOpen(false);
+    setDrawerOpen(false);
+    setTaskToOpen(null);
+    setPopups([]);
   }
 
   // Register for mobile push once logged in (no-op in a browser). Tapping a
