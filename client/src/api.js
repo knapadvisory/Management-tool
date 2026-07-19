@@ -48,9 +48,15 @@ export async function uploadAvatar(file) {
   return data.user;
 }
 
-// Authenticated file URL usable directly in <img src> / <a href>.
+// Authenticated file URL usable directly in <img src> / <a href> (inline).
 export function fileUrl(id) {
   return `/api/uploads/${id}?token=${encodeURIComponent(getToken())}`;
+}
+
+// Same file, but forced as an attachment so it downloads (needed for the native
+// Android WebView, which hands Content-Disposition: attachment to DownloadManager).
+export function downloadUrl(id) {
+  return `${fileUrl(id)}&download=1`;
 }
 
 export async function api(path, { method = 'GET', body } = {}) {

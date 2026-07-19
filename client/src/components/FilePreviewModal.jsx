@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
-import { fileUrl } from '../api.js';
+import { fileUrl, downloadUrl } from '../api.js';
 import { formatBytes } from '../format.js';
 
 // Normalise whatever read-excel-file hands back into [{ name, rows }].
@@ -19,6 +19,8 @@ function normalizeSheets(raw) {
 // parsers load on demand). Anything else offers a download.
 export default function FilePreviewModal({ file, files = [], onNavigate, onClose }) {
   const url = fileUrl(file.id);
+  const dlUrl = downloadUrl(file.id);
+  const isNativeApp = typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.();
 
   // Navigate between files in the current folder like a photo viewer:
   // ← / → keys, on-screen chevrons, and horizontal swipe on touch.
@@ -110,7 +112,7 @@ export default function FilePreviewModal({ file, files = [], onNavigate, onClose
           <div className="preview-head-actions">
             {canNav && <span className="muted preview-count">{idx + 1} / {list.length}</span>}
             <span className="muted">{file.size ? formatBytes(file.size) : ''}</span>
-            <a className="btn btn-sm" href={url} download={file.original_name}>⬇ Download</a>
+            <a className="btn btn-sm" href={dlUrl} download={file.original_name}>⬇ Download</a>
             <button className="icon-btn" onClick={onClose}>✕</button>
           </div>
         </div>
@@ -128,7 +130,15 @@ export default function FilePreviewModal({ file, files = [], onNavigate, onClose
             </button>
           )}
           {isImage && <ZoomableImage src={url} alt={file.original_name} onSwipe={(dir) => go(dir)} />}
-          {isPdf && <iframe className="preview-frame" src={url} title={file.original_name} />}
+          {isPdf && (isNativeApp
+            ? (
+              <div className="preview-none">
+                <div className="preview-none-icon">📄</div>
+                <p className="muted">PDFs can’t be previewed inside the app. Download it to open in your PDF viewer.</p>
+                <a className="btn btn-primary" href={dlUrl} download={file.original_name}>Download PDF</a>
+              </div>
+            )
+            : <iframe className="preview-frame" src={url} title={file.original_name} />)}
 
           {state.kind === 'loading' && <p className="muted" style={{ margin: 'auto' }}>Loading preview…</p>}
           {state.kind === 'text' && <pre className="preview-text">{state.text}</pre>}
@@ -152,7 +162,7 @@ export default function FilePreviewModal({ file, files = [], onNavigate, onClose
             <div className="preview-none">
               <div className="preview-none-icon">📄</div>
               <p className="muted">{state.kind === 'error' ? "Couldn't render a preview for this file." : "A preview isn't available for this file type."}</p>
-              <a className="btn btn-primary" href={url} download={file.original_name}>Download to open</a>
+              <a className="btn btn-primary" href={dlUrl} download={file.original_name}>Download to open</a>
             </div>
           )}
         </div>

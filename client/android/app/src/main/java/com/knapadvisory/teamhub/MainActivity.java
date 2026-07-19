@@ -2,11 +2,17 @@ package com.knapadvisory.teamhub;
 
 import android.Manifest;
 import android.app.AlertDialog;
+import android.app.DownloadManager;
+import android.content.Context;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.webkit.URLUtil;
+import android.widget.Toast;
 import androidx.core.app.ActivityCompat;
 import com.getcapacitor.BridgeActivity;
 
@@ -37,6 +43,39 @@ public class MainActivity extends BridgeActivity {
         // bridge are up, and guarded, so a permission hiccup on any ROM can
         // never take down launch (this used to run inline in onCreate).
         new Handler(Looper.getMainLooper()).post(this::requestCallPermissions);
+
+        // Let the app actually download files. A WebView can't download on its
+        // own — route any download the page triggers to Android's DownloadManager
+        // (saves to the Downloads folder with a progress notification).
+        new Handler(Looper.getMainLooper()).post(this::setupDownloads);
+    }
+
+    private void setupDownloads() {
+        try {
+            android.webkit.WebView webView = getBridge().getWebView();
+            if (webView == null) return;
+            webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
+                try {
+                    String name = URLUtil.guessFileName(url, contentDisposition, mimeType);
+                    DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                    request.setMimeType(mimeType);
+                    if (userAgent != null) request.addRequestHeader("User-Agent", userAgent);
+                    request.setTitle(name);
+                    request.setDescription("Downloading…");
+                    request.allowScanningByMediaScanner();
+                    request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
+                    DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+                    if (dm != null) dm.enqueue(request);
+                    Toast.makeText(getApplicationContext(), "Downloading " + name, Toast.LENGTH_SHORT).show();
+                } catch (Throwable t) {
+                    Log.e(TAG, "download failed", t);
+                    Toast.makeText(getApplicationContext(), "Couldn't download the file", Toast.LENGTH_SHORT).show();
+                }
+            });
+        } catch (Throwable t) {
+            Log.e(TAG, "download listener setup failed", t);
+        }
     }
 
     private void installCrashHandler() {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { api, fileUrl, uploadToDrive } from '../api.js';
+import { api, fileUrl, downloadUrl, uploadToDrive } from '../api.js';
 import { getSocket, onSocket } from '../socket.js';
 import { formatBytes, formatDateTime } from '../format.js';
 import { t } from '../i18n.js';
@@ -27,7 +27,7 @@ function iconFor(mime, name) {
 
 function downloadFile(f) {
   const a = document.createElement('a');
-  a.href = fileUrl(f.id);
+  a.href = downloadUrl(f.id);
   a.download = f.original_name;
   document.body.appendChild(a);
   a.click();
@@ -781,7 +781,7 @@ function FileDetails({ file, onClose, onOpen }) {
         </dl>
         <div className="editor-actions">
           <button className="btn btn-primary" onClick={onOpen}>Open</button>
-          <a className="btn" href={fileUrl(file.id)} download={file.original_name}>Download</a>
+          <a className="btn" href={downloadUrl(file.id)} download={file.original_name}>Download</a>
         </div>
       </div>
     </div>

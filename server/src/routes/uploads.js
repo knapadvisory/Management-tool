@@ -120,7 +120,11 @@ router.get('/:id', (req, res) => {
   const filePath = path.join(uploadDir, att.stored_name);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing on disk' });
   res.setHeader('Content-Type', att.mime_type);
-  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.original_name)}"`);
+  // ?download=1 forces a download (Content-Disposition: attachment). The native
+  // Android WebView needs this to hand the file to the system DownloadManager;
+  // browsers respect it too. Without it we serve inline so previews render.
+  const disposition = req.query.download ? 'attachment' : 'inline';
+  res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(att.original_name)}"`);
   fs.createReadStream(filePath).pipe(res);
 });
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { api, fileUrl } from '../api.js';
+import { api, fileUrl, downloadUrl } from '../api.js';
 import { renderMarkdown, formatBytes } from '../format.js';
 import { localeArg, dateOpts } from '../prefs.js';
 import Avatar from './Avatar.jsx';
@@ -90,7 +90,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
   function downloadFiles() {
     for (const a of message.attachments) {
       const link = document.createElement('a');
-      link.href = fileUrl(a.id);
+      link.href = downloadUrl(a.id);
       link.download = a.original_name;
       document.body.appendChild(link);
       link.click();
