@@ -476,6 +476,7 @@ export default function App() {
           { type: 'dashboard', icon: '🏠', label: 'Home' },
           { type: 'tasks', icon: '🗂️', label: 'Tasks' },
           { type: 'messenger', icon: '💬', label: 'Chat', match: (t) => t === 'messenger' || t === 'channel' },
+          { type: 'files', icon: '📁', label: 'Files', match: (t) => t === 'files' || t === 'drive' },
           { type: 'clients', icon: '🏢', label: 'Clients' },
         ].map((t) => {
           const active = t.match ? t.match(view?.type) : view?.type === t.type;
@@ -490,10 +491,6 @@ export default function App() {
             </button>
           );
         })}
-        <button className="tabbar-btn" onClick={() => setDrawerOpen(true)}>
-          <span className="tabbar-icon">☰</span>
-          <span className="tabbar-label">More</span>
-        </button>
       </nav>
       <CallManager user={user} />
       <GroupCallManager user={user} users={users} />

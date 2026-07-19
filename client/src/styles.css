@@ -217,8 +217,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .assignee-chip button { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 12px; line-height: 1; padding: 0 2px; }
 .assignee-chip button:hover { color: var(--danger, #e01e5a); }
 /* Stacked assignee avatars on cards / rows */
-.task-assignees { display: inline-flex; align-items: center; }
-.task-assignees .task-person { margin-left: -6px; }
+.task-assignees { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.task-assignees .task-person { margin-left: 0; }
 .task-assignees .task-person:first-child { margin-left: 0; }
 .task-assignees .avatar-wrap { border: 2px solid var(--surface); border-radius: 8px; }
 .presence-dot {
