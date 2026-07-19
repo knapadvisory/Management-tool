@@ -147,7 +147,7 @@ router.get('/summary', (req, res) => {
   const liveExtra = running ? runningMinutes(running.started_at) : 0;
   res.json({
     today: sum(`entry_date = date('now')`) + (running && running.entry_date === today() ? liveExtra : 0),
-    week: sum(`entry_date >= date('now','weekday 1','-7 day')`) + liveExtra,
+    week: sum(`entry_date >= date('now','weekday 0','-6 day')`) + liveExtra,
     month: sum(`strftime('%Y-%m', entry_date) = strftime('%Y-%m','now')`) + liveExtra,
     running: running ? entryWithMeta(running) : null,
   });

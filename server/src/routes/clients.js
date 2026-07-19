@@ -486,6 +486,7 @@ router.post('/:id/deadlines/:did/task', (req, res) => {
   const wf = db.prepare('SELECT * FROM workflows WHERE workspace_id = ? ORDER BY id LIMIT 1').get(req.workspaceId);
   if (!wf) return res.status(400).json({ error: 'No board exists to create the task in' });
   const stage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
+  if (!stage) return res.status(400).json({ error: 'The board has no stages yet — add a stage first.' });
   const info = db.prepare(`
     INSERT INTO tasks (title, description, workflow_id, client_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'high', ?, 'none', ?)

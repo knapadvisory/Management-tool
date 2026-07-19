@@ -695,6 +695,16 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .thread-divider { color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); padding: 8px 4px; margin: 8px 0; }
 .thread-panel .composer-wrap { padding: 12px; border-top: 1px solid var(--border); }
 .thread-panel .mention-menu { left: 12px; }
+/* On phones a 380px thread panel would crush the chat beside it — make it a
+   full-screen overlay instead (it has its own close button in the header). */
+@media (max-width: 700px) {
+  .thread-panel {
+    position: fixed; inset: 0; z-index: 70; width: 100%;
+    background: var(--surface); border-left: none;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .thread-header { padding-top: calc(12px + env(safe-area-inset-top)); }
+}
 
 /* Search */
 .search-modal { width: 560px; max-width: 100%; padding: 0; overflow: hidden; }
@@ -1575,7 +1585,15 @@ button.closed-row:hover { background: var(--surface-2); }
 .chat-info-member-meta { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .chat-info-member-name { font-size: 14px; font-weight: 500; }
 .chat-info-member-meta .muted { font-size: 12px; text-transform: capitalize; }
-@media (max-width: 900px) { .chat-info { display: none; } }
+/* On phones the info panel becomes a full-screen overlay (it has its own ✕),
+   so the ℹ️ button actually works instead of toggling a hidden panel. */
+@media (max-width: 900px) {
+  .chat-info {
+    position: fixed; inset: 0; z-index: 70; width: 100%; flex: none;
+    border-left: none; padding-top: calc(16px + env(safe-area-inset-top));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+}
 
 /* --- Guest invite link (in collab settings) --- */
 .guest-invite { margin-top: 6px; padding: 14px; border: 1px dashed var(--border); border-radius: 10px; background: var(--surface-2); }

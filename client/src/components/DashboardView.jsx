@@ -222,7 +222,7 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
                 {data.workload.map((w) => {
                   const max = Math.max(...data.workload.map((x) => x.count), 1);
                   return (
-                    <button key={w.id} className="workload-row" onClick={() => openList(`${w.name}’s tasks`, (t) => t.assignee?.id === w.id && OPEN(t))}>
+                    <button key={w.id} className="workload-row" onClick={() => openList(`${w.name}’s tasks`, (t) => (t.assignees?.length ? t.assignees : (t.assignee ? [t.assignee] : [])).some((a) => a?.id === w.id) && OPEN(t))}>
                       <div className="workload-top">
                         <span className="workload-name"><Avatar user={w} size={20} /> {w.name}</span>
                         <span className="muted">{w.count} task{w.count === 1 ? '' : 's'}</span>

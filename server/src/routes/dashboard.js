@@ -151,7 +151,7 @@ router.get('/', (req, res) => {
   const mins = (clause) => one(`SELECT COALESCE(SUM(minutes),0) AS m FROM time_entries WHERE user_id = ${uid} AND workspace_id = ${ws} AND is_running = 0 AND ${clause}`).m;
   const hours = {
     today: mins(`entry_date = ${T}`),
-    week: mins(`entry_date >= date(${T},'weekday 1','-7 day')`),
+    week: mins(`entry_date >= date(${T},'weekday 0','-6 day')`),
     month: mins(`strftime('%Y-%m', entry_date) = strftime('%Y-%m', ${T})`),
   };
 

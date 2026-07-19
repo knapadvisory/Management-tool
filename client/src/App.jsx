@@ -234,6 +234,12 @@ export default function App() {
     setCollabs([]);
     setNotifications([]);
     setUnreadCount(0);
+    // Clear the team directory too, so the next account doesn't briefly see the
+    // previous user's people / channels / presence before the refetch lands.
+    setUsers([]);
+    setJoinable([]);
+    setOnlineIds([]);
+    setToast(null);
     // Reset transient UI so the next sign-in lands on a clean Home, not
     // whatever overlay was open when the user signed out (the Sign-out button
     // lives inside Settings, so this modal in particular used to re-open).
@@ -319,7 +325,8 @@ export default function App() {
       setUnreadCount((c) => Math.max(0, c - 1));
     }
     if (n.channel_id) {
-      const ch = channels.find((c) => c.id === n.channel_id);
+      // Collab conversations live in a separate list, so search both.
+      const ch = channels.find((c) => c.id === n.channel_id) || collabs.find((c) => c.id === n.channel_id);
       if (ch) setView({ type: 'channel', channel: ch });
     } else if (n.task_id) {
       setView({ type: 'tasks' });

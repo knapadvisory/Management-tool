@@ -199,14 +199,6 @@ function loadTask(req, res) {
   return task;
 }
 
-// Lightweight guard for by-id child routes: confirm the task is in the
-// caller's workspace before mutating its children. Returns true if OK.
-function taskInWorkspace(req, res) {
-  if (db.prepare('SELECT 1 FROM tasks WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)) return true;
-  res.status(404).json({ error: 'Task not found' });
-  return false;
-}
-
 // --- Tasks list & CRUD ---
 
 router.get('/', (req, res) => {
@@ -253,6 +245,7 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Client not found' });
   }
   const firstStage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
+  if (!firstStage) return res.status(400).json({ error: 'This board has no stages yet — add a stage before creating tasks.' });
   const info = db.prepare(`
     INSERT INTO tasks (title, description, workflow_id, project_id, client_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -563,7 +556,7 @@ router.post('/:id/reminders', (req, res) => {
 });
 
 router.delete('/:id/reminders/:reminderId', (req, res) => {
-  if (!taskInWorkspace(req, res)) return;
+  if (!loadTask(req, res)) return;
   db.prepare('DELETE FROM task_reminders WHERE id = ? AND task_id = ?').run(req.params.reminderId, req.params.id);
   emitChanged(req, req.params.id);
   res.json(db.prepare('SELECT id, remind_at, sent FROM task_reminders WHERE task_id = ? ORDER BY remind_at').all(req.params.id));
@@ -583,7 +576,7 @@ router.post('/:id/checklist', (req, res) => {
 });
 
 router.patch('/:id/checklist/:itemId', (req, res) => {
-  if (!taskInWorkspace(req, res)) return;
+  if (!loadTask(req, res)) return;
   const item = db.prepare('SELECT * FROM task_checklist WHERE id = ? AND task_id = ?').get(req.params.itemId, req.params.id);
   if (!item) return res.status(404).json({ error: 'Checklist item not found' });
   const { is_done, text } = req.body;
@@ -594,7 +587,7 @@ router.patch('/:id/checklist/:itemId', (req, res) => {
 });
 
 router.delete('/:id/checklist/:itemId', (req, res) => {
-  if (!taskInWorkspace(req, res)) return;
+  if (!loadTask(req, res)) return;
   db.prepare('DELETE FROM task_checklist WHERE id = ? AND task_id = ?').run(req.params.itemId, req.params.id);
   emitChanged(req, req.params.id);
   res.json(db.prepare('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id').all(req.params.id));
@@ -612,7 +605,7 @@ router.post('/:id/tags', (req, res) => {
 });
 
 router.delete('/:id/tags/:tag', (req, res) => {
-  if (!taskInWorkspace(req, res)) return;
+  if (!loadTask(req, res)) return;
   db.prepare('DELETE FROM task_tags WHERE task_id = ? AND tag = ?').run(req.params.id, decodeURIComponent(req.params.tag));
   res.json(emitChanged(req, req.params.id));
 });
@@ -627,7 +620,7 @@ router.post('/:id/watch', (req, res) => {
 });
 
 router.delete('/:id/watch', (req, res) => {
-  if (!taskInWorkspace(req, res)) return;
+  if (!loadTask(req, res)) return;
   db.prepare('DELETE FROM task_watchers WHERE task_id = ? AND user_id = ?').run(req.params.id, req.user.id);
   res.json(emitChanged(req, req.params.id));
 });
@@ -645,7 +638,7 @@ router.post('/:id/attachments', (req, res) => {
 });
 
 router.delete('/:id/attachments/:attId', (req, res) => {
-  if (!taskInWorkspace(req, res)) return;
+  if (!loadTask(req, res)) return;
   db.prepare('DELETE FROM attachments WHERE id = ? AND task_id = ?').run(req.params.attId, req.params.id);
   emitChanged(req, req.params.id);
   res.json(db.prepare('SELECT id, original_name, mime_type, size FROM attachments WHERE task_id = ? ORDER BY id').all(req.params.id));
