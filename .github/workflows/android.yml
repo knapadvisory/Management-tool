@@ -48,11 +48,16 @@ jobs:
         env:
           GS: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          if [ -n "$GS" ]; then
-            echo "$GS" | base64 -d > android/app/google-services.json
+          # Prefer the GOOGLE_SERVICES_JSON secret if it decodes to a real file;
+          # otherwise fall back to a committed android/app/google-services.json.
+          # A malformed/empty secret must NOT fail the build.
+          if [ -n "$GS" ] && echo "$GS" | base64 -d > /tmp/gs.json 2>/dev/null && [ -s /tmp/gs.json ]; then
+            cp /tmp/gs.json android/app/google-services.json
             echo "google-services.json written from secret — push enabled in this build"
+          elif [ -s android/app/google-services.json ]; then
+            echo "Using committed android/app/google-services.json"
           else
-            echo "No GOOGLE_SERVICES_JSON secret set — APK builds without push"
+            echo "No google-services.json available — APK builds without push"
           fi
 
       - name: Build debug APK
