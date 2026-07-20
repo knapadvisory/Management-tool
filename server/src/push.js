@@ -98,23 +98,34 @@ function sendFcmToUser(userId, { title, body, data = {} }) {
   console.log(`[push] FCM → user ${userId}: ${tokens.length} device token(s)`);
   if (!tokens.length) return;
   const stringData = Object.fromEntries(Object.entries(data).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]));
-  // Route calls to their own high-urgency channel; everything else to messages.
-  // The channel (created on the device) owns the sound, vibration and LED.
   const isCall = data.type === 'call';
-  const message = {
-    notification: { title, body },
-    data: stringData,
-    android: {
-      priority: 'high',
-      notification: {
-        channel_id: isCall ? 'teamhub_calls' : 'teamhub_messages',
-        sound: 'default',
-        notification_priority: isCall ? 'PRIORITY_MAX' : 'PRIORITY_HIGH',
-        default_vibrate_timings: true,
-        default_light_settings: true,
+  let message;
+  if (isCall) {
+    // Data-only (no notification block) so the app's messaging service always
+    // runs and can raise a full-screen, screen-waking incoming-call alert —
+    // even when the app is backgrounded. Title/body travel in the data.
+    message = {
+      data: { ...stringData, title: String(title || 'Incoming call'), body: String(body || '') },
+      android: { priority: 'high' },
+    };
+  } else {
+    // DMs / task updates: a normal notification the system shows on the
+    // messages channel (which owns the sound, vibration and LED).
+    message = {
+      notification: { title, body },
+      data: stringData,
+      android: {
+        priority: 'high',
+        notification: {
+          channel_id: 'teamhub_messages',
+          sound: 'default',
+          notification_priority: 'PRIORITY_HIGH',
+          default_vibrate_timings: true,
+          default_light_settings: true,
+        },
       },
-    },
-  };
+    };
+  }
   (async () => {
     for (const token of tokens) {
       try {

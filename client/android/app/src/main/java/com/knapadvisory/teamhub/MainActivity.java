@@ -3,9 +3,11 @@ package com.knapadvisory.teamhub;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.app.KeyguardManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Color;
 import android.media.AudioAttributes;
 import android.media.RingtoneManager;
@@ -59,6 +61,34 @@ public class MainActivity extends BridgeActivity {
         // the LED / vibrate. Channels are cached by Android, so a reinstall
         // (which clears them) is needed to change an existing channel's sound.
         setupNotificationChannels();
+
+        // If we were launched by an incoming-call full-screen intent, wake the
+        // screen and show over the lock screen so the call UI is answerable.
+        handleCallLaunch(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleCallLaunch(intent);
+    }
+
+    private void handleCallLaunch(Intent intent) {
+        try {
+            if (intent == null || !intent.hasExtra("teamhub_incoming_call")) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true);
+                setTurnScreenOn(true);
+                KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+                if (km != null) km.requestDismissKeyguard(this, null);
+            }
+            // The web call UI takes over now — clear the full-screen call notification.
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) nm.cancel(TeamHubMessagingService.CALL_NOTIFICATION_ID);
+        } catch (Throwable t) {
+            Log.e(TAG, "call launch handling failed", t);
+        }
     }
 
     private void setupNotificationChannels() {
