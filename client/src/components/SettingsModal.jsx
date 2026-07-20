@@ -173,10 +173,17 @@ function Toggle({ checked, onChange, label, hint, disabled }) {
   );
 }
 
+// The native Android app injects window.TeamHubNative; on the web it's absent.
+const nativeBridge = () => (typeof window !== 'undefined'
+  && window.TeamHubNative
+  && typeof window.TeamHubNative.openChannelSettings === 'function')
+  ? window.TeamHubNative : null;
+
 function NotificationsPanel() {
   const [perm, setPerm] = useState(notificationPermission());
   const [enabled, setEnabled] = useState(desktopEnabled());
   const supported = notificationsSupported();
+  const native = nativeBridge();
 
   async function enable(on) {
     if (on && perm !== 'granted') {
@@ -202,6 +209,17 @@ function NotificationsPanel() {
             hint={perm === 'denied' ? 'Blocked in your browser — allow notifications for this site, then reload.' : 'Show a desktop alert for new activity while the tab is in the background.'}
             disabled={perm === 'denied'} />
           <p className="muted settings-hint" style={{ marginTop: 14 }}>Browser permission: <strong>{perm}</strong></p>
+        </>
+      )}
+      {native && (
+        <>
+          <hr className="profile-sep" />
+          <div className="profile-section-title">Sounds &amp; vibration</div>
+          <p className="muted settings-hint">Pick the ringtone for incoming calls and the tone for messages. This opens Android’s sound picker for each — choose any tone on your phone.</p>
+          <div className="profile-photo-actions" style={{ marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-sm" onClick={() => native.openChannelSettings('teamhub_calls')}>📞 Call ringtone</button>
+            <button type="button" className="btn btn-sm" onClick={() => native.openChannelSettings('teamhub_messages')}>💬 Message tone</button>
+          </div>
         </>
       )}
     </div>

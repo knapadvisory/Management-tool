@@ -17,7 +17,9 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.util.Log;
+import android.webkit.JavascriptInterface;
 import android.webkit.URLUtil;
 import android.widget.Toast;
 import androidx.core.app.ActivityCompat;
@@ -55,6 +57,11 @@ public class MainActivity extends BridgeActivity {
         // own — route any download the page triggers to Android's DownloadManager
         // (saves to the Downloads folder with a progress notification).
         new Handler(Looper.getMainLooper()).post(this::setupDownloads);
+
+        // Expose a tiny native bridge so the in-app Settings screen can open
+        // Android's per-channel sound pickers (change the call ringtone / the
+        // message notification tone) — those live in the OS, not the web app.
+        new Handler(Looper.getMainLooper()).post(this::setupNativeBridge);
 
         // Create the notification channels natively so calls actually ring (the
         // system ringtone) and stand apart from message pings, and both light
@@ -150,6 +157,49 @@ public class MainActivity extends BridgeActivity {
             });
         } catch (Throwable t) {
             Log.e(TAG, "download listener setup failed", t);
+        }
+    }
+
+    private void setupNativeBridge() {
+        try {
+            android.webkit.WebView webView = getBridge().getWebView();
+            if (webView == null) return;
+            webView.addJavascriptInterface(new NativeBridge(), "TeamHubNative");
+        } catch (Throwable t) {
+            Log.e(TAG, "native bridge setup failed", t);
+        }
+    }
+
+    /**
+     * Small JS-callable bridge. The web Settings page checks for
+     * window.TeamHubNative and, on Android, offers buttons that jump straight
+     * to the system sound picker for our notification channels.
+     */
+    public class NativeBridge {
+        @JavascriptInterface
+        public void openChannelSettings(String channelId) {
+            runOnUiThread(() -> {
+                try {
+                    Intent intent;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && channelId != null && !channelId.isEmpty()) {
+                        intent = new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
+                            .putExtra(Settings.EXTRA_CHANNEL_ID, channelId);
+                    } else {
+                        intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+                    }
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                } catch (Throwable t) {
+                    Log.e(TAG, "open channel settings failed", t);
+                    try {
+                        startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    } catch (Throwable ignored) { }
+                }
+            });
         }
     }
 
