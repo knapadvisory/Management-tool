@@ -58,6 +58,8 @@ async function sendToToken(token, message) {
     body: JSON.stringify({ message: { ...message, token } }),
   });
   if (res.ok) return { ok: true };
+  const errText = await res.text().catch(() => '');
+  console.log(`[push] FCM send failed: ${res.status} ${errText.slice(0, 300)}`);
   // A 404/UNREGISTERED means the device token is dead — prune it.
   if (res.status === 404 || res.status === 400) {
     db.prepare('DELETE FROM push_tokens WHERE token = ?').run(token);
@@ -77,6 +79,7 @@ export function sendPushToUser(userId, payload) {
 function sendFcmToUser(userId, { title, body, data = {} }) {
   if (!pushEnabled() || !userId) return;
   const tokens = db.prepare('SELECT token FROM push_tokens WHERE user_id = ?').all(userId).map((r) => r.token);
+  console.log(`[push] FCM → user ${userId}: ${tokens.length} device token(s)`);
   if (!tokens.length) return;
   const stringData = Object.fromEntries(Object.entries(data).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]));
   const message = {
@@ -86,7 +89,10 @@ function sendFcmToUser(userId, { title, body, data = {} }) {
   };
   (async () => {
     for (const token of tokens) {
-      try { await sendToToken(token, message); } catch { /* offline / transient — skip */ }
+      try {
+        const r = await sendToToken(token, message);
+        console.log(`[push] FCM → ${token.slice(0, 10)}… ${r.ok ? 'OK' : 'FAILED (' + r.status + ')'}`);
+      } catch (e) { console.log('[push] FCM send error:', e?.message || e); }
     }
   })();
 }
