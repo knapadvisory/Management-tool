@@ -9,10 +9,26 @@ import db, { getSetting, setSetting } from './db.js';
  * When they're absent, every call is a graceful no-op — nothing breaks, push is
  * simply off (same pattern as email). No third-party SDKs; just crypto + fetch.
  */
-const PROJECT_ID = () => (process.env.FCM_PROJECT_ID || '').trim();
-const CLIENT_EMAIL = () => (process.env.FCM_CLIENT_EMAIL || '').trim();
-// A service-account key often arrives with literal "\n"; normalize to newlines.
-const PRIVATE_KEY = () => (process.env.FCM_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim();
+// Most reliable option: the whole service-account JSON in one (optionally
+// base64) env var — no newline-escaping pitfalls at all.
+function serviceAccount() {
+  const raw = (process.env.FCM_SERVICE_ACCOUNT || process.env.FCM_SERVICE_ACCOUNT_BASE64 || '').trim();
+  if (!raw) return null;
+  const tryParse = (s) => { try { return JSON.parse(s); } catch { return null; } };
+  return tryParse(raw) || tryParse(Buffer.from(raw, 'base64').toString('utf8'));
+}
+const SA = serviceAccount();
+
+const PROJECT_ID = () => (SA?.project_id || process.env.FCM_PROJECT_ID || '').trim();
+const CLIENT_EMAIL = () => (SA?.client_email || process.env.FCM_CLIENT_EMAIL || '').trim();
+// A pasted key often arrives with escaped newlines ("\n" or even "\\n") or
+// surrounding quotes; normalize to a real PEM. The JSON path already has real
+// newlines, so the replaces are no-ops there.
+const PRIVATE_KEY = () => {
+  let k = (SA?.private_key || process.env.FCM_PRIVATE_KEY || '').trim();
+  if ((k.startsWith('"') && k.endsWith('"')) || (k.startsWith("'") && k.endsWith("'"))) k = k.slice(1, -1);
+  return k.replace(/\\+r/g, '').replace(/\\+n/g, '\n').trim();
+};
 
 export function pushEnabled() {
   return !!(PROJECT_ID() && CLIENT_EMAIL() && PRIVATE_KEY());

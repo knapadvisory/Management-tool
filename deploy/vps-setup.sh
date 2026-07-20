@@ -55,6 +55,9 @@ SMTP_SECURE="${SMTP_SECURE:-}"
 FCM_PROJECT_ID="${FCM_PROJECT_ID:-}"
 FCM_CLIENT_EMAIL="${FCM_CLIENT_EMAIL:-}"
 FCM_PRIVATE_KEY="${FCM_PRIVATE_KEY:-}"
+# Easiest & most reliable: the whole Firebase service-account JSON as one base64
+# blob (avoids private-key newline-escaping issues). If set, it takes precedence.
+FCM_SERVICE_ACCOUNT="${FCM_SERVICE_ACCOUNT:-}"
 # Browser Web Push (Chrome/Edge/Firefox). Optional — if left blank the server
 # generates a VAPID key pair on first boot and persists it, so browser push
 # works with no setup. Set these only to pin your own keys.
@@ -104,6 +107,7 @@ docker run -d --name teamhub --restart unless-stopped \
   ${FCM_PROJECT_ID:+-e FCM_PROJECT_ID="$FCM_PROJECT_ID"} \
   ${FCM_CLIENT_EMAIL:+-e FCM_CLIENT_EMAIL="$FCM_CLIENT_EMAIL"} \
   ${FCM_PRIVATE_KEY:+-e FCM_PRIVATE_KEY="$FCM_PRIVATE_KEY"} \
+  ${FCM_SERVICE_ACCOUNT:+-e FCM_SERVICE_ACCOUNT="$FCM_SERVICE_ACCOUNT"} \
   ${WEB_PUSH_PUBLIC_KEY:+-e WEB_PUSH_PUBLIC_KEY="$WEB_PUSH_PUBLIC_KEY"} \
   ${WEB_PUSH_PRIVATE_KEY:+-e WEB_PUSH_PRIVATE_KEY="$WEB_PUSH_PRIVATE_KEY"} \
   ${WEB_PUSH_SUBJECT:+-e WEB_PUSH_SUBJECT="$WEB_PUSH_SUBJECT"} \
