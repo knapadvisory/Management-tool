@@ -1,8 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { getSocket, onSocket } from '../socket.js';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
 import { showDesktopNotification } from '../desktopNotify.js';
+import { startRingtone, stopRingtone } from '../ringtone.js';
+
+// Stop the native call notification's ring once the call is answered/declined.
+function stopNativeRing() {
+  try { window.TeamHubNative?.cancelIncomingCall?.(); } catch { /* web app */ }
+}
+const isNativeApp = () => { try { return !!Capacitor?.isNativePlatform?.(); } catch { return false; } };
 
 const DEFAULT_ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
 
@@ -42,6 +50,8 @@ export default function CallManager({ user }) {
   }, [call]);
 
   function cleanup() {
+    stopRingtone();
+    stopNativeRing();
     pcRef.current?.close();
     pcRef.current = null;
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -211,7 +221,19 @@ export default function CallManager({ user }) {
     }
   }, [error]);
 
+  // Ring for an unanswered incoming call. In the browser/desktop app the
+  // ringtone is synthesized here; in the native app the call notification
+  // channel already rings, so we stay silent to avoid doubling up.
+  useEffect(() => {
+    const ringing = call && call.direction === 'in' && call.status === 'ringing';
+    if (ringing && !isNativeApp()) startRingtone();
+    else stopRingtone();
+    return () => stopRingtone();
+  }, [call?.direction, call?.status]);
+
   async function accept() {
+    stopRingtone();
+    stopNativeRing();
     try {
       await getMedia(call.call_type);
     } catch {
@@ -251,9 +273,10 @@ export default function CallManager({ user }) {
   if (!call && !error) return null;
 
   const inCall = call && (call.status === 'connecting' || call.status === 'active');
+  const isIncomingRing = call && call.direction === 'in' && call.status === 'ringing';
   const statusText = !call ? '' :
     call.status === 'ringing'
-      ? (call.direction === 'in' ? `Incoming ${call.call_type} call…` : 'Ringing…')
+      ? (call.direction === 'in' ? `Incoming ${call.call_type} call` : 'Ringing…')
       : call.status === 'connecting' ? 'Connecting…'
       : `${call.call_type === 'video' ? 'Video' : 'Audio'} call in progress`;
 
@@ -261,15 +284,23 @@ export default function CallManager({ user }) {
     <>
       {error && <div className="toast toast-error">{error}</div>}
       {call && (
-        <div className="call-overlay">
-          <div className="call-window">
-            <div className="call-peer">
-              <Avatar user={call.peer} size={56} />
-              <div>
-                <strong>{call.peer.name}</strong>
-                <div className="call-status">{statusText}</div>
+        <div className={`call-overlay ${isIncomingRing ? 'call-incoming' : ''}`}>
+          <div className={`call-window ${isIncomingRing ? 'incoming' : ''}`}>
+            {isIncomingRing ? (
+              <div className="call-incoming-hero">
+                <div className="call-incoming-avatar"><Avatar user={call.peer} size={120} /></div>
+                <strong className="call-incoming-name">{call.peer.name}</strong>
+                <div className="call-incoming-sub">{call.call_type === 'video' ? '📹 Incoming video call' : '📞 Incoming voice call'}</div>
               </div>
-            </div>
+            ) : (
+              <div className="call-peer">
+                <Avatar user={call.peer} size={56} />
+                <div>
+                  <strong>{call.peer.name}</strong>
+                  <div className="call-status">{statusText}</div>
+                </div>
+              </div>
+            )}
 
             <div className={`call-media ${call.call_type === 'video' && inCall ? '' : 'hidden'}`}>
               <video ref={remoteVideoRef} autoPlay playsInline className="remote-video" />
@@ -278,10 +309,16 @@ export default function CallManager({ user }) {
             {call.call_type === 'audio' && <audio ref={remoteAudioRef} autoPlay />}
 
             <div className="call-buttons">
-              {call.status === 'ringing' && call.direction === 'in' ? (
+              {isIncomingRing ? (
                 <>
-                  <button className="btn btn-success" onClick={accept}>Accept</button>
-                  <button className="btn btn-danger" onClick={reject}>Decline</button>
+                  <div className="call-action">
+                    <button className="call-round call-decline" onClick={reject} aria-label="Decline">✕</button>
+                    <span className="call-action-label">Decline</span>
+                  </div>
+                  <div className="call-action">
+                    <button className="call-round call-answer" onClick={accept} aria-label="Accept">📞</button>
+                    <span className="call-action-label">Accept</span>
+                  </div>
                 </>
               ) : (
                 <>

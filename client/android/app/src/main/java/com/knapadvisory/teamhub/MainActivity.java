@@ -103,9 +103,10 @@ public class MainActivity extends BridgeActivity {
                 | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
-            // The web call UI takes over now — clear the full-screen call notification.
-            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (nm != null) nm.cancel(TeamHubMessagingService.CALL_NOTIFICATION_ID);
+            // NOTE: we deliberately do NOT cancel the call notification here.
+            // Cancelling it the instant the activity opens cut the ringtone off
+            // before it was audible. The web call UI cancels it (via the bridge)
+            // once the call is answered or declined.
         } catch (Throwable t) {
             Log.e(TAG, "call launch handling failed", t);
         }
@@ -231,6 +232,9 @@ public class MainActivity extends BridgeActivity {
             android.webkit.WebView webView = getBridge().getWebView();
             if (webView == null) return;
             webView.addJavascriptInterface(new NativeBridge(), "TeamHubNative");
+            // Let the web ring/answer play audio without a user gesture (needed
+            // for the in-call ringtone and remote audio to start on their own).
+            webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
         } catch (Throwable t) {
             Log.e(TAG, "native bridge setup failed", t);
         }
@@ -252,6 +256,18 @@ public class MainActivity extends BridgeActivity {
         // allowed for this app (Android 14+), falling back to app notifications.
         @JavascriptInterface
         public void openFullScreenIntentSettings() { runOnUiThread(() -> launchFullScreenIntentSettings()); }
+
+        // Stop the ringing call notification once the web UI has taken over
+        // (call answered, declined or ended).
+        @JavascriptInterface
+        public void cancelIncomingCall() {
+            try {
+                NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) nm.cancel(TeamHubMessagingService.CALL_NOTIFICATION_ID);
+            } catch (Throwable t) {
+                Log.e(TAG, "cancel incoming call failed", t);
+            }
+        }
 
         @JavascriptInterface
         public void openCallSoundSettings() { openChannelSettings(TeamHubMessagingService.CALL_CHANNEL_ID); }
