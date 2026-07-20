@@ -30,6 +30,25 @@ function clearPendingCall(calleeId) {
   pendingCalls.delete(calleeId);
 }
 
+// Ring timeout: if a 1:1 call is never answered/declined (e.g. the callee's
+// phone stayed asleep, or a reject was lost because the caller was backgrounded),
+// end it after RING_TTL so the caller never rings forever. Keyed by callee.
+const ringTimers = new Map(); // calleeUserId -> { timer, callerId }
+function armRingTimeout(io, calleeId, callerId) {
+  clearRingTimeout(calleeId);
+  const timer = setTimeout(() => {
+    ringTimers.delete(calleeId);
+    clearPendingCall(calleeId);
+    io.to(`user:${callerId}`).emit('call:ended', { reason: 'no_answer' });
+    io.to(`user:${calleeId}`).emit('call:handled', { by: calleeId });
+  }, RING_TTL);
+  ringTimers.set(calleeId, { timer, callerId });
+}
+function clearRingTimeout(calleeId) {
+  const r = ringTimers.get(calleeId);
+  if (r) { clearTimeout(r.timer); ringTimers.delete(calleeId); }
+}
+
 function roomPeers(room) {
   return [...room.members.values()].map((m) => m.user);
 }
@@ -234,17 +253,20 @@ export default function setupSocket(io) {
       const type = call_type === 'video' ? 'video' : 'audio';
       const payload = { from: publicUser(socket.user), call_type: type };
       setPendingCall(to_user_id, 'call:incoming', payload);
+      armRingTimeout(io, to_user_id, socket.user.id);
       io.to(`user:${to_user_id}`).emit('call:incoming', payload);
       sendPushToUser(to_user_id, { title: `Incoming ${type} call`, body: `${socket.user.name} is calling you`, data: { type: 'call' } });
     });
     socket.on('call:accept', ({ to_user_id }) => {
       clearPendingCall(userId); // the callee (this user) answered
+      clearRingTimeout(userId);
       io.to(`user:${to_user_id}`).emit('call:accepted', { from: publicUser(socket.user) });
       // Stop the ring on the callee's other devices.
       socket.to(`user:${userId}`).emit('call:handled', { by: userId });
     });
     socket.on('call:reject', ({ to_user_id }) => {
       clearPendingCall(userId);
+      clearRingTimeout(userId);
       io.to(`user:${to_user_id}`).emit('call:rejected', { from: publicUser(socket.user) });
       socket.to(`user:${userId}`).emit('call:handled', { by: userId });
     });
@@ -255,6 +277,8 @@ export default function setupSocket(io) {
       // Whoever ends it, the ring is over for the callee — clear both directions.
       clearPendingCall(to_user_id);
       clearPendingCall(userId);
+      clearRingTimeout(to_user_id);
+      clearRingTimeout(userId);
       io.to(`user:${to_user_id}`).emit('call:ended', { from: publicUser(socket.user) });
     });
 
