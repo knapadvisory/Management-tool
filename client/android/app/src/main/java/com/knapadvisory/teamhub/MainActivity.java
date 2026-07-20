@@ -73,6 +73,10 @@ public class MainActivity extends BridgeActivity {
         // If we were launched by an incoming-call full-screen intent, wake the
         // screen and show over the lock screen so the call UI is answerable.
         handleCallLaunch(getIntent());
+
+        // A short delay lets the runtime-permission dialog resolve first, then
+        // we nudge (once) to enable full-screen calls if Android is blocking them.
+        new Handler(Looper.getMainLooper()).postDelayed(this::maybePromptFullScreenPermission, 2500);
     }
 
     @Override
@@ -174,6 +178,54 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    private boolean hasFullScreenIntentPermission() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                return nm != null && nm.canUseFullScreenIntent();
+            }
+            return true;
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    private void launchFullScreenIntentSettings() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startActivity(new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
+                    .setData(Uri.parse("package:" + getPackageName()))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } else {
+                startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "open full-screen-intent settings failed", t);
+        }
+    }
+
+    // On Android 14+, nudge the user once to allow full-screen call alerts if
+    // the permission is missing — otherwise incoming calls can't wake the
+    // screen. "Don't remind me" is remembered so we never nag.
+    private void maybePromptFullScreenPermission() {
+        try {
+            if (hasFullScreenIntentPermission()) return;
+            android.content.SharedPreferences sp = getSharedPreferences("teamhub", MODE_PRIVATE);
+            if (sp.getBoolean("fsi_prompt_dismissed", false)) return;
+            new AlertDialog.Builder(this)
+                .setTitle("Turn on full-screen calls")
+                .setMessage("So incoming calls ring and light up your screen like a normal phone call, allow full-screen notifications for TeamHub.")
+                .setPositiveButton("Allow", (d, w) -> launchFullScreenIntentSettings())
+                .setNegativeButton("Not now", null)
+                .setNeutralButton("Don't remind me", (d, w) -> sp.edit().putBoolean("fsi_prompt_dismissed", true).apply())
+                .show();
+        } catch (Throwable t) {
+            Log.e(TAG, "full-screen prompt failed", t);
+        }
+    }
+
     private void setupNativeBridge() {
         try {
             android.webkit.WebView webView = getBridge().getWebView();
@@ -194,38 +246,12 @@ public class MainActivity extends BridgeActivity {
         // call screen. Auto-granted pre-Android-14; on 14+ the user must allow
         // it, so the web Settings surfaces a button when this is false.
         @JavascriptInterface
-        public boolean canUseFullScreenIntent() {
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                    return nm != null && nm.canUseFullScreenIntent();
-                }
-                return true;
-            } catch (Throwable t) {
-                return true;
-            }
-        }
+        public boolean canUseFullScreenIntent() { return hasFullScreenIntentPermission(); }
 
         // Send the user to the OS screen where full-screen call alerts are
         // allowed for this app (Android 14+), falling back to app notifications.
         @JavascriptInterface
-        public void openFullScreenIntentSettings() {
-            runOnUiThread(() -> {
-                try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        startActivity(new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
-                            .setData(Uri.parse("package:" + getPackageName()))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                    } else {
-                        startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                            .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                    }
-                } catch (Throwable t) {
-                    Log.e(TAG, "open full-screen-intent settings failed", t);
-                }
-            });
-        }
+        public void openFullScreenIntentSettings() { runOnUiThread(() -> launchFullScreenIntentSettings()); }
 
         @JavascriptInterface
         public void openCallSoundSettings() { openChannelSettings(TeamHubMessagingService.CALL_CHANNEL_ID); }
