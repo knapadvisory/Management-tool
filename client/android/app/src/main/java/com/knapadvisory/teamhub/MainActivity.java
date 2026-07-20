@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
@@ -179,6 +180,10 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    private void stopSco(AudioManager am) {
+        try { am.setBluetoothScoOn(false); am.stopBluetoothSco(); } catch (Throwable ignored) { }
+    }
+
     private boolean hasFullScreenIntentPermission() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -256,6 +261,53 @@ public class MainActivity extends BridgeActivity {
         // allowed for this app (Android 14+), falling back to app notifications.
         @JavascriptInterface
         public void openFullScreenIntentSettings() { runOnUiThread(() -> launchFullScreenIntentSettings()); }
+
+        // --- In-call audio routing (earpiece / speaker / bluetooth) ---
+        // WebRTC audio output can't be steered from JS on Android, so the web
+        // call UI calls through to AudioManager here.
+        @JavascriptInterface
+        public boolean hasBluetooth() {
+            try {
+                AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                return am != null && am.isBluetoothScoAvailableOffCall();
+            } catch (Throwable t) { return false; }
+        }
+
+        @JavascriptInterface
+        public void setAudioRoute(String route) {
+            runOnUiThread(() -> {
+                try {
+                    AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                    if (am == null) return;
+                    am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                    if ("speaker".equals(route)) {
+                        stopSco(am);
+                        am.setSpeakerphoneOn(true);
+                    } else if ("bluetooth".equals(route)) {
+                        am.setSpeakerphoneOn(false);
+                        am.startBluetoothSco();
+                        am.setBluetoothScoOn(true);
+                    } else { // earpiece
+                        stopSco(am);
+                        am.setSpeakerphoneOn(false);
+                    }
+                } catch (Throwable t) { Log.e(TAG, "audio route failed", t); }
+            });
+        }
+
+        // Restore normal audio when the call ends.
+        @JavascriptInterface
+        public void resetAudioRoute() {
+            runOnUiThread(() -> {
+                try {
+                    AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                    if (am == null) return;
+                    stopSco(am);
+                    am.setSpeakerphoneOn(false);
+                    am.setMode(AudioManager.MODE_NORMAL);
+                } catch (Throwable t) { Log.e(TAG, "audio reset failed", t); }
+            });
+        }
 
         // Stop the ringing call notification once the web UI has taken over
         // (call answered, declined or ended).

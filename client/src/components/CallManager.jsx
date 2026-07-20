@@ -11,6 +11,16 @@ function stopNativeRing() {
   try { window.TeamHubNative?.cancelIncomingCall?.(); } catch { /* web app */ }
 }
 const isNativeApp = () => { try { return !!Capacitor?.isNativePlatform?.(); } catch { return false; } };
+const nativeBridge = () => { try { return window.TeamHubNative || null; } catch { return null; } };
+// Ordered list of audio outputs to cycle through (bluetooth only when present).
+function audioRoutes() {
+  const nb = nativeBridge();
+  const bt = nb && typeof nb.hasBluetooth === 'function' && nb.hasBluetooth();
+  return bt ? ['earpiece', 'speaker', 'bluetooth'] : ['earpiece', 'speaker'];
+}
+function applyRoute(r) {
+  try { nativeBridge()?.setAudioRoute?.(r); } catch { /* web app: browser handles output */ }
+}
 
 const DEFAULT_ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
 
@@ -26,6 +36,8 @@ export default function CallManager({ user }) {
   const [error, setError] = useState(null);
   const [muted, setMuted] = useState(false);
   const [camOff, setCamOff] = useState(false);
+  const [route, setRoute] = useState('earpiece'); // earpiece | speaker | bluetooth
+  const facingRef = useRef('user'); // 'user' (front) | 'environment' (rear)
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
   const localVideoRef = useRef(null);
@@ -52,14 +64,17 @@ export default function CallManager({ user }) {
   function cleanup() {
     stopRingtone();
     stopNativeRing();
+    try { nativeBridge()?.resetAudioRoute?.(); } catch { /* web app */ }
     pcRef.current?.close();
     pcRef.current = null;
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     pendingCandidatesRef.current = [];
     remoteReadyRef.current = false;
+    facingRef.current = 'user';
     setMuted(false);
     setCamOff(false);
+    setRoute('earpiece');
     setCall(null);
   }
 
@@ -231,6 +246,51 @@ export default function CallManager({ user }) {
     return () => stopRingtone();
   }, [call?.direction, call?.status]);
 
+  // When a call connects, default the audio to the natural output — earpiece
+  // for a voice call, speakerphone for video — and reflect it in the toggle.
+  const wasActiveRef = useRef(false);
+  useEffect(() => {
+    const active = call && (call.status === 'connecting' || call.status === 'active');
+    if (active && !wasActiveRef.current) {
+      wasActiveRef.current = true;
+      const def = call.call_type === 'video' ? 'speaker' : 'earpiece';
+      setRoute(def);
+      applyRoute(def);
+    } else if (!active) {
+      wasActiveRef.current = false;
+    }
+  }, [call?.status, call?.call_type]);
+
+  function cycleRoute() {
+    const routes = audioRoutes();
+    const next = routes[(routes.indexOf(route) + 1) % routes.length];
+    setRoute(next);
+    applyRoute(next);
+  }
+
+  // Flip between the front and rear camera without dropping the call: grab the
+  // other camera and hot-swap the outgoing video track.
+  async function switchCamera() {
+    try {
+      const stream = localStreamRef.current;
+      if (!stream) return;
+      const next = facingRef.current === 'user' ? 'environment' : 'user';
+      const fresh = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: next } });
+      const newTrack = fresh.getVideoTracks()[0];
+      if (!newTrack) return;
+      const sender = pcRef.current?.getSenders().find((s) => s.track && s.track.kind === 'video');
+      if (sender) await sender.replaceTrack(newTrack);
+      const old = stream.getVideoTracks()[0];
+      if (old) { stream.removeTrack(old); old.stop(); }
+      stream.addTrack(newTrack);
+      newTrack.enabled = !camOff;
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      facingRef.current = next;
+    } catch {
+      setError('Could not switch camera.');
+    }
+  }
+
   async function accept() {
     stopRingtone();
     stopNativeRing();
@@ -324,19 +384,32 @@ export default function CallManager({ user }) {
                 <>
                   {inCall && (
                     <>
-                      <button className="btn call-toggle" onClick={toggleMute} title={muted ? 'Unmute' : 'Mute'}>
-                        {muted ? '🔇 Unmute' : '🎙 Mute'}
-                      </button>
+                      <div className="call-action">
+                        <button className={`call-ctrl ${muted ? 'active' : ''}`} onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>{muted ? '🔇' : '🎙'}</button>
+                        <span className="call-action-label">{muted ? 'Unmute' : 'Mute'}</span>
+                      </div>
+                      <div className="call-action">
+                        <button className="call-ctrl" onClick={cycleRoute} aria-label="Audio output">{route === 'speaker' ? '🔊' : route === 'bluetooth' ? '🎧' : '🔈'}</button>
+                        <span className="call-action-label">{route === 'speaker' ? 'Speaker' : route === 'bluetooth' ? 'Bluetooth' : 'Earpiece'}</span>
+                      </div>
                       {call.call_type === 'video' && (
-                        <button className="btn call-toggle" onClick={toggleCamera} title={camOff ? 'Turn camera on' : 'Turn camera off'}>
-                          {camOff ? '📷 Camera on' : '🚫 Camera off'}
-                        </button>
+                        <>
+                          <div className="call-action">
+                            <button className={`call-ctrl ${camOff ? 'active' : ''}`} onClick={toggleCamera} aria-label={camOff ? 'Turn camera on' : 'Turn camera off'}>{camOff ? '📷' : '🎥'}</button>
+                            <span className="call-action-label">{camOff ? 'Camera on' : 'Camera off'}</span>
+                          </div>
+                          <div className="call-action">
+                            <button className="call-ctrl" onClick={switchCamera} aria-label="Switch camera">🔄</button>
+                            <span className="call-action-label">Flip</span>
+                          </div>
+                        </>
                       )}
                     </>
                   )}
-                  <button className="btn btn-danger" onClick={hangUp}>
-                    {call.status === 'ringing' ? 'Cancel' : 'Hang up'}
-                  </button>
+                  <div className="call-action">
+                    <button className="call-round call-decline" onClick={hangUp} aria-label={call.status === 'ringing' ? 'Cancel' : 'Hang up'}>✕</button>
+                    <span className="call-action-label">{call.status === 'ringing' ? 'Cancel' : 'Hang up'}</span>
+                  </div>
                 </>
               )}
             </div>

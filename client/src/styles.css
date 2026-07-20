@@ -780,6 +780,18 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .call-decline { background: #ef4444; }
 @keyframes answerBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 
+/* In-call control buttons — always light icons on a dark pill, so they stay
+   visible whatever the app theme (the call window is always dark). */
+.call-window .call-buttons { gap: 20px; flex-wrap: wrap; margin-top: 8px; }
+.call-ctrl {
+  width: 60px; height: 60px; border-radius: 50%; border: none; cursor: pointer;
+  background: rgba(255,255,255,.16); color: #fff; font-size: 24px;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .12s ease, background .15s ease;
+}
+.call-ctrl:active { transform: scale(.92); }
+.call-ctrl.active { background: #fff; color: #1a1d29; } /* engaged (muted / camera off) */
+
 /* --- Multi-party call room (huddle / conference) --- */
 .room-call {
   background: #14161f; color: #fff; border-radius: 16px; width: min(1100px, 100%);
