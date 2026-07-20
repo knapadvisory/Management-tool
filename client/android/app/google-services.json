@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "1234567890",
-    "project_id": "teamhub-placeholder-not-configured",
-    "storage_bucket": "teamhub-placeholder-not-configured.appspot.com"
+    "project_number": "802140631508",
+    "project_id": "teamhub-knap",
+    "storage_bucket": "teamhub-knap.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1234567890:android:abcdef0123456789",
+        "mobilesdk_app_id": "1:802140631508:android:a7aba10719822c03216641",
         "android_client_info": {
           "package_name": "com.knapadvisory.teamhub"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "placeholder_no_real_firebase_key"
+          "current_key": "AIzaSyCDUPP4QbkQxWUD0LRQkAO1dtaLJ8aXH2A"
         }
       ],
       "services": {
