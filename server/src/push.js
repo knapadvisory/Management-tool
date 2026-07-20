@@ -98,10 +98,22 @@ function sendFcmToUser(userId, { title, body, data = {} }) {
   console.log(`[push] FCM → user ${userId}: ${tokens.length} device token(s)`);
   if (!tokens.length) return;
   const stringData = Object.fromEntries(Object.entries(data).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]));
+  // Route calls to their own high-urgency channel; everything else to messages.
+  // The channel (created on the device) owns the sound, vibration and LED.
+  const isCall = data.type === 'call';
   const message = {
     notification: { title, body },
     data: stringData,
-    android: { priority: 'high', notification: { sound: 'default' } },
+    android: {
+      priority: 'high',
+      notification: {
+        channel_id: isCall ? 'teamhub_calls' : 'teamhub_messages',
+        sound: 'default',
+        notification_priority: isCall ? 'PRIORITY_MAX' : 'PRIORITY_HIGH',
+        default_vibrate_timings: true,
+        default_light_settings: true,
+      },
+    },
   };
   (async () => {
     for (const token of tokens) {
