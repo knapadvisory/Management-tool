@@ -3,7 +3,12 @@ package com.knapadvisory.teamhub;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Context;
+import android.graphics.Color;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -48,6 +53,46 @@ public class MainActivity extends BridgeActivity {
         // own — route any download the page triggers to Android's DownloadManager
         // (saves to the Downloads folder with a progress notification).
         new Handler(Looper.getMainLooper()).post(this::setupDownloads);
+
+        // Create the notification channels natively so calls actually ring (the
+        // system ringtone) and stand apart from message pings, and both light
+        // the LED / vibrate. Channels are cached by Android, so a reinstall
+        // (which clears them) is needed to change an existing channel's sound.
+        setupNotificationChannels();
+    }
+
+    private void setupNotificationChannels() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            int accent = Color.parseColor("#4F46E5");
+
+            NotificationChannel messages = new NotificationChannel(
+                "teamhub_messages", "Messages & tasks", NotificationManager.IMPORTANCE_HIGH);
+            messages.setDescription("DMs, mentions and task updates");
+            messages.enableLights(true);
+            messages.setLightColor(accent);
+            messages.enableVibration(true);
+            nm.createNotificationChannel(messages);
+
+            NotificationChannel calls = new NotificationChannel(
+                "teamhub_calls", "Calls", NotificationManager.IMPORTANCE_HIGH);
+            calls.setDescription("Incoming audio and video calls");
+            calls.enableLights(true);
+            calls.setLightColor(accent);
+            calls.enableVibration(true);
+            calls.setVibrationPattern(new long[]{0, 600, 400, 600, 400, 600});
+            Uri ringtone = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            AudioAttributes attrs = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+            calls.setSound(ringtone, attrs);
+            nm.createNotificationChannel(calls);
+        } catch (Throwable t) {
+            Log.e(TAG, "notification channel setup failed", t);
+        }
     }
 
     private void setupDownloads() {
