@@ -19,6 +19,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
+import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.URLUtil;
 import android.widget.Toast;
@@ -84,12 +85,20 @@ public class MainActivity extends BridgeActivity {
     private void handleCallLaunch(Intent intent) {
         try {
             if (intent == null || !intent.hasExtra("teamhub_incoming_call")) return;
+            // Modern API: show over the lock screen and turn the screen on.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setShowWhenLocked(true);
                 setTurnScreenOn(true);
                 KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
                 if (km != null) km.requestDismissKeyguard(this, null);
             }
+            // Belt-and-braces: legacy window flags also wake the display and show
+            // over the keyguard, covering ROMs where the setters aren't honoured.
+            getWindow().addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
             // The web call UI takes over now — clear the full-screen call notification.
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) nm.cancel(TeamHubMessagingService.CALL_NOTIFICATION_ID);
@@ -105,8 +114,13 @@ public class MainActivity extends BridgeActivity {
             if (nm == null) return;
             int accent = Color.parseColor("#4F46E5");
 
+            // Remove the earlier calls channel: its sound is locked to whatever
+            // it was first created with (often a plain notification tone), so we
+            // drop it and create a fresh versioned channel with the ringtone.
+            try { nm.deleteNotificationChannel("teamhub_calls"); } catch (Throwable ignored) { }
+
             NotificationChannel messages = new NotificationChannel(
-                "teamhub_messages", "Messages & tasks", NotificationManager.IMPORTANCE_HIGH);
+                TeamHubMessagingService.MESSAGES_CHANNEL_ID, "Messages & tasks", NotificationManager.IMPORTANCE_HIGH);
             messages.setDescription("DMs, mentions and task updates");
             messages.enableLights(true);
             messages.setLightColor(accent);
@@ -114,7 +128,7 @@ public class MainActivity extends BridgeActivity {
             nm.createNotificationChannel(messages);
 
             NotificationChannel calls = new NotificationChannel(
-                "teamhub_calls", "Calls", NotificationManager.IMPORTANCE_HIGH);
+                TeamHubMessagingService.CALL_CHANNEL_ID, "Calls", NotificationManager.IMPORTANCE_HIGH);
             calls.setDescription("Incoming audio and video calls");
             calls.enableLights(true);
             calls.setLightColor(accent);
@@ -176,6 +190,49 @@ public class MainActivity extends BridgeActivity {
      * to the system sound picker for our notification channels.
      */
     public class NativeBridge {
+        // True when the OS will actually let a full-screen intent launch the
+        // call screen. Auto-granted pre-Android-14; on 14+ the user must allow
+        // it, so the web Settings surfaces a button when this is false.
+        @JavascriptInterface
+        public boolean canUseFullScreenIntent() {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    return nm != null && nm.canUseFullScreenIntent();
+                }
+                return true;
+            } catch (Throwable t) {
+                return true;
+            }
+        }
+
+        // Send the user to the OS screen where full-screen call alerts are
+        // allowed for this app (Android 14+), falling back to app notifications.
+        @JavascriptInterface
+        public void openFullScreenIntentSettings() {
+            runOnUiThread(() -> {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        startActivity(new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
+                            .setData(Uri.parse("package:" + getPackageName()))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    } else {
+                        startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    }
+                } catch (Throwable t) {
+                    Log.e(TAG, "open full-screen-intent settings failed", t);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void openCallSoundSettings() { openChannelSettings(TeamHubMessagingService.CALL_CHANNEL_ID); }
+
+        @JavascriptInterface
+        public void openMessageSoundSettings() { openChannelSettings(TeamHubMessagingService.MESSAGES_CHANNEL_ID); }
+
         @JavascriptInterface
         public void openChannelSettings(String channelId) {
             runOnUiThread(() -> {

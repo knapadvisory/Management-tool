@@ -27,19 +27,11 @@ export async function initPush(onOpen) {
     return () => {}; // plugin not available in this build
   }
 
-  // Android notification channels control sound, vibration and the LED light.
-  // Calls get their own high-urgency channel so they stand out from message
-  // pings. (No-op on iOS; best-effort.)
-  try {
-    await PushNotifications.createChannel({
-      id: 'teamhub_messages', name: 'Messages & tasks',
-      importance: 4, vibration: true, lights: true, lightColor: '#4F46E5', visibility: 1,
-    });
-    await PushNotifications.createChannel({
-      id: 'teamhub_calls', name: 'Calls',
-      importance: 5, vibration: true, lights: true, lightColor: '#4F46E5', visibility: 1,
-    });
-  } catch { /* channels are best-effort (Android only) */ }
+  // Notification channels (sound, vibration, LED, and the call ringtone) are
+  // created natively in MainActivity — deliberately NOT here. The Capacitor
+  // createChannel API can't set a ringtone sound, and a channel's sound is
+  // frozen once created, so letting JS create them first would lock the calls
+  // channel to a plain notification tone. Native ownership keeps it a ringtone.
 
   const perm = await PushNotifications.requestPermissions().catch(() => ({ receive: 'denied' }));
   if (perm.receive !== 'granted') return () => {};

@@ -184,6 +184,13 @@ function NotificationsPanel() {
   const [enabled, setEnabled] = useState(desktopEnabled());
   const supported = notificationsSupported();
   const native = nativeBridge();
+  // On Android 14+ full-screen call alerts need an explicit permission; when it
+  // isn't granted the incoming-call screen can't wake the phone. Surface a
+  // one-tap fix. `canUseFullScreenIntent` is a synchronous native bridge call.
+  const [fsiOk, setFsiOk] = useState(() => {
+    try { return native && typeof native.canUseFullScreenIntent === 'function' ? native.canUseFullScreenIntent() : true; }
+    catch { return true; }
+  });
 
   async function enable(on) {
     if (on && perm !== 'granted') {
@@ -217,9 +224,22 @@ function NotificationsPanel() {
           <div className="profile-section-title">Sounds &amp; vibration</div>
           <p className="muted settings-hint">Pick the ringtone for incoming calls and the tone for messages. This opens Android’s sound picker for each — choose any tone on your phone.</p>
           <div className="profile-photo-actions" style={{ marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn-sm" onClick={() => native.openChannelSettings('teamhub_calls')}>📞 Call ringtone</button>
-            <button type="button" className="btn btn-sm" onClick={() => native.openChannelSettings('teamhub_messages')}>💬 Message tone</button>
+            <button type="button" className="btn btn-sm" onClick={() => (native.openCallSoundSettings ? native.openCallSoundSettings() : native.openChannelSettings('teamhub_calls_v2'))}>📞 Call ringtone</button>
+            <button type="button" className="btn btn-sm" onClick={() => (native.openMessageSoundSettings ? native.openMessageSoundSettings() : native.openChannelSettings('teamhub_messages'))}>💬 Message tone</button>
           </div>
+          <hr className="profile-sep" />
+          <div className="profile-section-title">Full-screen calls</div>
+          {fsiOk ? (
+            <p className="muted settings-hint">Incoming calls show full-screen and wake your phone. ✅ Allowed.</p>
+          ) : (
+            <>
+              <p className="form-error" style={{ marginBottom: 8 }}>Android is blocking full-screen call alerts, so incoming calls can’t light up your screen. Allow it so calls ring like a normal phone call.</p>
+              <div className="profile-photo-actions">
+                <button type="button" className="btn btn-sm btn-primary" onClick={() => { try { native.openFullScreenIntentSettings(); } catch { /* ignore */ } }}>Allow full-screen calls</button>
+              </div>
+              <p className="muted settings-hint" style={{ marginTop: 8 }}>Turn on “Allow full-screen notifications”, then come back.</p>
+            </>
+          )}
         </>
       )}
     </div>

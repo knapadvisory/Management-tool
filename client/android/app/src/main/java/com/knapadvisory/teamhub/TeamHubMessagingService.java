@@ -22,6 +22,12 @@ import java.util.Map;
 public class TeamHubMessagingService extends MessagingService {
     private static final String TAG = "TeamHub";
     static final int CALL_NOTIFICATION_ID = 4243;
+    // Channel ids are shared with MainActivity (which creates the channels).
+    // The calls channel is versioned: a notification channel's sound can't be
+    // changed after it's first created, so a new id forces a fresh channel with
+    // the ringtone even for users upgrading from a build that used a plain tone.
+    static final String CALL_CHANNEL_ID = "teamhub_calls_v2";
+    static final String MESSAGES_CHANNEL_ID = "teamhub_messages";
 
     @Override
     public void onMessageReceived(RemoteMessage remoteMessage) {
@@ -47,7 +53,7 @@ public class TeamHubMessagingService extends MessagingService {
         int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
         PendingIntent pi = PendingIntent.getActivity(this, 100, open, flags);
 
-        NotificationCompat.Builder b = new NotificationCompat.Builder(this, "teamhub_calls")
+        NotificationCompat.Builder b = new NotificationCompat.Builder(this, CALL_CHANNEL_ID)
             .setSmallIcon(getApplicationInfo().icon)
             .setContentTitle(title)
             .setContentText(body.isEmpty() ? "Tap to answer" : body)

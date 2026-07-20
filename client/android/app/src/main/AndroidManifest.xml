@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="true"
@@ -35,8 +36,10 @@
         </provider>
 
         <!-- Turns incoming-call pushes into a full-screen, screen-waking alert.
-             Declared before the Capacitor plugin's service so FCM routes to it;
-             it delegates non-call messages back to the default handling. -->
+             Our service extends the Capacitor plugin's MessagingService and
+             delegates every non-call message to it, so we remove the plugin's
+             own service registration below to guarantee FCM routes to us (with
+             two services claiming MESSAGING_EVENT, the winner is undefined). -->
         <service
             android:name=".TeamHubMessagingService"
             android:exported="false">
@@ -44,6 +47,9 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
     </application>
 
     <!-- Permissions -->
