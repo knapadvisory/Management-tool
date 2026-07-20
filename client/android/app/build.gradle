@@ -36,6 +36,11 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // Needed so our custom messaging service (TeamHubMessagingService) can see
+    // FirebaseMessagingService / RemoteMessage at compile time. The Capacitor
+    // push plugin pulls this in as `implementation`, which isn't exposed to the
+    // app module, so declare it here too — same version to avoid a conflict.
+    implementation "com.google.firebase:firebase-messaging:23.3.1"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
