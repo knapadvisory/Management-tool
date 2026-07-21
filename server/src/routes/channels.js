@@ -150,9 +150,11 @@ router.get('/:id/messages', (req, res) => {
   // Messages the viewer cleared ("Clear chat") stay hidden for them only.
   const cleared = db.prepare('SELECT cleared_before FROM channel_members WHERE channel_id = ? AND user_id = ?')
     .get(req.params.id, req.user.id)?.cleared_before || null;
+  // Replies are shown inline in the timeline (WhatsApp-style quoted replies),
+  // so we no longer filter out messages with a parent.
   const rows = db.prepare(`
     SELECT id FROM messages
-    WHERE channel_id = ? AND parent_id IS NULL AND id < ?
+    WHERE channel_id = ? AND id < ?
       AND (? IS NULL OR created_at >= ?)
       AND (? IS NULL OR created_at > ?)
     ORDER BY id DESC LIMIT 50

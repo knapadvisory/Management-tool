@@ -6,7 +6,6 @@ import { localeArg } from '../prefs.js';
 import Avatar from './Avatar.jsx';
 import Message from './Message.jsx';
 import MessageComposer from './MessageComposer.jsx';
-import ThreadPanel from './ThreadPanel.jsx';
 
 // Day-separator label: Today / Yesterday / weekday + date.
 function dayLabel(iso) {
@@ -31,7 +30,7 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
     : (channel.members?.length ? channel.members : users);
   const [messages, setMessages] = useState([]);
   const [typingUser, setTypingUser] = useState(null);
-  const [threadRoot, setThreadRoot] = useState(null);
+  const [replyTo, setReplyTo] = useState(null); // message being replied to (WhatsApp-style)
   const [dragOver, setDragOver] = useState(false);
   const bottomRef = useRef(null);
   const typingTimeout = useRef(null);
@@ -56,14 +55,13 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
   }
 
   useEffect(() => {
-    setThreadRoot(null);
+    setReplyTo(null);
     api(`/channels/${channel.id}/messages`).then((d) => setMessages(d.messages));
 
     const socket = getSocket();
     if (!socket) return;
     const onNew = ({ message }) => {
       if (message.channel_id !== channel.id) return;
-      if (message.parent_id) return; // thread replies live in the panel
       setMessages((m) => (m.some((x) => x.id === message.id) ? m : [...m, message]));
       // We're looking at this conversation, so a message from someone else is
       // read the moment it arrives — tell the server so their tick goes blue.
@@ -82,7 +80,6 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
     const onUpdated = ({ message }) => {
       if (message.channel_id !== channel.id) return;
       setMessages((m) => m.map((x) => (x.id === message.id ? message : x)));
-      setThreadRoot((r) => (r && r.id === message.id ? message : r));
     };
     const onTyping = ({ channel_id, user: who }) => {
       if (channel_id !== channel.id || who.id === user.id) return;
@@ -116,6 +113,20 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
     window.dispatchEvent(new CustomEvent('teamhub:start-call', {
       detail: { user: channel.dm_user, call_type: type },
     }));
+  }
+
+  // Tapping a quoted reply jumps to (and briefly highlights) the original.
+  function jumpToMessage(id) {
+    const el = document.getElementById(`msg-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('flash');
+    setTimeout(() => el.classList.remove('flash'), 1200);
+  }
+
+  function startReply(msg) {
+    setReplyTo(msg);
+    composerRef.current?.focus?.();
   }
 
   const dmOnline = channel.is_dm && channel.dm_user && onlineIds.includes(channel.dm_user.id);
@@ -180,7 +191,8 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
                   currentUser={user}
                   channelId={channel.id}
                   grouped={grouped}
-                  onOpenThread={(msg) => setThreadRoot(msg)}
+                  onReply={startReply}
+                  onJumpTo={jumpToMessage}
                 />
               </React.Fragment>
             );
@@ -195,6 +207,8 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
             ref={composerRef}
             channel={channel}
             members={mentionMembers}
+            replyTo={replyTo}
+            onClearReply={() => setReplyTo(null)}
             placeholder={channel.is_dm ? `Message ${channel.display_name}` : `Message ${channel.is_collab ? '' : '#'}${channel.name}`}
           />
         ) : (
@@ -202,7 +216,7 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
         )}
       </div>
 
-      {showInfo && !threadRoot && (
+      {showInfo && (
         <aside className="chat-info">
           <div className="chat-info-head">
             <strong>About this {channel.is_dm ? 'conversation' : channel.is_collab ? 'collab' : 'channel'}</strong>
@@ -230,15 +244,6 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
         </aside>
       )}
 
-      {threadRoot && (
-        <ThreadPanel
-          channel={channel}
-          rootId={threadRoot.id}
-          currentUser={user}
-          members={mentionMembers}
-          onClose={() => setThreadRoot(null)}
-        />
-      )}
     </div>
   );
 }

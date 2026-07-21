@@ -100,6 +100,17 @@ export function serializeMessage(id, currentUserId = null, receipts = undefined)
     status = messageStatus(m.created_at, receipts || channelReceipts(m.channel_id, m.user_id));
   }
 
+  // WhatsApp-style quoted reply: a small preview of the message this one
+  // replies to, shown inline above the reply.
+  let reply_to = null;
+  if (m.parent_id) {
+    const p = db.prepare(`
+      SELECT p.id, p.content, p.deleted_at, pu.name AS user_name
+      FROM messages p JOIN users pu ON pu.id = p.user_id WHERE p.id = ?
+    `).get(m.parent_id);
+    if (p) reply_to = { id: p.id, user_name: p.user_name, content: p.deleted_at ? '' : (p.content || ''), is_deleted: !!p.deleted_at };
+  }
+
   return {
     id: m.id,
     channel_id: m.channel_id,
@@ -118,6 +129,7 @@ export function serializeMessage(id, currentUserId = null, receipts = undefined)
     reply_count: replyCount,
     last_reply_at: lastReply,
     status,
+    reply_to,
   };
 }
 

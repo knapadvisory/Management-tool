@@ -174,20 +174,13 @@ export default function setupSocket(io) {
       // Read receipts: the sender has obviously seen their own message, and any
       // recipient currently online has it delivered. Update the marks, then push
       // fresh ticks to everyone (so the sender sees ✓ / ✓✓ / blue live).
-      if (!parent_id) {
-        db.prepare(`UPDATE channel_members SET last_read_at = datetime('now'), last_delivered_at = datetime('now') WHERE channel_id = ? AND user_id = ?`)
-          .run(channel_id, userId);
-        const markDelivered = db.prepare(`UPDATE channel_members SET last_delivered_at = datetime('now') WHERE channel_id = ? AND user_id = ?`);
-        for (const { user_id: uid } of db.prepare('SELECT user_id FROM channel_members WHERE channel_id = ? AND user_id != ?').all(channel_id, userId)) {
-          if (onlineUsers.has(uid)) markDelivered.run(channel_id, uid);
-        }
-        broadcastReceipts(io, channel_id);
+      db.prepare(`UPDATE channel_members SET last_read_at = datetime('now'), last_delivered_at = datetime('now') WHERE channel_id = ? AND user_id = ?`)
+        .run(channel_id, userId);
+      const markDelivered = db.prepare(`UPDATE channel_members SET last_delivered_at = datetime('now') WHERE channel_id = ? AND user_id = ?`);
+      for (const { user_id: uid } of db.prepare('SELECT user_id FROM channel_members WHERE channel_id = ? AND user_id != ?').all(channel_id, userId)) {
+        if (onlineUsers.has(uid)) markDelivered.run(channel_id, uid);
       }
-
-      // If this is a reply, nudge the channel to refresh the root's reply count.
-      if (parent_id) {
-        io.to(`channel:${channel_id}`).emit('message:updated', { message: serializeMessage(parent_id, null) });
-      }
+      broadcastReceipts(io, channel_id);
 
       // Notify mentioned users who aren't the author.
       for (const uid of notified) {
@@ -207,7 +200,7 @@ export default function setupSocket(io) {
 
       // Direct messages surface in the recipient's Activity feed (skip anyone
       // already notified via an @mention, and thread replies).
-      if (chan?.is_dm && !parent_id) {
+      if (chan?.is_dm) {
         const others = db.prepare('SELECT user_id FROM channel_members WHERE channel_id = ? AND user_id != ?').all(channel_id, userId);
         for (const { user_id } of others) {
           if (!notified.includes(user_id)) {
@@ -217,7 +210,7 @@ export default function setupSocket(io) {
             });
           }
         }
-      } else if (chan && !chan.is_dm && !parent_id) {
+      } else if (chan && !chan.is_dm) {
         // Group-chat (channel/collab) messages surface under "Chat messages".
         const chName = db.prepare('SELECT name FROM channels WHERE id = ?').get(channel_id)?.name || 'a channel';
         const members = db.prepare('SELECT user_id FROM channel_members WHERE channel_id = ? AND user_id != ?').all(channel_id, userId);

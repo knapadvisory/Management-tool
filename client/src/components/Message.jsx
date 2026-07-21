@@ -45,7 +45,7 @@ export function AttachmentView({ att, onOpen }) {
   );
 }
 
-export default function Message({ message, currentUser, channelId, grouped, onOpenThread, inThread }) {
+export default function Message({ message, currentUser, channelId, grouped, onReply, onJumpTo, inThread }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const [showPicker, setShowPicker] = useState(false);
@@ -146,7 +146,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
   }
 
   return (
-    <div className={`message ${grouped ? 'grouped' : ''} ${isMine ? 'own' : ''}`} onContextMenu={openMenuAtCursor}>
+    <div id={`msg-${message.id}`} className={`message ${grouped ? 'grouped' : ''} ${isMine ? 'own' : ''}`} onContextMenu={openMenuAtCursor}>
       <div className="message-inner">
       {grouped ? (
         <span className="msg-gutter"><span className="gutter-time">{formatTime(message.created_at)}</span></span>
@@ -163,6 +163,12 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
         )}
 
         <div className="message-bubble">
+        {message.reply_to && (
+          <button type="button" className="reply-quote" onClick={() => onJumpTo?.(message.reply_to.id)}>
+            <span className="reply-quote-name">{message.reply_to.user_name}</span>
+            <span className="reply-quote-text">{message.reply_to.is_deleted ? 'Deleted message' : (message.reply_to.content || '📎 Attachment')}</span>
+          </button>
+        )}
         {editing ? (
           <div className="edit-box">
             <textarea value={draft} rows={2} autoFocus onChange={(e) => setDraft(e.target.value)}
@@ -205,17 +211,14 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
           </div>
         )}
 
-        {!inThread && message.reply_count > 0 && (
-          <button className="thread-summary" onClick={() => onOpenThread(message)}>
-            💬 {message.reply_count} {message.reply_count === 1 ? 'reply' : 'replies'}
-          </button>
-        )}
-
         {isMine && !inThread && <div className="msg-receipt"><MessageTicks status={message.status} /></div>}
       </div>
 
       {!editing && (
         <div className="msg-actions">
+          {!inThread && onReply && (
+            <button className="msg-action" title="Reply" onClick={() => onReply(message)}>↩</button>
+          )}
           <div className="react-wrap">
             <button ref={reactBtnRef} className="msg-action" title="Add reaction" onClick={openPicker}>😊</button>
           </div>
@@ -225,7 +228,7 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
               <>
                 <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
                 <div className="msg-menu" style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}>
-                  {!inThread && <button onClick={() => { onOpenThread(message); setMenuOpen(false); }}><span>↩</span> Reply</button>}
+                  {!inThread && onReply && <button onClick={() => { onReply(message); setMenuOpen(false); }}><span>↩</span> Reply</button>}
                   <button onClick={() => { navigator.clipboard?.writeText(message.content || ''); setMenuOpen(false); }}><span>⧉</span> Copy</button>
                   {isMine && <button onClick={() => { setDraft(message.content); setEditing(true); setMenuOpen(false); }}><span>✏️</span> Edit</button>}
                   <button onClick={() => { setForwardOpen(true); setMenuOpen(false); }}><span>➦</span> Forward</button>

@@ -51,7 +51,7 @@ function nodeToMarkdown(node) {
   return out;
 }
 
-const MessageComposer = forwardRef(function MessageComposer({ channel, members, parentId = null, placeholder, autoFocus }, ref) {
+const MessageComposer = forwardRef(function MessageComposer({ channel, members, parentId = null, replyTo = null, onClearReply, placeholder, autoFocus }, ref) {
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [empty, setEmpty] = useState(true);
@@ -71,7 +71,11 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
 
   useImperativeHandle(ref, () => ({
     addFiles(list) { if (list && list.length) setFiles((fs) => [...fs, ...list]); editorRef.current?.focus(); },
+    focus() { editorRef.current?.focus(); },
   }));
+
+  // When a reply target is picked, jump focus to the editor.
+  useEffect(() => { if (replyTo) editorRef.current?.focus(); }, [replyTo]);
 
   function syncState() {
     const editor = editorRef.current;
@@ -180,12 +184,13 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
       .filter(([name]) => content.includes(`@${name}`))
       .map(([, id]) => id);
 
-    getSocket()?.emit('message:send', { channel_id: channel.id, content, parent_id: parentId, attachment_ids, mention_user_ids });
+    getSocket()?.emit('message:send', { channel_id: channel.id, content, parent_id: replyTo?.id ?? parentId, attachment_ids, mention_user_ids });
     if (editor) editor.innerHTML = '';
     setFiles([]);
     setMentioned({});
     setSuggest(null);
     setEmpty(true);
+    onClearReply?.();
   }
 
   function onKeyDown(e) {
@@ -230,6 +235,15 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
         </div>
       )}
       <div className="composer">
+        {replyTo && (
+          <div className="composer-reply">
+            <div className="composer-reply-body">
+              <span className="composer-reply-to">Replying to {replyTo.user_name}</span>
+              <span className="composer-reply-text">{replyTo.is_deleted ? 'Deleted message' : (replyTo.content || '📎 Attachment')}</span>
+            </div>
+            <button type="button" className="composer-reply-x" title="Cancel reply" onClick={() => onClearReply?.()}>✕</button>
+          </div>
+        )}
         <div className="composer-editor-wrap">
           {empty && <div className="composer-placeholder">{placeholder}</div>}
           <div
