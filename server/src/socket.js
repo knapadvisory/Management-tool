@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import db from './db.js';
 import { verifyToken, publicUser } from './auth.js';
-import { serializeMessage, recordMentions, linkAttachments, serializeTaskMessage, linkTaskMessageAttachments } from './messages.js';
+import { serializeMessage, recordMentions, linkAttachments, serializeTaskMessage, linkTaskMessageAttachments, broadcastReceipts } from './messages.js';
 import { createNotification } from './notifications.js';
 import { sendPushToUser } from './push.js';
 
@@ -116,6 +116,16 @@ export default function setupSocket(io) {
     onlineUsers.get(userId).add(socket.id);
     emitPresence(io, socket.user.workspace_id);
 
+    // Now that this user is connected, everything in their conversations is
+    // "delivered" to them — advance their delivered mark and refresh the
+    // sender-side ticks in each conversation.
+    const myChannels = db.prepare('SELECT channel_id FROM channel_members WHERE user_id = ?').all(userId);
+    const markDelivered = db.prepare(`UPDATE channel_members SET last_delivered_at = datetime('now') WHERE channel_id = ? AND user_id = ?`);
+    for (const { channel_id } of myChannels) {
+      markDelivered.run(channel_id, userId);
+      broadcastReceipts(io, channel_id);
+    }
+
     // If a call is still ringing for this user (e.g. they just reopened the app
     // after a missed ring, or reconnected), replay the incoming-call event so
     // the call surfaces instead of being lost.
@@ -160,6 +170,19 @@ export default function setupSocket(io) {
 
       const message = serializeMessage(messageId, null);
       io.to(`channel:${channel_id}`).emit('message:new', { message });
+
+      // Read receipts: the sender has obviously seen their own message, and any
+      // recipient currently online has it delivered. Update the marks, then push
+      // fresh ticks to everyone (so the sender sees ✓ / ✓✓ / blue live).
+      if (!parent_id) {
+        db.prepare(`UPDATE channel_members SET last_read_at = datetime('now'), last_delivered_at = datetime('now') WHERE channel_id = ? AND user_id = ?`)
+          .run(channel_id, userId);
+        const markDelivered = db.prepare(`UPDATE channel_members SET last_delivered_at = datetime('now') WHERE channel_id = ? AND user_id = ?`);
+        for (const { user_id: uid } of db.prepare('SELECT user_id FROM channel_members WHERE channel_id = ? AND user_id != ?').all(channel_id, userId)) {
+          if (onlineUsers.has(uid)) markDelivered.run(channel_id, uid);
+        }
+        broadcastReceipts(io, channel_id);
+      }
 
       // If this is a reply, nudge the channel to refresh the root's reply count.
       if (parent_id) {
@@ -208,6 +231,17 @@ export default function setupSocket(io) {
         }
       }
       ack?.({ message: serializeMessage(messageId, userId) });
+    });
+
+    // The viewer read a conversation (opened it, or a new message arrived while
+    // it was on screen). Advance their read/delivered mark and refresh ticks.
+    socket.on('channel:read', ({ channel_id } = {}) => {
+      if (!channel_id) return;
+      const member = db.prepare('SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ?').get(channel_id, userId);
+      if (!member) return;
+      db.prepare(`UPDATE channel_members SET last_read_at = datetime('now'), last_delivered_at = datetime('now') WHERE channel_id = ? AND user_id = ?`)
+        .run(channel_id, userId);
+      broadcastReceipts(io, channel_id);
     });
 
     // --- Per-task real-time chat ---

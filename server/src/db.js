@@ -479,6 +479,12 @@ ensureColumn('channel_members', 'hidden_at', 'TEXT');
 // "Clear chat": messages at or before this time are hidden from THIS member's
 // view only (the other participant keeps their copy).
 ensureColumn('channel_members', 'cleared_before', 'TEXT');
+// Read receipts (WhatsApp-style ticks). Per member, the moment they last
+// read / were delivered messages in this conversation. A message is "read"
+// once every other member's last_read_at is at or past it, "delivered" once
+// every other member's last_delivered_at is.
+ensureColumn('channel_members', 'last_read_at', 'TEXT');
+ensureColumn('channel_members', 'last_delivered_at', 'TEXT');
 
 // --- Multi-tenancy: every root entity belongs to a workspace ---
 // Added as plain columns (nullable at the DB level) and always set in code;

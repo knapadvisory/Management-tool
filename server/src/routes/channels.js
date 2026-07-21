@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
-import { serializeMessage, isChannelMember } from '../messages.js';
+import { serializeMessage, isChannelMember, channelReceipts, broadcastReceipts } from '../messages.js';
 import { unreadCount } from '../notifications.js';
 
 const router = Router();
@@ -104,6 +104,11 @@ router.post('/:id/read', (req, res) => {
   if (!member) return res.status(404).json({ error: 'Conversation not found' });
   db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND channel_id = ? AND is_read = 0')
     .run(req.user.id, req.params.id);
+  // Advance this member's read (and delivered) mark, then refresh everyone's
+  // ticks in the conversation.
+  db.prepare(`UPDATE channel_members SET last_read_at = datetime('now'), last_delivered_at = datetime('now') WHERE channel_id = ? AND user_id = ?`)
+    .run(req.params.id, req.user.id);
+  broadcastReceipts(req.app.get('io'), Number(req.params.id));
   res.json({ unread_count: unreadCount(req.user.id) });
 });
 
@@ -152,7 +157,8 @@ router.get('/:id/messages', (req, res) => {
       AND (? IS NULL OR created_at > ?)
     ORDER BY id DESC LIMIT 50
   `).all(req.params.id, before, since, since, cleared, cleared).reverse();
-  res.json({ messages: rows.map((r) => serializeMessage(r.id, req.user.id)) });
+  const receipts = channelReceipts(req.params.id, req.user.id);
+  res.json({ messages: rows.map((r) => serializeMessage(r.id, req.user.id, receipts)) });
 });
 
 // Replies within a thread, plus the root message.

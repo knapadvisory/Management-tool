@@ -23,8 +23,12 @@ const dayKey = (iso) => (iso ? new Date(iso.replace(' ', 'T') + 'Z').toDateStrin
 
 export default function ChatView({ channel, user, users = [], onlineIds, canPost = true }) {
   const [showInfo, setShowInfo] = useState(false);
-  // In a public/named channel anyone can be mentioned; in a DM, just the two of you.
-  const mentionMembers = channel.is_dm ? (channel.members || []) : users;
+  // Who you can @-mention: the people in this conversation (DM: the two of you,
+  // group: its members). Falls back to the whole directory if a channel hasn't
+  // loaded its member list yet.
+  const mentionMembers = channel.is_dm
+    ? (channel.members || [])
+    : (channel.members?.length ? channel.members : users);
   const [messages, setMessages] = useState([]);
   const [typingUser, setTypingUser] = useState(null);
   const [threadRoot, setThreadRoot] = useState(null);
@@ -61,6 +65,19 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
       if (message.channel_id !== channel.id) return;
       if (message.parent_id) return; // thread replies live in the panel
       setMessages((m) => (m.some((x) => x.id === message.id) ? m : [...m, message]));
+      // We're looking at this conversation, so a message from someone else is
+      // read the moment it arrives — tell the server so their tick goes blue.
+      if (message.user_id !== user.id) socket.emit('channel:read', { channel_id: channel.id });
+    };
+    // Delivery/read marks changed — restatus our own messages (blue when read).
+    const onReceipts = ({ channel_id, read_up_to, delivered_up_to }) => {
+      if (channel_id !== channel.id) return;
+      setMessages((ms) => ms.map((x) => {
+        if (x.user_id !== user.id) return x;
+        const status = read_up_to && x.created_at <= read_up_to ? 'read'
+          : delivered_up_to && x.created_at <= delivered_up_to ? 'delivered' : 'sent';
+        return x.status === status ? x : { ...x, status };
+      }));
     };
     const onUpdated = ({ message }) => {
       if (message.channel_id !== channel.id) return;
@@ -78,11 +95,15 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
     socket.on('message:updated', onUpdated);
     socket.on('typing', onTyping);
     socket.on('conversation:cleared', onCleared);
+    socket.on('channel:receipts', onReceipts);
+    // Opening the conversation marks it read (so senders' ticks turn blue).
+    socket.emit('channel:read', { channel_id: channel.id });
     return () => {
       socket.off('message:new', onNew);
       socket.off('message:updated', onUpdated);
       socket.off('typing', onTyping);
       socket.off('conversation:cleared', onCleared);
+      socket.off('channel:receipts', onReceipts);
       clearTimeout(typingTimeout.current);
     };
   }, [channel.id, user.id]);

@@ -13,6 +13,18 @@ function formatTime(iso) {
   return d.toLocaleTimeString(localeArg(), dateOpts({ hour: '2-digit', minute: '2-digit' }));
 }
 
+// WhatsApp-style delivery ticks for your own messages:
+//   sent → single ✓, delivered → grey ✓✓, read → blue ✓✓.
+function MessageTicks({ status }) {
+  const s = status || 'sent';
+  const label = s === 'read' ? 'Seen' : s === 'delivered' ? 'Delivered' : 'Sent';
+  return (
+    <span className={`msg-ticks ${s === 'read' ? 'seen' : ''}`} title={label} aria-label={label}>
+      {s === 'sent' ? '✓' : '✓✓'}
+    </span>
+  );
+}
+
 export function AttachmentView({ att, onOpen }) {
   const url = fileUrl(att.id);
   if (att.mime_type?.startsWith('image/')) {
@@ -198,6 +210,8 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
             💬 {message.reply_count} {message.reply_count === 1 ? 'reply' : 'replies'}
           </button>
         )}
+
+        {isMine && !inThread && <div className="msg-receipt"><MessageTicks status={message.status} /></div>}
       </div>
 
       {!editing && (

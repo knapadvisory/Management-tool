@@ -29,7 +29,38 @@ export function linkTaskMessageAttachments(taskMessageId, uploaderId, attachment
   for (const aid of attachmentIds) link.run(taskMessageId, aid, uploaderId);
 }
 
-export function serializeMessage(id, currentUserId = null) {
+// Read/delivered high-water marks for a channel from a sender's point of view:
+// the OLDEST read/delivered position among all OTHER members, so a group
+// message counts as read only once everyone has read it (like WhatsApp).
+// COALESCE(...,'') makes a member who never read/received sort before every
+// real timestamp, so MIN doesn't skip their NULL and wrongly report "all read".
+export function channelReceipts(channelId, senderId) {
+  const row = db.prepare(`
+    SELECT MIN(COALESCE(last_read_at, '')) AS read_up_to,
+           MIN(COALESCE(last_delivered_at, '')) AS delivered_up_to
+    FROM channel_members WHERE channel_id = ? AND user_id != ?
+  `).get(channelId, senderId) || {};
+  return { read_up_to: row.read_up_to || null, delivered_up_to: row.delivered_up_to || null };
+}
+
+export function messageStatus(createdAt, receipts) {
+  if (receipts.read_up_to && createdAt <= receipts.read_up_to) return 'read';
+  if (receipts.delivered_up_to && createdAt <= receipts.delivered_up_to) return 'delivered';
+  return 'sent';
+}
+
+// Tell every member of a channel the current receipt marks for THEIR own
+// messages (each member's marks exclude themselves), so senders' ticks update
+// live. Cheap for small teams; one targeted emit per member.
+export function broadcastReceipts(io, channelId) {
+  if (!io) return;
+  const members = db.prepare('SELECT user_id FROM channel_members WHERE channel_id = ?').all(channelId);
+  for (const { user_id } of members) {
+    io.to(`user:${user_id}`).emit('channel:receipts', { channel_id: channelId, ...channelReceipts(channelId, user_id) });
+  }
+}
+
+export function serializeMessage(id, currentUserId = null, receipts = undefined) {
   const m = db.prepare(`
     SELECT m.*, u.name AS user_name, u.avatar_color, u.role AS user_role
     FROM messages m JOIN users u ON u.id = m.user_id
@@ -63,6 +94,12 @@ export function serializeMessage(id, currentUserId = null) {
     SELECT MAX(created_at) AS t FROM messages WHERE parent_id = ? AND deleted_at IS NULL
   `).get(m.id).t;
 
+  // Delivery/read tick, only for the viewer's own messages.
+  let status;
+  if (currentUserId != null && m.user_id === currentUserId && !deleted) {
+    status = messageStatus(m.created_at, receipts || channelReceipts(m.channel_id, m.user_id));
+  }
+
   return {
     id: m.id,
     channel_id: m.channel_id,
@@ -80,6 +117,7 @@ export function serializeMessage(id, currentUserId = null) {
     mentions,
     reply_count: replyCount,
     last_reply_at: lastReply,
+    status,
   };
 }
 
