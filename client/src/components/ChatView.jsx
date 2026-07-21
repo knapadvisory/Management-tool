@@ -6,6 +6,7 @@ import { localeArg } from '../prefs.js';
 import Avatar from './Avatar.jsx';
 import Message from './Message.jsx';
 import MessageComposer from './MessageComposer.jsx';
+import UserProfilePopup from './UserProfilePopup.jsx';
 
 // Day-separator label: Today / Yesterday / weekday + date.
 function dayLabel(iso) {
@@ -20,8 +21,9 @@ function dayLabel(iso) {
 }
 const dayKey = (iso) => (iso ? new Date(iso.replace(' ', 'T') + 'Z').toDateString() : '');
 
-export default function ChatView({ channel, user, users = [], onlineIds, canPost = true }) {
+export default function ChatView({ channel, user, users = [], onlineIds, onOpenDm, canPost = true }) {
   const [showInfo, setShowInfo] = useState(false);
+  const [profileUser, setProfileUser] = useState(null); // tapped member's profile popup
   // Who you can @-mention: the people in this conversation (DM: the two of you,
   // group: its members). Falls back to the whole directory if a channel hasn't
   // loaded its member list yet.
@@ -129,6 +131,14 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
     composerRef.current?.focus?.();
   }
 
+  // Open a member's profile card. Enrich the minimal author info on a message
+  // (id/name/colour) with the fuller directory record (title, email) if we have it.
+  function openProfile(lite) {
+    if (!lite?.id) return;
+    const full = users.find((u) => u.id === lite.id) || (channel.members || []).find((m) => m.id === lite.id);
+    setProfileUser({ ...lite, ...(full || {}) });
+  }
+
   const dmOnline = channel.is_dm && channel.dm_user && onlineIds.includes(channel.dm_user.id);
   const roomMembers = channel.members || [];
   const memberCount = channel.is_dm ? 0 : roomMembers.length;
@@ -193,6 +203,7 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
                   grouped={grouped}
                   onReply={startReply}
                   onJumpTo={jumpToMessage}
+                  onOpenProfile={openProfile}
                 />
               </React.Fragment>
             );
@@ -228,7 +239,9 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
           <div className="chat-info-section-title">{channel.is_dm ? 'Participants' : `Members${memberCount ? ` · ${memberCount}` : ''}`}</div>
           <div className="chat-info-members">
             {(channel.is_dm ? [channel.dm_user, user].filter(Boolean) : roomMembers).map((m) => (
-              <div key={m.id} className="chat-info-member">
+              <div key={m.id} className="chat-info-member" role="button" tabIndex={0}
+                onClick={() => openProfile(m)}
+                onKeyDown={(e) => { if (e.key === 'Enter') openProfile(m); }}>
                 <Avatar user={m} size={30} online={onlineIds.includes(m.id)} />
                 <div className="chat-info-member-meta">
                   <span className="chat-info-member-name">
@@ -244,6 +257,15 @@ export default function ChatView({ channel, user, users = [], onlineIds, canPost
         </aside>
       )}
 
+      {profileUser && (
+        <UserProfilePopup
+          profile={profileUser}
+          me={user}
+          online={onlineIds.includes(profileUser.id)}
+          onOpenDm={onOpenDm}
+          onClose={() => setProfileUser(null)}
+        />
+      )}
     </div>
   );
 }

@@ -45,7 +45,7 @@ export function AttachmentView({ att, onOpen }) {
   );
 }
 
-export default function Message({ message, currentUser, channelId, grouped, onReply, onJumpTo, inThread }) {
+export default function Message({ message, currentUser, channelId, grouped, onReply, onJumpTo, onOpenProfile, inThread }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const [showPicker, setShowPicker] = useState(false);
@@ -151,12 +151,17 @@ export default function Message({ message, currentUser, channelId, grouped, onRe
       {grouped ? (
         <span className="msg-gutter"><span className="gutter-time">{formatTime(message.created_at)}</span></span>
       ) : (
-        <Avatar user={{ name: message.user_name, avatar_color: message.avatar_color }} size={36} />
+        <button type="button" className="msg-avatar-btn" title={`View ${message.user_name}`}
+          onClick={() => onOpenProfile?.({ id: message.user_id, name: message.user_name, avatar_color: message.avatar_color })}>
+          <Avatar user={{ name: message.user_name, avatar_color: message.avatar_color }} size={36} />
+        </button>
       )}
       <div className="message-body">
         {!grouped && (
           <div className="message-meta">
-            <strong>{isMine ? 'You' : message.user_name}</strong>
+            <strong className={onOpenProfile ? 'msg-author' : ''}
+              onClick={onOpenProfile ? () => onOpenProfile({ id: message.user_id, name: message.user_name, avatar_color: message.avatar_color }) : undefined}>
+              {isMine ? 'You' : message.user_name}</strong>
             {message.user_role === 'guest' && <span className="guest-badge">Guest</span>}
             <span className="message-time">{formatTime(message.created_at)}</span>
           </div>

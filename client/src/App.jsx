@@ -450,7 +450,7 @@ export default function App() {
           />
         )}
         {view?.type === 'channel' && (
-          <ChatView key={view.channel.id} channel={view.channel} user={user} users={users} onlineIds={onlineIds} />
+          <ChatView key={view.channel.id} channel={view.channel} user={user} users={users} onlineIds={onlineIds} onOpenDm={openDm} />
         )}
         {view?.type === 'tasks' && (
           <TasksBoard user={user} users={users} openTaskRequest={taskToOpen} onTaskOpened={() => setTaskToOpen(null)} />
