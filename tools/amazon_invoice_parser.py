@@ -21,7 +21,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-VERSION = "2026-07-21d (Amazon + Flipkart + Myntra + Nykaa; Myntra credit-note sign fix + duplicate flag)"
+VERSION = "2026-07-21e (Amazon + Flipkart + Myntra + Nykaa; Myntra CN sign fix + duplicate flag & highlight)"
 
 # ------------------------------------------------------------------ CONFIG
 TDS_MAP = {
@@ -344,6 +344,10 @@ def build(folder, out_path):
     ws = wb.active; ws.title = "Fee Register"
     FONT = "Arial"
     hdr_fill = PatternFill("solid", fgColor="1F4E78")
+    DUP_FILL = PatternFill("solid", fgColor="FCE4D6")   # amber — duplicate rows
+    CHECK_FILL = PatternFill("solid", fgColor="FFF2CC") # yellow — didn't reconcile
+    OK_FILL = PatternFill("solid", fgColor="E2EFDA")    # green — reconciled
+    ERR_FILL = PatternFill("solid", fgColor="F8CBAD")   # red-ish — parse error
     thin = Side(style="thin", color="BFBFBF")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
@@ -373,6 +377,8 @@ def build(folder, out_path):
         seen_numbers.setdefault(num, os.path.basename(p))
         for ln in lines:
             sec, rate, note = tds_for(ln["sac"], ln["desc"])
+            if dup_of:
+                note = (note + " | " if note else "") + f"DUPLICATE of {dup_of}"
             vals = [h.get("marketplace",""), h["doc_type"], h["number"], h.get("orig",""), h["date"],
                     h["sup_gstin"], h["rec_name"], h["rec_gstin"], h["pos"], h.get("irn",""),
                     ln["sac"], ln["desc"], ln["taxable"], ln["cgst"], ln["sgst"], ln["igst"],
@@ -380,6 +386,8 @@ def build(folder, out_path):
             for c, v in enumerate(vals, start=1):
                 cell = ws.cell(row=r, column=c, value=v)
                 cell.font = Font(name=FONT, size=10); cell.border = border
+                if dup_of:
+                    cell.fill = DUP_FILL  # highlight duplicate lines amber
             r += 1
         parsed = sum(l["taxable"] + l["sgst"] + l["cgst"] + l["igst"] for l in lines)
         stated = h.get("stated_total") or 0
@@ -417,11 +425,18 @@ def build(folder, out_path):
     ws2.append(["Document", "Status", "Detail"])
     for c in range(1, 4):
         ws2.cell(row=2, column=c).font = Font(name=FONT, bold=True)
+    status_fill = {"OK": OK_FILL, "CHECK": CHECK_FILL, "DUPLICATE": DUP_FILL, "PARSE ERROR": ERR_FILL}
     for row in recon:
         ws2.append(list(row))
+        rr = ws2.max_row
+        fill = status_fill.get(row[1])
+        if fill:
+            for c in range(1, 4):
+                ws2.cell(row=rr, column=c).fill = fill
+        ws2.cell(row=rr, column=2).font = Font(name=FONT, bold=True)
     ws2.column_dimensions["A"].width = 22
-    ws2.column_dimensions["B"].width = 10
-    ws2.column_dimensions["C"].width = 50
+    ws2.column_dimensions["B"].width = 12
+    ws2.column_dimensions["C"].width = 60
 
     wb.save(out_path)
     ok = sum(1 for _, s, _ in recon if s == "OK")
