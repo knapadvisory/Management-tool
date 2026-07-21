@@ -21,7 +21,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-VERSION = "2026-07-21c (Amazon + Flipkart + Myntra + Nykaa)"
+VERSION = "2026-07-21d (Amazon + Flipkart + Myntra + Nykaa; Myntra credit-note sign fix + duplicate flag)"
 
 # ------------------------------------------------------------------ CONFIG
 TDS_MAP = {
@@ -221,6 +221,9 @@ def parse_myntra(pdf):
         full += "\n" + (pg.extract_text() or "")
     flat = full.replace("\n", " ")
     doc_type = "Credit Note" if "credit note" in full.lower() else "Tax Invoice"
+    # Myntra prints credit notes as positive amounts (like Flipkart); store them
+    # negative so they reduce the TDS base, consistent with every other source.
+    sign = -1.0 if doc_type == "Credit Note" else 1.0
     gstins = re.findall(GSTIN_RE, flat)
     # supplier (Myntra) is the most frequently repeated GSTIN; recipient is the other
     sup = max(set(gstins), key=gstins.count) if gstins else ""
@@ -248,12 +251,12 @@ def parse_myntra(pdf):
             desc = rem if rem else " ".join(buf).strip()
             desc = re.sub(r"\(INR\)|\bRs\b|Unit Price", "", desc)
             desc = re.sub(r"\s+", " ", desc).strip()
-            v = [float(a.replace(",", "")) for a in amts]
+            v = [float(a.replace(",", "")) * sign for a in amts]
             lines.append({"sac": sac, "desc": desc, "taxable": v[-5],
                           "igst": v[-4], "cgst": v[-3], "sgst": v[-2]})
             buf = []
         elif line.lower().startswith("total") and amts:
-            stated = float(amts[-1].replace(",", ""))
+            stated = float(amts[-1].replace(",", "")) * sign
             buf = []
         elif "HSN/SAC" in line or line.startswith(("Billed", "Shipped")):
             buf = []
@@ -357,11 +360,17 @@ def build(folder, out_path):
         cell.border = border
 
     r, recon = 2, []
+    seen_numbers = {}  # doc number -> first file it appeared in (to flag duplicates)
     for p in pdfs:
         try:
             h, lines = parse_doc(p)
         except Exception as e:
             recon.append((os.path.basename(p), "PARSE ERROR", str(e))); continue
+        # Flag a repeated invoice/credit-note number: the same document uploaded
+        # twice would otherwise be counted twice in the TDS base.
+        num = h["number"] or os.path.basename(p)
+        dup_of = seen_numbers.get(num)
+        seen_numbers.setdefault(num, os.path.basename(p))
         for ln in lines:
             sec, rate, note = tds_for(ln["sac"], ln["desc"])
             vals = [h.get("marketplace",""), h["doc_type"], h["number"], h.get("orig",""), h["date"],
@@ -374,9 +383,14 @@ def build(folder, out_path):
             r += 1
         parsed = sum(l["taxable"] + l["sgst"] + l["cgst"] + l["igst"] for l in lines)
         stated = h.get("stated_total") or 0
-        flag = "OK" if abs(parsed - stated) < 0.5 else "CHECK"
-        recon.append((h["number"] or os.path.basename(p), flag,
-                      f"{h.get('marketplace','?')} {h['doc_type']}: parsed {parsed:.2f} vs printed {stated:.2f}"))
+        reconciled = abs(parsed - stated) < 0.5
+        detail = f"{h.get('marketplace','?')} {h['doc_type']}: parsed {parsed:.2f} vs printed {stated:.2f}"
+        if dup_of:
+            flag = "DUPLICATE"
+            detail = f"Same number as {dup_of} — counted twice? " + detail
+        else:
+            flag = "OK" if reconciled else "CHECK"
+        recon.append((num, flag, detail))
 
     last = r - 1
     ws.cell(row=r, column=12, value="GRAND TOTAL").font = Font(name=FONT, bold=True)
