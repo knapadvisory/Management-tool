@@ -114,6 +114,14 @@ export default function Sidebar({
         >
           ⚙ {t('nav.workflows')}
         </button>
+        {user.role !== 'guest' && (
+          <button
+            className={`nav-item ${view?.type === 'tools' ? 'active' : ''}`}
+            onClick={() => onSelectView('tools')}
+          >
+            🧾 Fee Parser
+          </button>
+        )}
         {user.role === 'admin' && (
           <button
             className={`nav-item ${view?.type === 'admin' ? 'active' : ''}`}

@@ -28,6 +28,7 @@ import driveRouter from './routes/drive.js';
 import dashboardRouter from './routes/dashboard.js';
 import timeRouter from './routes/time.js';
 import pushRouter from './routes/push.js';
+import feeParserRouter from './routes/feeParser.js';
 import setupSocket from './socket.js';
 import { startReminderScheduler, startAutoArchiveScheduler } from './reminders.js';
 import { createNotification } from './notifications.js';
@@ -320,6 +321,7 @@ app.use('/api/files', requireAuth, blockGuests, filesRouter);
 app.use('/api/drive', requireAuth, blockGuests, driveRouter);
 app.use('/api/dashboard', requireAuth, blockGuests, dashboardRouter);
 app.use('/api/time', requireAuth, blockGuests, timeRouter);
+app.use('/api/tools/fee-parser', requireAuth, blockGuests, feeParserRouter); // staff-only marketplace fee parser
 app.use('/api/push', requireAuth, pushRouter);
 app.use('/api/clients', requireAuth, blockGuests, clientsRouter);
 

@@ -4,3 +4,7 @@ server/data/
 *.log
 .env
 .DS_Store
+
+# Python bytecode from the fee parser
+__pycache__/
+*.pyc
