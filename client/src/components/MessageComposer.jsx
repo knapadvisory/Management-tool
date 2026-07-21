@@ -3,6 +3,7 @@ import { uploadFiles } from '../api.js';
 import { getSocket } from '../socket.js';
 import { getPrefs } from '../prefs.js';
 import { formatBytes } from '../format.js';
+import { getDraft, setDraft, clearDraft } from '../drafts.js';
 import EmojiPicker from './EmojiPicker.jsx';
 
 // Icon + human label for a selected (not-yet-uploaded) File.
@@ -69,6 +70,24 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
     if (autoFocus) editorRef.current?.focus();
   }, [autoFocus]);
 
+  // Restore any saved draft for this conversation (survives leaving the chat
+  // or reloading the app), and re-link @mentions found in it.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const html = getDraft(channel.id);
+    editor.innerHTML = html || '';
+    const hasText = !!editor.textContent.replace(/​/g, '').trim();
+    setEmpty(!hasText);
+    if (hasText) {
+      const text = editor.textContent;
+      const restored = {};
+      for (const m of others) if (m.name && text.includes(`@${m.name}`)) restored[m.name] = m.id;
+      setMentioned(restored);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel.id]);
+
   useImperativeHandle(ref, () => ({
     addFiles(list) { if (list && list.length) setFiles((fs) => [...fs, ...list]); editorRef.current?.focus(); },
     focus() { editorRef.current?.focus(); },
@@ -80,6 +99,7 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
   function syncState() {
     const editor = editorRef.current;
     setEmpty(!editor || !editor.textContent.replace(/\u200B/g, "").trim());
+    if (editor) setDraft(channel.id, editor.innerHTML); // keep the draft persisted
     getSocket()?.emit('typing', { channel_id: channel.id });
     // Detect an in-progress @mention just before the caret.
     const sel = window.getSelection();
@@ -186,6 +206,7 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
 
     getSocket()?.emit('message:send', { channel_id: channel.id, content, parent_id: replyTo?.id ?? parentId, attachment_ids, mention_user_ids });
     if (editor) editor.innerHTML = '';
+    clearDraft(channel.id);
     setFiles([]);
     setMentioned({});
     setSuggest(null);
