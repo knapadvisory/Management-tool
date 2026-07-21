@@ -1995,6 +1995,13 @@ button.c360-stat:hover { border-color: var(--accent); }
 
   /* Let the main column shrink so its inner views scroll above the tab bar. */
   .main { min-height: 0; }
+  /* The active view sits below the top bar and must fill only the remaining
+     height, scrolling internally. Views use height:100%, which (as a flex
+     item under .main, alongside the top bar) overflows past the top bar and
+     shoves pinned-bottom UI — the chat composer — down onto the tab bar.
+     min-height:0 lets the view shrink to fit so the composer stays put. */
+  .main > .mobile-topbar, .main > .ptr { flex: none; }
+  .main > :not(.mobile-topbar):not(.ptr) { min-height: 0; }
 
   /* --- Mobile top bar (hamburger + title + search) --- */
   .mobile-topbar {
