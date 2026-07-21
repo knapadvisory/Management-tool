@@ -1617,6 +1617,10 @@ button.closed-row:hover { background: var(--surface-2); }
 .message.own .message-bubble .message-text * { color: var(--on-accent); }
 .message.own .message-bubble a { color: #fff; text-decoration: underline; }
 .message.own .message-bubble code { background: rgba(255,255,255,.22); color: #fff; }
+/* A mention inside your own (accent-coloured) bubble: the light default chip
+   would leave white text on a light background, so use a translucent white
+   chip with white text instead. */
+.message.own .message-bubble .mention { background: rgba(255,255,255,.25); color: #fff; }
 .message-bubble .attachments { margin-top: 6px; }
 .message.own .reactions { justify-content: flex-end; }
 
