@@ -383,6 +383,18 @@ router.patch('/:id', (req, res) => {
   const newAssignees = incomingAssignees(req.body); // undefined = no change
   const oldAssignees = assigneeIdsFor(task.id);
 
+  // Progress is the doer's to report: only an assignee may change the status.
+  // Assigners, admins and watchers rate the work afterwards — they don't move
+  // it. (If a task has no assignee, its creator may set the status so it isn't
+  // stuck.)
+  if (status !== undefined && status !== task.status) {
+    const isAssignee = oldAssignees.includes(req.user.id);
+    const creatorFallback = oldAssignees.length === 0 && task.creator_id === req.user.id;
+    if (!isAssignee && !creatorFallback) {
+      return res.status(403).json({ error: 'Only the assignee can change the task status.' });
+    }
+  }
+
   if (priority !== undefined && !PRIORITIES.includes(priority)) {
     return res.status(400).json({ error: 'Invalid priority' });
   }

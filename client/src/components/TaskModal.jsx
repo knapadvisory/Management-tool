@@ -128,6 +128,9 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   const workflow = workflows.find((w) => w.id === task.workflow_id) || workflows[0];
   const watching = watchers.some((w) => w.id === user.id);
   const canArchive = user.role === 'admin' || task.creator?.id === user.id || (task.assignees || []).some((a) => a.id === user.id);
+  // Only an assignee moves the task's progress (or its creator if unassigned).
+  const isAssignee = (task.assignees || []).some((a) => a.id === user.id);
+  const canChangeStatus = isAssignee || ((task.assignees || []).length === 0 && task.creator?.id === user.id);
   const doneCount = checklist.filter((i) => i.is_done).length;
   const progress = checklist.length ? Math.round((doneCount / checklist.length) * 100) : 0;
 
@@ -145,7 +148,7 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
 
-        <StatusControl task={task} onUpdate={update} />
+        <StatusControl task={task} onUpdate={update} canEdit={canChangeStatus} />
 
         <div className="task-fields">
           <label>Stage

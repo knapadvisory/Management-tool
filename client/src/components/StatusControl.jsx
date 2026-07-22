@@ -3,10 +3,25 @@ import { TASK_STATUSES, statusMeta, needsReason } from '../status.js';
 
 // Status picker for a task. In Progress / Completed apply immediately;
 // On Hold / Cancelled reveal a required reason before saving.
-export default function StatusControl({ task, onUpdate }) {
+export default function StatusControl({ task, onUpdate, canEdit = true }) {
   const [pending, setPending] = useState(null); // a hold/cancelled awaiting its reason
   const [reason, setReason] = useState('');
   const current = statusMeta(task.status);
+
+  // Only the assignee moves a task's progress. Everyone else sees it read-only.
+  if (!canEdit) {
+    return (
+      <div className="status-control">
+        <div className="status-row">
+          <span className="status-badge" style={{ background: current.color }}>{current.label}</span>
+          <span className="muted status-locked">Only the assignee can change this</span>
+        </div>
+        {needsReason(task.status) && task.status_reason && (
+          <div className="status-reason-shown">📄 Reason: {task.status_reason}</div>
+        )}
+      </div>
+    );
+  }
 
   function choose(value) {
     if (value === task.status) { setPending(null); return; }
