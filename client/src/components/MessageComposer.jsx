@@ -185,11 +185,16 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
   }
 
   async function send() {
+    if (uploading) return; // guard against a double-send (e.g. Enter pressed twice)
     const editor = editorRef.current;
     let content = '';
     try { content = nodeToMarkdown(editor).replace(/[\u200B]/g, "").replace(/\u00A0/g, " ").trim(); }
     catch { content = (editor?.textContent || '').trim(); }
     if (!content && files.length === 0) return;
+
+    // Don't lose the message if the socket is down \u2014 bail and keep the draft.
+    const socket = getSocket();
+    if (!socket || socket.disconnected) { alert('Reconnecting\u2026 please try again in a moment.'); return; }
 
     let attachment_ids = [];
     if (files.length) {
@@ -204,7 +209,7 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
       .filter(([name]) => content.includes(`@${name}`))
       .map(([, id]) => id);
 
-    getSocket()?.emit('message:send', { channel_id: channel.id, content, parent_id: replyTo?.id ?? parentId, attachment_ids, mention_user_ids });
+    socket.emit('message:send', { channel_id: channel.id, content, parent_id: replyTo?.id ?? parentId, attachment_ids, mention_user_ids });
     if (editor) editor.innerHTML = '';
     clearDraft(channel.id);
     setFiles([]);

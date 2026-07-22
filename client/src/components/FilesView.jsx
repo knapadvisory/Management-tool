@@ -287,7 +287,9 @@ export default function FilesView({ user, users = [], initialMode = 'files' }) {
     const a = document.createElement('a');
     a.href = zipUrl(fileIds, folderIds);
     a.download = 'TeamHub_files.zip';
+    document.body.appendChild(a);
     a.click();
+    a.remove();
   }
 
   function toggle(id) {
@@ -572,7 +574,7 @@ export default function FilesView({ user, users = [], initialMode = 'files' }) {
             openFile: (f) => setPreview(f),
             openFolder,
             download: (f) => downloadFile(f),
-            downloadFolder: (f) => { const a = document.createElement('a'); a.href = zipUrl([], [f.id]); a.download = 'TeamHub_files.zip'; a.click(); },
+            downloadFolder: (f) => { const a = document.createElement('a'); a.href = zipUrl([], [f.id]); a.download = 'TeamHub_files.zip'; document.body.appendChild(a); a.click(); a.remove(); },
             copy: (f) => copyToClipboard([f], 'copy'),
             cut: (f) => copyToClipboard([f], 'cut'),
             paste,

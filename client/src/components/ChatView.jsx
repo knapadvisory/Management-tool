@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
-import { getSocket } from '../socket.js';
+import { getSocket, onSocket } from '../socket.js';
 import { getPrefs } from '../prefs.js';
 import { localeArg } from '../prefs.js';
 import Avatar from './Avatar.jsx';
@@ -72,14 +72,12 @@ export default function ChatView({ channel, user, users = [], onlineIds, onOpenD
     initialLoadRef.current = true; // next render should jump straight to newest
     api(`/channels/${channel.id}/messages`).then((d) => setMessages(d.messages));
 
-    const socket = getSocket();
-    if (!socket) return;
     const onNew = ({ message }) => {
       if (message.channel_id !== channel.id) return;
       setMessages((m) => (m.some((x) => x.id === message.id) ? m : [...m, message]));
       // We're looking at this conversation, so a message from someone else is
       // read the moment it arrives — tell the server so their tick goes blue.
-      if (message.user_id !== user.id) socket.emit('channel:read', { channel_id: channel.id });
+      if (message.user_id !== user.id) getSocket()?.emit('channel:read', { channel_id: channel.id });
     };
     // Delivery/read marks changed — restatus our own messages (blue when read).
     const onReceipts = ({ channel_id, read_up_to, delivered_up_to }) => {
@@ -102,19 +100,27 @@ export default function ChatView({ channel, user, users = [], onlineIds, onOpenD
       typingTimeout.current = setTimeout(() => setTypingUser(null), 2500);
     };
     const onCleared = ({ channel_id }) => { if (channel_id === channel.id) setMessages([]); };
-    socket.on('message:new', onNew);
-    socket.on('message:updated', onUpdated);
-    socket.on('typing', onTyping);
-    socket.on('conversation:cleared', onCleared);
-    socket.on('channel:receipts', onReceipts);
-    // Opening the conversation marks it read (so senders' ticks turn blue).
-    socket.emit('channel:read', { channel_id: channel.id });
+    // Attach via onSocket so the listeners survive a socket reconnect (a raw
+    // getSocket() snapshot would go stale and silently stop receiving events).
+    const detach = onSocket((socket) => {
+      socket.on('message:new', onNew);
+      socket.on('message:updated', onUpdated);
+      socket.on('typing', onTyping);
+      socket.on('conversation:cleared', onCleared);
+      socket.on('channel:receipts', onReceipts);
+      // Opening the conversation marks it read (so senders' ticks turn blue).
+      socket.emit('channel:read', { channel_id: channel.id });
+    });
     return () => {
-      socket.off('message:new', onNew);
-      socket.off('message:updated', onUpdated);
-      socket.off('typing', onTyping);
-      socket.off('conversation:cleared', onCleared);
-      socket.off('channel:receipts', onReceipts);
+      detach();
+      const socket = getSocket();
+      if (socket) {
+        socket.off('message:new', onNew);
+        socket.off('message:updated', onUpdated);
+        socket.off('typing', onTyping);
+        socket.off('conversation:cleared', onCleared);
+        socket.off('channel:receipts', onReceipts);
+      }
       clearTimeout(typingTimeout.current);
     };
   }, [channel.id, user.id]);

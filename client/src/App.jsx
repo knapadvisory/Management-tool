@@ -161,20 +161,23 @@ export default function App() {
     // it's a conversation we don't have loaded yet, e.g. a brand-new DM).
     socket.on('message:new', ({ message }) => {
       if (!message?.channel_id) return;
+      let found = false;
       setChannels((cs) => {
-        let found = false;
-        const next = cs.map((c) => {
-          if (c.id !== message.channel_id) return c;
-          found = true;
-          return {
-            ...c,
-            last_message: { user_id: message.user_id, user_name: message.user_name, content: message.content || '📎 Attachment' },
-            last_activity: message.created_at,
-          };
-        });
-        if (!found) refreshChannels();
-        return found ? next : cs;
+        found = cs.some((c) => c.id === message.channel_id);
+        if (!found) return cs;
+        return cs.map((c) => (
+          c.id === message.channel_id
+            ? {
+              ...c,
+              last_message: { user_id: message.user_id, user_name: message.user_name, content: message.content || '📎 Attachment' },
+              last_activity: message.created_at,
+            }
+            : c
+        ));
       });
+      // A message arrived for a conversation we don't have yet (e.g. a brand-new
+      // DM) — pull the list. Done outside the updater to avoid a double-invoke.
+      if (!found) refreshChannels();
     });
     socket.on('account:deactivated', () => { showToast('Your access has been revoked by an administrator.'); logout(); });
     socket.on('notification:new', ({ notification, unread_count }) => {

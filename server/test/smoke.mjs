@@ -764,6 +764,16 @@ async function main() {
   check('drive is visible to every teammate', bobDrive.data.files.some((f) => f.id === driveFile.id));
   const bobDriveDl = await fetch(`${BASE}/api/uploads/${driveFile.id}?token=${b}`);
   check('teammate can download a drive file', bobDriveDl.status === 200);
+  // A guest (external client in a collab) is in the workspace but must NOT be
+  // able to reach the staff-only shared Drive — via either single-file or zip.
+  const guestLink = await req('POST', `/api/collabs/${collabId}/invite`, { token: a });
+  const guestJoin = await req('POST', `/api/invite/${guestLink.data.guest_token}/join`, { body: { name: 'Client Guest', password: 'guestpass123' } });
+  const guestTok = guestJoin.data.token;
+  check('guest account created via invite', guestJoin.status === 201 && guestJoin.data.user.role === 'guest');
+  const guestDriveDl = await fetch(`${BASE}/api/uploads/${driveFile.id}?token=${guestTok}`);
+  check('a guest cannot download a shared-Drive file', guestDriveDl.status === 403);
+  const guestZip = await fetch(`${BASE}/api/uploads/zip?files=${driveFile.id}&token=${guestTok}`);
+  check('a guest cannot zip-download Drive files', guestZip.status === 403);
   const driveSearch = await req('GET', '/api/drive?q=drive-note', { token: b });
   check('drive search filters by name', driveSearch.data.files.some((f) => f.id === driveFile.id));
   check('drive search sets the searching flag', driveSearch.data.searching === true);

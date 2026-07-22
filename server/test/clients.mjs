@@ -149,7 +149,11 @@ async function main() {
   check('a deadline will not spawn a second task', dupTask.status === 400);
   // Complete the task -> deadline is filed and the next month's PF is created.
   const doneStage = (await req('GET', '/api/workflows', { token: a })).data.workflows[0].stages.find((s) => s.is_done);
-  await req('PATCH', `/api/tasks/${gen.data.task_id}`, { token: a, body: { stage_id: doneStage.id } });
+  // Only the assignee (Bob) may move the task into a done stage — completing
+  // it as the admin creator is now rejected (progress is the doer's to report).
+  const adminComplete = await req('PATCH', `/api/tasks/${gen.data.task_id}`, { token: a, body: { stage_id: doneStage.id } });
+  check('admin cannot complete the assignee\'s task via a stage move', adminComplete.status === 403);
+  await req('PATCH', `/api/tasks/${gen.data.task_id}`, { token: b, body: { stage_id: doneStage.id } });
   const afterDl = await req('GET', `/api/clients/${cid2}`, { token: a });
   check('completing the task filed the deadline', afterDl.data.deadlines.find((d) => d.id === pfDeadline.id).completed === 1);
   check('the next month\'s PF deadline was spawned (keeping the assignee)', afterDl.data.deadlines.some((d) => d.title === 'PF payment' && d.completed === 0 && d.due_date === '2026-09-15' && d.assignee_name === 'Bob'));

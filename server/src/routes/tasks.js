@@ -426,6 +426,17 @@ router.patch('/:id', (req, res) => {
     const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ? AND workflow_id = ?').get(stage_id, task.workflow_id);
     if (!stage) return res.status(400).json({ error: 'Stage does not belong to this workflow' });
     const oldStage = db.prepare('SELECT * FROM workflow_stages WHERE id = ?').get(task.stage_id);
+    // Moving into (or out of) a "done" stage completes/reopens the task, which
+    // is a progress change — same rule as the status field: only the assignee
+    // (or the creator when there's no assignee) may do it.
+    const crossesDone = (!!stage.is_done) !== (!!oldStage?.is_done);
+    if (crossesDone) {
+      const isAssignee = oldAssignees.includes(req.user.id);
+      const creatorFallback = oldAssignees.length === 0 && task.creator_id === req.user.id;
+      if (!isAssignee && !creatorFallback) {
+        return res.status(403).json({ error: 'Only the assignee can move a task into or out of a done stage.' });
+      }
+    }
     logActivity(task.id, req.user.id, `moved it to "${stage.name}"`);
     notifyWatchers(req, task, `moved to "${stage.name}"`, 'task_moved');
     movedToDone = !!stage.is_done && !oldStage?.is_done;

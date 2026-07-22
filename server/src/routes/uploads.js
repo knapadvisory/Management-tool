@@ -11,6 +11,22 @@ import { verifyToken, requireAuth, publicUser } from '../auth.js';
 const require = createRequire(import.meta.url);
 const archiver = require('archiver'); // CJS module loaded into this ESM file
 
+// Resolve the caller from a Bearer header or ?token= (used by <a download>),
+// rejecting deactivated/deleted accounts (the routes below aren't behind the
+// requireAuth middleware, so we replicate its active/deleted check here).
+function userFromToken(req) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : req.query.token;
+  let payload;
+  try { payload = verifyToken(token); } catch { return null; }
+  const u = db.prepare('SELECT id, workspace_id, role, active, deleted FROM users WHERE id = ?').get(payload.id);
+  if (!u || u.deleted || u.active === 0) return null;
+  return u;
+}
+// A safe single path segment for a zip entry — no separators or ".." so a
+// folder/file named "../x" can't write outside the extract dir (zip-slip).
+const safeSeg = (s) => (String(s || '').replace(/[\\/]+/g, '_').replace(/^\.+$/, '_').trim() || '_');
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
 const uploadDir = path.join(dataDir, 'uploads');
@@ -77,16 +93,11 @@ router.post('/', requireAuth, upload.array('files', 10), (req, res) => {
 // nested structure). Auth via query token so a plain <a download> works in the
 // browser and the native WebView. Defined BEFORE /:id so "zip" isn't an id.
 router.get('/zip', (req, res) => {
-  let userId;
-  try {
-    const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : req.query.token;
-    userId = verifyToken(token).id;
-  } catch {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-  const me = db.prepare('SELECT workspace_id FROM users WHERE id = ?').get(userId);
-  const wsId = me?.workspace_id;
+  const me = userFromToken(req);
+  if (!me) return res.status(401).json({ error: 'Invalid token' });
+  // The zip only bundles shared-Drive files, which guests cannot access.
+  if (me.role === 'guest') return res.status(403).json({ error: 'Not allowed' });
+  const wsId = me.workspace_id;
   if (!wsId) return res.status(403).json({ error: 'Not allowed' });
 
   const parseIds = (s) => String(s || '').split(',').map((n) => parseInt(n, 10)).filter(Boolean);
@@ -99,7 +110,7 @@ router.get('/zip', (req, res) => {
   const byId = new Map(allFolders.map((f) => [f.id, f]));
   const relPath = (fid) => {
     const parts = []; let cur = byId.get(fid); let guard = 0;
-    while (cur && guard++ < 50) { parts.unshift(cur.name); cur = cur.parent_id ? byId.get(cur.parent_id) : null; }
+    while (cur && guard++ < 50) { parts.unshift(safeSeg(cur.name)); cur = cur.parent_id ? byId.get(cur.parent_id) : null; }
     return parts.join('/');
   };
   const wantFolders = new Set();
@@ -121,14 +132,16 @@ router.get('/zip', (req, res) => {
   if (fileIds.length) {
     const ph = fileIds.map(() => '?').join(',');
     const rows = db.prepare(`SELECT id, stored_name, original_name FROM attachments WHERE is_drive = 1 AND archived_at IS NULL AND workspace_id = ? AND id IN (${ph})`).all(wsId, ...fileIds);
-    for (const a of rows) addFile(a, a.original_name);
+    for (const a of rows) addFile(a, safeSeg(a.original_name));
   }
   for (const fid of wantFolders) {
     const base = relPath(fid);
     const rows = db.prepare('SELECT id, stored_name, original_name FROM attachments WHERE is_drive = 1 AND archived_at IS NULL AND workspace_id = ? AND drive_folder_id = ?').all(wsId, fid);
-    for (const a of rows) addFile(a, base ? `${base}/${a.original_name}` : a.original_name);
+    for (const a of rows) addFile(a, base ? `${base}/${safeSeg(a.original_name)}` : safeSeg(a.original_name));
   }
   if (!entries.length) return res.status(404).json({ error: 'No files to download' });
+  // Guard against an accidental "zip the whole Drive" request.
+  if (entries.length > 2000) return res.status(413).json({ error: 'Too many files at once — select fewer.' });
 
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', 'attachment; filename="TeamHub_files.zip"');
@@ -150,21 +163,15 @@ router.get('/zip', (req, res) => {
 });
 
 router.get('/:id', (req, res) => {
-  let userId;
-  try {
-    const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : req.query.token;
-    userId = verifyToken(token).id;
-  } catch {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
+  const me = userFromToken(req);
+  if (!me) return res.status(401).json({ error: 'Invalid token' });
+  const userId = me.id;
 
   const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(req.params.id);
   if (!att) return res.status(404).json({ error: 'File not found' });
 
   // The requester must belong to the same workspace the file lives in.
-  const me = db.prepare('SELECT workspace_id, role FROM users WHERE id = ?').get(userId);
-  if (att.workspace_id && att.workspace_id !== me?.workspace_id) return res.status(403).json({ error: 'Not allowed' });
+  if (att.workspace_id && att.workspace_id !== me.workspace_id) return res.status(403).json({ error: 'Not allowed' });
 
   // A file lives inside a task only if the requester can see that task
   // (creator, assignee, watcher, or admin) — task visibility is NOT workspace-wide.
@@ -188,11 +195,13 @@ router.get('/:id', (req, res) => {
     const task = db.prepare('SELECT t.* FROM tasks t JOIN task_messages tm ON tm.task_id = t.id WHERE tm.id = ?').get(att.task_message_id);
     if (!canSeeTask(task)) return res.status(403).json({ error: 'Not allowed' });
   } else if (att.is_drive) {
-    // The shared Drive is workspace-wide (already scoped above).
+    // The shared Drive is staff-only; guests (external clients) can't browse it.
+    if (me.role === 'guest') return res.status(403).json({ error: 'Not allowed' });
   } else if (att.is_avatar) {
     // Profile photos are visible to the whole workspace (already scoped above).
   } else if (att.client_id) {
-    // Client documents are visible to the workspace's staff (scoped above).
+    // Client documents are visible to the workspace's staff, not to guests.
+    if (me.role === 'guest') return res.status(403).json({ error: 'Not allowed' });
   } else if (att.uploader_id !== userId) {
     return res.status(403).json({ error: 'Not allowed' });
   }

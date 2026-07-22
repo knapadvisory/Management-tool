@@ -76,7 +76,7 @@ function RatingModal({ item, user, users, onClose, onDone }) {
     try {
       await api(`/tasks/ratings/${item.id}`, {
         method: 'POST',
-        body: { stars, comment: comment.trim(), manager_id: isSelf ? Number(managerId) : undefined },
+        body: { stars, comment: comment.trim(), manager_id: isSelf && managerId ? Number(managerId) : undefined },
       });
       onDone();
     } catch (e) { setErr(e.message); setBusy(false); }

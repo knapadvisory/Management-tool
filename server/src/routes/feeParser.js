@@ -67,7 +67,7 @@ router.post('/process', upload.array('files', 80), (req, res) => {
     if (line) { try { payload = JSON.parse(line.slice('RECON_JSON:'.length)); } catch { /* keep default */ } }
 
     const token = crypto.randomBytes(12).toString('hex');
-    JOBS.set(token, { file: out, dir: work, expires: Date.now() + TTL });
+    JOBS.set(token, { file: out, dir: work, expires: Date.now() + TTL, userId: req.user?.id });
     const rows = payload.rows || [];
     const ok = rows.filter((r) => r.status === 'OK').length;
     res.json({ token, rows, ok, total: rows.length, version: payload.version || '' });
@@ -79,6 +79,11 @@ router.get('/download/:token', (req, res) => {
   const job = JOBS.get(req.params.token);
   if (!job || !fs.existsSync(job.file)) {
     return res.status(404).send('This register has expired. Please process the files again.');
+  }
+  // A token is a bearer credential, but tie it to its creator anyway so one
+  // staffer's register can't be pulled by another who guessed/observed the token.
+  if (job.userId && job.userId !== req.user?.id) {
+    return res.status(403).send('This register belongs to another user.');
   }
   res.download(job.file, 'Fee_Register.xlsx');
 });
