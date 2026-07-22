@@ -46,7 +46,9 @@ export default function ChatView({ channel, user, users = [], onlineIds, onOpenD
     if (!el) return true;
     return el.scrollHeight - el.scrollTop - el.clientHeight < 300;
   };
-  const scrollToBottom = (behavior = 'auto') => bottomRef.current?.scrollIntoView({ behavior });
+  // Scroll the message list itself straight to the bottom — more reliable than
+  // scrollIntoView, which can target the wrong ancestor or land short.
+  const scrollToBottom = () => { const el = messagesRef.current; if (el) el.scrollTop = el.scrollHeight; };
 
   function onDrop(e) {
     e.preventDefault();
@@ -122,12 +124,16 @@ export default function ChatView({ channel, user, users = [], onlineIds, onOpenD
   // messages, smooth-scroll only if you were already near the bottom.
   useEffect(() => {
     if (initialLoadRef.current) {
-      scrollToBottom('auto');
-      requestAnimationFrame(() => scrollToBottom('auto'));
+      if (!messages.length) return undefined; // wait until the first page has loaded
       initialLoadRef.current = false;
-    } else if (isNearBottom()) {
-      scrollToBottom('smooth');
+      // Jump to newest now, and again as heights/images settle over ~0.7s.
+      scrollToBottom();
+      requestAnimationFrame(scrollToBottom);
+      const timers = [80, 250, 600].map((ms) => setTimeout(scrollToBottom, ms));
+      return () => timers.forEach(clearTimeout);
     }
+    if (isNearBottom()) scrollToBottom();
+    return undefined;
   }, [messages]);
 
   // Late-loading images/attachments grow the page after the initial scroll,
