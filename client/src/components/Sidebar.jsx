@@ -12,6 +12,7 @@ import clientIco from '../assets/icons/Client.png';
 import workflowIco from '../assets/icons/Workflow.png';
 import toolsIco from '../assets/icons/Tools.png';
 import adminIco from '../assets/icons/admin.png';
+import analyticsIco from '../assets/icons/Analytics.png';
 
 export default function Sidebar({
   user, workspace, channels, joinable, users, onlineIds, view,
@@ -129,7 +130,7 @@ export default function Sidebar({
             className={`nav-item ${view?.type === 'analytics' ? 'active' : ''}`}
             onClick={() => onSelectView('analytics')}
           >
-            <span className="nav-logo">📊</span> Analytics
+            <img className="nav-ico" src={analyticsIco} alt="" /> Analytics
           </button>
         )}
         {user.role !== 'guest' && (
