@@ -18,7 +18,12 @@
 set -euo pipefail
 
 CONFIG=/root/teamhub.env
+# Let values passed on the command line (e.g. `HR_URL=... bash deploy/vps-setup.sh`)
+# win over what's saved in the config, which we source next — otherwise the saved
+# (possibly empty) value would clobber the override.
+_cli_HR_URL="${HR_URL:-}"
 [ -f "$CONFIG" ] && source "$CONFIG"
+[ -n "${_cli_HR_URL}" ] && HR_URL="${_cli_HR_URL}"
 
 if [ -z "${DOMAIN:-}" ]; then read -rp "Your domain (e.g. teamhub.knapadvisory.com): " DOMAIN; fi
 if [ -z "${SIGNUP_CODE:-}" ]; then read -rp "Sign-up access code for your team: " SIGNUP_CODE; fi
