@@ -2,6 +2,16 @@ import React, { useState } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
 import { t } from '../i18n.js';
+import homeIco from '../assets/icons/Home.png';
+import dmsIco from '../assets/icons/DMs.png';
+import peopleIco from '../assets/icons/People.png';
+import activityIco from '../assets/icons/Activity.png';
+import filesIco from '../assets/icons/Files.png';
+import taskIco from '../assets/icons/Task.png';
+import clientIco from '../assets/icons/Client.png';
+import workflowIco from '../assets/icons/Workflow.png';
+import toolsIco from '../assets/icons/Tools.png';
+import adminIco from '../assets/icons/admin.png';
 
 export default function Sidebar({
   user, workspace, channels, joinable, users, onlineIds, view,
@@ -67,59 +77,59 @@ export default function Sidebar({
           className={`nav-item ${view?.type === 'dashboard' ? 'active' : ''}`}
           onClick={() => onSelectView('dashboard')}
         >
-          <span className="nav-logo">🏠</span> {t('nav.home')}
+          <img className="nav-ico" src={homeIco} alt="" /> {t('nav.home')}
         </button>
         <button
           className={`nav-item ${view?.type === 'messenger' ? 'active' : ''}`}
           onClick={() => onSelectView('messenger')}
         >
-          <span className="nav-logo">💬</span> {t('nav.dms')}
+          <img className="nav-ico" src={dmsIco} alt="" /> {t('nav.dms')}
           {badge(dmUnread)}
         </button>
         <button
           className={`nav-item ${(view?.type === 'team' || view?.type === 'collabs') ? 'active' : ''}`}
           onClick={() => onSelectView('team')}
         >
-          <span className="nav-logo">👥</span> {t('nav.people')}
+          <img className="nav-ico" src={peopleIco} alt="" /> {t('nav.people')}
         </button>
         <button
           className={`nav-item ${view?.type === 'activity' ? 'active' : ''}`}
           onClick={() => onSelectView('activity')}
         >
-          <span className="nav-logo">🔔</span> {t('nav.activity')}
+          <img className="nav-ico" src={activityIco} alt="" /> {t('nav.activity')}
           {unreadCount > 0 && <span className="nav-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
         </button>
         <button
           className={`nav-item ${view?.type === 'files' ? 'active' : ''}`}
           onClick={() => onSelectView('files')}
         >
-          <span className="nav-logo">🗂️</span> {t('nav.files')}
+          <img className="nav-ico" src={filesIco} alt="" /> {t('nav.files')}
         </button>
         <button
           className={`nav-item ${view?.type === 'tasks' ? 'active' : ''}`}
           onClick={() => onSelectView('tasks')}
         >
-          ☑ {t('nav.tasks')}
+          <img className="nav-ico" src={taskIco} alt="" /> {t('nav.tasks')}
           {badge(tasksUnread)}
         </button>
         <button
           className={`nav-item ${view?.type === 'clients' ? 'active' : ''}`}
           onClick={() => onSelectView('clients')}
         >
-          <span className="nav-logo">🗂️</span> {t('nav.clients')}
+          <img className="nav-ico" src={clientIco} alt="" /> {t('nav.clients')}
         </button>
         <button
           className={`nav-item ${view?.type === 'workflows' ? 'active' : ''}`}
           onClick={() => onSelectView('workflows')}
         >
-          ⚙ {t('nav.workflows')}
+          <img className="nav-ico" src={workflowIco} alt="" /> {t('nav.workflows')}
         </button>
         {user.role !== 'guest' && (
           <button
             className={`nav-item ${view?.type === 'tools' ? 'active' : ''}`}
             onClick={() => onSelectView('tools')}
           >
-            🧰 KNAP Tools
+            <img className="nav-ico" src={toolsIco} alt="" /> KNAP Tools
           </button>
         )}
         {user.role === 'admin' && (
@@ -127,7 +137,7 @@ export default function Sidebar({
             className={`nav-item ${view?.type === 'admin' ? 'active' : ''}`}
             onClick={() => onSelectView('admin')}
           >
-            👑 {t('nav.admin')}
+            <img className="nav-ico" src={adminIco} alt="" /> {t('nav.admin')}
           </button>
         )}
       </nav>

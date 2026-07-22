@@ -11,6 +11,11 @@ import ChatView from './components/ChatView.jsx';
 import TasksBoard from './components/TasksBoard.jsx';
 import WorkflowsView from './components/WorkflowsView.jsx';
 import KnapTools from './components/KnapTools.jsx';
+import homeIco from './assets/icons/Home.png';
+import taskIco from './assets/icons/Task.png';
+import dmsIco from './assets/icons/DMs.png';
+import filesIco from './assets/icons/Files.png';
+import clientIco from './assets/icons/Client.png';
 import ClientsView from './components/ClientsView.jsx';
 import TimesheetView from './components/TimesheetView.jsx';
 import AdminPanel from './components/AdminPanel.jsx';
@@ -490,11 +495,11 @@ export default function App() {
       </main>
       <nav className="mobile-tabbar">
         {[
-          { type: 'dashboard', icon: '🏠', label: 'Home' },
-          { type: 'tasks', icon: '🗂️', label: 'Tasks' },
-          { type: 'messenger', icon: '💬', label: 'Chat', match: (t) => t === 'messenger' || t === 'channel' },
-          { type: 'files', icon: '📁', label: 'Files', match: (t) => t === 'files' || t === 'drive' },
-          { type: 'clients', icon: '🏢', label: 'Clients' },
+          { type: 'dashboard', ico: homeIco, label: 'Home' },
+          { type: 'tasks', ico: taskIco, label: 'Tasks' },
+          { type: 'messenger', ico: dmsIco, label: 'Chat', match: (t) => t === 'messenger' || t === 'channel' },
+          { type: 'files', ico: filesIco, label: 'Files', match: (t) => t === 'files' || t === 'drive' },
+          { type: 'clients', ico: clientIco, label: 'Clients' },
         ].map((t) => {
           const active = t.match ? t.match(view?.type) : view?.type === t.type;
           return (
@@ -503,7 +508,7 @@ export default function App() {
               className={`tabbar-btn ${active ? 'active' : ''}`}
               onClick={() => { setView({ type: t.type }); setDrawerOpen(false); }}
             >
-              <span className="tabbar-icon">{t.icon}</span>
+              <img className="tabbar-ico" src={t.ico} alt="" />
               <span className="tabbar-label">{t.label}</span>
             </button>
           );
