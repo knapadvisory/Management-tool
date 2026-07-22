@@ -2166,7 +2166,7 @@ button.c360-stat:hover { border-color: var(--accent); }
 .feeparser-note { margin-top: 14px; font-size: 12.5px; }
 
 /* --- KNAP Tools hub --- */
-.tools-page { max-width: 860px; margin: 0 auto; padding: 24px; height: 100%; overflow-y: auto; }
+.tools-page { max-width: 860px; margin: 0; padding: 24px 24px 24px 32px; height: 100%; overflow-y: auto; }
 .tools-head h2 { font-size: 22px; }
 .tools-head .muted { margin: 4px 0 20px; }
 .tools-back { margin-bottom: 16px; }
