@@ -13,6 +13,7 @@ import workflowIco from '../assets/icons/Workflow.png';
 import toolsIco from '../assets/icons/Tools.png';
 import adminIco from '../assets/icons/admin.png';
 import analyticsIco from '../assets/icons/Analytics.png';
+import timesheetIco from '../assets/icons/Timesheet.png';
 
 export default function Sidebar({
   user, workspace, channels, joinable, users, onlineIds, view,
@@ -70,7 +71,7 @@ export default function Sidebar({
       </button>
 
       <button className={`nav-item ${view?.type === 'timesheet' ? 'active' : ''}`} onClick={() => onSelectView('timesheet')}>
-        <span className="nav-logo">⏱️</span> {t('nav.timesheet')}
+        <img className="nav-ico" src={timesheetIco} alt="" /> {t('nav.timesheet')}
       </button>
 
       <nav className="sidebar-nav">
