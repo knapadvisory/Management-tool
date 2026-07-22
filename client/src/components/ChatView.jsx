@@ -35,9 +35,18 @@ export default function ChatView({ channel, user, users = [], onlineIds, onOpenD
   const [replyTo, setReplyTo] = useState(null); // message being replied to (WhatsApp-style)
   const [dragOver, setDragOver] = useState(false);
   const bottomRef = useRef(null);
+  const messagesRef = useRef(null);
+  const initialLoadRef = useRef(true);
   const typingTimeout = useRef(null);
   const composerRef = useRef(null);
   const dragDepth = useRef(0);
+
+  const isNearBottom = () => {
+    const el = messagesRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 300;
+  };
+  const scrollToBottom = (behavior = 'auto') => bottomRef.current?.scrollIntoView({ behavior });
 
   function onDrop(e) {
     e.preventDefault();
@@ -58,6 +67,7 @@ export default function ChatView({ channel, user, users = [], onlineIds, onOpenD
 
   useEffect(() => {
     setReplyTo(null);
+    initialLoadRef.current = true; // next render should jump straight to newest
     api(`/channels/${channel.id}/messages`).then((d) => setMessages(d.messages));
 
     const socket = getSocket();
@@ -107,9 +117,29 @@ export default function ChatView({ channel, user, users = [], onlineIds, onOpenD
     };
   }, [channel.id, user.id]);
 
+  // Keep the view pinned to the newest message. On first load of a conversation
+  // jump instantly (and again next frame, once heights settle); for later
+  // messages, smooth-scroll only if you were already near the bottom.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (initialLoadRef.current) {
+      scrollToBottom('auto');
+      requestAnimationFrame(() => scrollToBottom('auto'));
+      initialLoadRef.current = false;
+    } else if (isNearBottom()) {
+      scrollToBottom('smooth');
+    }
   }, [messages]);
+
+  // Late-loading images/attachments grow the page after the initial scroll,
+  // which would leave you stranded mid-history. Re-pin to the bottom when an
+  // image finishes loading, but only if you're already near the bottom.
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) return undefined;
+    const onLoad = (e) => { if (e.target.tagName === 'IMG' && isNearBottom()) scrollToBottom('auto'); };
+    el.addEventListener('load', onLoad, true); // capture — image load doesn't bubble
+    return () => el.removeEventListener('load', onLoad, true);
+  }, [channel.id]);
 
   function startCall(type) {
     window.dispatchEvent(new CustomEvent('teamhub:start-call', {
@@ -187,7 +217,7 @@ export default function ChatView({ channel, user, users = [], onlineIds, onOpenD
           </div>
         </header>
 
-        <div className="messages">
+        <div className="messages" ref={messagesRef}>
           {messages.length === 0 && <div className="empty-hint">No messages yet. Say hello 👋</div>}
           {messages.map((m, i) => {
             const prev = messages[i - 1];
