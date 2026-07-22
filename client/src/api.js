@@ -59,6 +59,16 @@ export function downloadUrl(id) {
   return `${fileUrl(id)}&download=1`;
 }
 
+// A single zip of many Drive files and/or whole folders (browsers cap parallel
+// downloads, so bundling avoids losing files; folders download with structure).
+export function zipUrl(fileIds = [], folderIds = []) {
+  const qs = new URLSearchParams();
+  if (fileIds.length) qs.set('files', fileIds.join(','));
+  if (folderIds.length) qs.set('folders', folderIds.join(','));
+  qs.set('token', getToken());
+  return `/api/uploads/zip?${qs.toString()}`;
+}
+
 export async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch(`/api${path}`, {
     method,

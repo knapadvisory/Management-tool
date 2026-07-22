@@ -4,8 +4,12 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import db from '../db.js';
 import { verifyToken, requireAuth, publicUser } from '../auth.js';
+
+const require = createRequire(import.meta.url);
+const archiver = require('archiver'); // CJS module loaded into this ESM file
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
@@ -69,6 +73,82 @@ router.post('/', requireAuth, upload.array('files', 10), (req, res) => {
 // Authorization header, so accept the JWT as a query param too. Access
 // is limited to members of the channel the file was posted in (files
 // not yet linked to a message are only visible to their uploader).
+// Zip-download a selection of Drive files and/or whole folders (with their
+// nested structure). Auth via query token so a plain <a download> works in the
+// browser and the native WebView. Defined BEFORE /:id so "zip" isn't an id.
+router.get('/zip', (req, res) => {
+  let userId;
+  try {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : req.query.token;
+    userId = verifyToken(token).id;
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  const me = db.prepare('SELECT workspace_id FROM users WHERE id = ?').get(userId);
+  const wsId = me?.workspace_id;
+  if (!wsId) return res.status(403).json({ error: 'Not allowed' });
+
+  const parseIds = (s) => String(s || '').split(',').map((n) => parseInt(n, 10)).filter(Boolean);
+  const fileIds = parseIds(req.query.files);
+  const folderIds = parseIds(req.query.folders);
+  if (!fileIds.length && !folderIds.length) return res.status(400).json({ error: 'Nothing selected' });
+
+  // Folder map (workspace-scoped) for building paths + expanding descendants.
+  const allFolders = db.prepare('SELECT id, name, parent_id FROM drive_folders WHERE workspace_id = ?').all(wsId);
+  const byId = new Map(allFolders.map((f) => [f.id, f]));
+  const relPath = (fid) => {
+    const parts = []; let cur = byId.get(fid); let guard = 0;
+    while (cur && guard++ < 50) { parts.unshift(cur.name); cur = cur.parent_id ? byId.get(cur.parent_id) : null; }
+    return parts.join('/');
+  };
+  const wantFolders = new Set();
+  const queue = [...folderIds];
+  for (let i = 0; i < queue.length && i < 5000; i++) {
+    const id = queue[i];
+    if (wantFolders.has(id)) continue;
+    wantFolders.add(id);
+    for (const f of allFolders) if (f.parent_id === id) queue.push(f.id);
+  }
+
+  const entries = []; const seen = new Set();
+  const addFile = (a, zipName) => {
+    if (!a || seen.has(a.id)) return;
+    seen.add(a.id);
+    const disk = path.join(uploadDir, a.stored_name);
+    if (fs.existsSync(disk)) entries.push({ disk, zipName });
+  };
+  if (fileIds.length) {
+    const ph = fileIds.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT id, stored_name, original_name FROM attachments WHERE is_drive = 1 AND archived_at IS NULL AND workspace_id = ? AND id IN (${ph})`).all(wsId, ...fileIds);
+    for (const a of rows) addFile(a, a.original_name);
+  }
+  for (const fid of wantFolders) {
+    const base = relPath(fid);
+    const rows = db.prepare('SELECT id, stored_name, original_name FROM attachments WHERE is_drive = 1 AND archived_at IS NULL AND workspace_id = ? AND drive_folder_id = ?').all(wsId, fid);
+    for (const a of rows) addFile(a, base ? `${base}/${a.original_name}` : a.original_name);
+  }
+  if (!entries.length) return res.status(404).json({ error: 'No files to download' });
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="TeamHub_files.zip"');
+  const archive = archiver('zip', { zlib: { level: 6 } });
+  archive.on('error', () => { try { res.status(500).end(); } catch { /* already streaming */ } });
+  archive.pipe(res);
+  const used = new Set();
+  for (const e of entries) {
+    let name = e.zipName;
+    if (used.has(name)) { // avoid overwriting same-named files in the zip
+      const ext = path.extname(name); const stem = name.slice(0, name.length - ext.length);
+      let i = 2; while (used.has(`${stem} (${i})${ext}`)) i++;
+      name = `${stem} (${i})${ext}`;
+    }
+    used.add(name);
+    archive.file(e.disk, { name });
+  }
+  archive.finalize();
+});
+
 router.get('/:id', (req, res) => {
   let userId;
   try {

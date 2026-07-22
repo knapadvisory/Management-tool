@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { api, fileUrl, downloadUrl, uploadToDrive } from '../api.js';
+import { api, fileUrl, downloadUrl, uploadToDrive, zipUrl } from '../api.js';
 import { getSocket, onSocket } from '../socket.js';
 import { formatBytes, formatDateTime } from '../format.js';
 import { t } from '../i18n.js';
@@ -276,6 +276,20 @@ export default function FilesView({ user, users = [], initialMode = 'files' }) {
   const canManageFolder = (f) => f.created_by === user.id || user.role === 'admin';
   const totalSelected = selected.size + selectedFolders.size;
 
+  // One click → one download. A single file streams directly (keeps its name);
+  // any multi-selection or folder(s) come down as a single zip (so the browser
+  // doesn't cap parallel downloads and folders keep their structure).
+  function downloadSelected() {
+    const fileIds = selectedFiles.map((f) => f.id);
+    const folderIds = selectedFolderItems.map((f) => f.id);
+    if (!fileIds.length && !folderIds.length) return;
+    if (fileIds.length === 1 && !folderIds.length) { downloadFile(selectedFiles[0]); return; }
+    const a = document.createElement('a');
+    a.href = zipUrl(fileIds, folderIds);
+    a.download = 'TeamHub_files.zip';
+    a.click();
+  }
+
   function toggle(id) {
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
@@ -425,7 +439,7 @@ export default function FilesView({ user, users = [], initialMode = 'files' }) {
           <button className="fa-btn" disabled={!onlyOne} onClick={() => { if (onlyOneIsFolder) openFolder(onlyOne.id); else if (onlyOne) setPreview(onlyOne); }}>👁 Open</button>
           <button className="fa-btn" disabled={!onlyOne} onClick={() => { if (onlyOneIsFolder) setFolderDetails(onlyOne); else if (onlyOne) setDetails(onlyOne); }}>ℹ Details</button>
           {isDrive && <button className="fa-btn" disabled={!canRenameOne} onClick={() => { if (onlyOneIsFolder) renameFolder(onlyOne); else if (onlyOne) renameFile(onlyOne); }}>✎ Rename</button>}
-          <button className="fa-btn" disabled={!selectedFiles.length} onClick={() => selectedFiles.forEach(downloadFile)}>⬇ Download</button>
+          <button className="fa-btn" disabled={!totalSelected} onClick={downloadSelected}>⬇ Download</button>
           {isDrive && <button className="fa-btn" disabled={!movableSelected.length && !movableFolders.length} onClick={() => setMoving({ files: movableSelected, folders: movableFolders })}>📂 Move</button>}
           {isDrive && <button className="fa-btn" disabled={!movableSelected.length} onClick={() => setSharing(movableSelected)}>🏷 Tag people</button>}
           <button className="fa-btn danger" onClick={deleteSelected}>🗑 Delete</button>
@@ -558,6 +572,7 @@ export default function FilesView({ user, users = [], initialMode = 'files' }) {
             openFile: (f) => setPreview(f),
             openFolder,
             download: (f) => downloadFile(f),
+            downloadFolder: (f) => { const a = document.createElement('a'); a.href = zipUrl([], [f.id]); a.download = 'TeamHub_files.zip'; a.click(); },
             copy: (f) => copyToClipboard([f], 'copy'),
             cut: (f) => copyToClipboard([f], 'cut'),
             paste,
@@ -604,6 +619,7 @@ function ContextMenu({ menu, user, clipboard, canManageFolder, onClose, actions 
       {kind === 'folder' && (
         <>
           <button onClick={run(actions.openFolder, item.id)}>📂 Open</button>
+          <button onClick={run(actions.downloadFolder, item)}>⬇ Download (zip)</button>
           {clipboard && <button onClick={run(actions.paste)}>📋 Paste here <span className="ctx-kbd">Ctrl+V</span></button>}
           <button onClick={run(actions.folderDetails, item)}>ℹ Details</button>
           {canManageFolder(item) && <div className="ctx-sep" />}
