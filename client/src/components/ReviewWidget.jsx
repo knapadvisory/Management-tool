@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { getSocket, onSocket } from '../socket.js';
 
 // "For Your Review": completed tasks awaiting your rating (as assigner, as a
 // chosen reporting manager, or your own self-rating). 1-5 stars + a required
@@ -11,7 +12,13 @@ export default function ReviewWidget({ user, users = [] }) {
   function load() {
     api('/tasks/ratings/pending').then((d) => setItems(d.ratings || [])).catch(() => {});
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // Live updates: the server pings 'rating:update' when a task is completed
+    // (a rating appears) or reopened (it clears), so no manual refresh is needed.
+    const detach = onSocket((socket) => socket.on('rating:update', load));
+    return () => { detach?.(); getSocket()?.off('rating:update', load); };
+  }, []);
 
   if (!items.length && !rating) return null;
 

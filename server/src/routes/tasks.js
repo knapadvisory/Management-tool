@@ -209,6 +209,7 @@ function openTaskRating(io, task, completerId) {
   // Only one open flow per task at a time.
   if (db.prepare("SELECT 1 FROM task_ratings WHERE task_id = ? AND status = 'pending'").get(task.id)) return;
   const selfAssigned = !task.creator_id || task.creator_id === completerId;
+  const raterId = selfAssigned ? completerId : task.creator_id;
   if (selfAssigned) {
     db.prepare("INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role) VALUES (?, ?, ?, ?, 'self')")
       .run(task.id, task.workspace_id, completerId, completerId);
@@ -220,6 +221,7 @@ function openTaskRating(io, task, completerId) {
     createNotification(io, { user_id: task.creator_id, type: 'rating_request', actor_id: completerId, task_id: task.id,
       text: `Rate the completed task "${task.title}"` });
   }
+  io?.to(`user:${raterId}`).emit('rating:update'); // refresh "For Your Review" live
 }
 
 // Tasks awaiting MY rating (assigner / manager / my own self-rating).
@@ -271,6 +273,7 @@ router.post('/ratings/:id', (req, res) => {
       .run(r.task_id, r.workspace_id, r.ratee_id, managerId);
     createNotification(io, { user_id: managerId, type: 'rating_request', actor_id: req.user.id, task_id: r.task_id,
       text: `${req.user.name} asked you to rate their completed task "${task?.title || ''}"` });
+    io?.to(`user:${managerId}`).emit('rating:update'); // show it in the manager's list live
   } else if (r.role !== 'self') {
     createNotification(io, { user_id: r.ratee_id, type: 'rating_received', actor_id: req.user.id, task_id: r.task_id,
       text: `${req.user.name} rated your task "${task?.title || ''}" ${stars}★` });
@@ -517,7 +520,10 @@ router.patch('/:id', (req, res) => {
     db.prepare('UPDATE tasks SET completed_at = NULL, archived_at = NULL WHERE id = ?').run(task.id);
     // Reopened before it was rated — drop any pending rating so it stops
     // showing in "For Your Review". Ratings already given stay as history.
+    const io = req.app.get('io');
+    const stale = db.prepare("SELECT DISTINCT rater_id FROM task_ratings WHERE task_id = ? AND status = 'pending'").all(task.id);
     db.prepare("DELETE FROM task_ratings WHERE task_id = ? AND status = 'pending'").run(task.id);
+    for (const { rater_id } of stale) io?.to(`user:${rater_id}`).emit('rating:update'); // clear it live
   }
 
   const updated = emitChanged(req, task.id);
