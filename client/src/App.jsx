@@ -511,7 +511,7 @@ export default function App() {
           <ClientsView user={user} users={users} initialClientId={view.clientId} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
         )}
         {view?.type === 'timesheet' && <TimesheetView user={user} />}
-        {view?.type === 'analytics' && user.role !== 'guest' && <AnalyticsView user={user} users={users} />}
+        {view?.type === 'analytics' && user.role !== 'guest' && <AnalyticsView user={user} users={users} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'tools' && user.role !== 'guest' && <KnapTools />}
         {view?.type === 'admin' && user.role === 'admin' && (

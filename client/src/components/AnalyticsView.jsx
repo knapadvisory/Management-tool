@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
 
-// Practice Analytics — firm-wide (admin) or personal (staff) performance board.
-// All numbers come from /api/analytics; the charts are hand-drawn inline SVG so
-// there's no chart-library weight in the bundle.
+// Practice Analytics — two tabs:
+//  • Overview  — firm-wide (or personal) KPIs, throughput, compliance, quality.
+//  • Appraisals — employee rating leaderboard + every rated task (with rater).
+// Charts are hand-drawn inline SVG so there's no chart-library weight.
 
 const PERIODS = [
   { key: 'week', label: 'Week' },
@@ -12,18 +13,22 @@ const PERIODS = [
   { key: 'quarter', label: 'Quarter' },
   { key: 'fy', label: 'FY' },
 ];
+const CHART_STYLES = [
+  { key: 'area', label: 'Area' },
+  { key: 'line', label: 'Line' },
+  { key: 'bars', label: 'Bars' },
+  { key: 'stacked', label: 'Stacked' },
+];
 
 const fmtHours = (h) => (h >= 1000 ? `${(h / 1000).toFixed(1)}k` : `${h}`);
 const initials = (name) => (name || '?').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+const RATER_ROLE = { self: 'self-review', assigner: 'assigner', manager: 'manager' };
 
-// A star row for a 0–5 rating (rounded to nearest whole for the glyphs).
-function Stars({ value }) {
+function Stars({ value, size = 14 }) {
   const n = Math.round(value || 0);
-  return <span className="an-stars">{'★★★★★'.slice(0, n)}<span className="an-stars-off">{'★★★★★'.slice(n)}</span></span>;
+  return <span className="an-stars" style={{ fontSize: size }}>{'★★★★★'.slice(0, n)}<span className="an-stars-off">{'★★★★★'.slice(n)}</span></span>;
 }
 
-// Trend pill: green up / red down / neutral. `goodDown` flips the colour logic
-// (e.g. for "overdue", a drop is good).
 function Delta({ pct, suffix = '% vs last', goodDown = false }) {
   if (pct === null || pct === undefined) return null;
   const positive = pct > 0;
@@ -33,35 +38,66 @@ function Delta({ pct, suffix = '% vs last', goodDown = false }) {
   return <span className={`an-delta ${cls}`}>{arrow} {Math.abs(pct)}{suffix}</span>;
 }
 
-// Area + line chart for the two throughput series.
-function ThroughputChart({ series }) {
-  const W = 640, H = 210, pad = 20;
+// Throughput chart with four render styles.
+function ThroughputChart({ series, mode }) {
+  const W = 640, H = 220, padX = 24, padTop = 22, base = H - 30;
   const max = Math.max(4, ...series.map((s) => Math.max(s.completed, s.assigned)));
-  const x = (i) => pad + (i * (W - pad * 2)) / Math.max(1, series.length - 1);
-  const y = (v) => H - 30 - ((H - 55) * v) / max;
-  const line = (key) => series.map((s, i) => `${x(i)},${y(s[key])}`).join(' ');
-  const area = (key) => `M${x(0)},${y(series[0][key])} L${line(key).replace(/ /g, ' L')} L${x(series.length - 1)},${H - 30} L${x(0)},${H - 30} Z`;
-  const gridYs = [0.25, 0.5, 0.75, 1].map((f) => 25 + (H - 55) * f);
+  const stackMax = Math.max(4, ...series.map((s) => s.completed + s.assigned));
+  const n = series.length;
+  const x = (i) => padX + (i * (W - padX * 2)) / Math.max(1, n - 1);
+  const y = (v, m = max) => base - ((base - padTop) * v) / m;
+  const pts = (key) => series.map((s, i) => `${x(i)},${y(s[key])}`).join(' ');
+  const areaPath = (key) => `M${x(0)},${base} L${series.map((s, i) => `${x(i)},${y(s[key])}`).join(' L')} L${x(n - 1)},${base} Z`;
+  const gridYs = [0.25, 0.5, 0.75, 1].map((f) => padTop + (base - padTop) * f);
   const tick = (label) => { const d = new Date(label); return `${d.toLocaleString('en', { month: 'short' })} ${d.getUTCDate()}`; };
+  const bw = Math.min(26, (W - padX * 2) / n / 2.4);
+
   return (
     <svg className="an-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Task throughput">
       <g stroke="var(--an-grid)" strokeWidth="1">{gridYs.map((gy, i) => <line key={i} x1="0" y1={gy} x2={W} y2={gy} />)}</g>
-      <path d={area('assigned')} fill="var(--an-accent-soft2)" opacity=".5" />
-      <polyline points={line('assigned')} fill="none" stroke="var(--an-accent-soft2)" strokeWidth="2.5" />
-      <path d={area('completed')} fill="var(--an-accent)" opacity=".12" />
-      <polyline points={line('completed')} fill="none" stroke="var(--an-accent)" strokeWidth="2.5" />
-      <circle cx={x(series.length - 1)} cy={y(series[series.length - 1].completed)} r="4" fill="var(--an-accent)" />
+
+      {mode === 'area' && (<>
+        <path d={areaPath('assigned')} fill="var(--an-accent-soft2)" opacity=".5" />
+        <polyline points={pts('assigned')} fill="none" stroke="var(--an-accent-soft2)" strokeWidth="2.5" />
+        <path d={areaPath('completed')} fill="var(--an-accent)" opacity=".12" />
+        <polyline points={pts('completed')} fill="none" stroke="var(--an-accent)" strokeWidth="2.5" />
+        <circle cx={x(n - 1)} cy={y(series[n - 1].completed)} r="4" fill="var(--an-accent)" />
+      </>)}
+
+      {mode === 'line' && (<>
+        <polyline points={pts('assigned')} fill="none" stroke="var(--an-accent-soft2)" strokeWidth="2.5" strokeDasharray="5 4" />
+        <polyline points={pts('completed')} fill="none" stroke="var(--an-accent)" strokeWidth="3" />
+        <g fill="var(--an-accent)">{series.map((s, i) => <circle key={i} cx={x(i)} cy={y(s.completed)} r="3" />)}</g>
+      </>)}
+
+      {mode === 'bars' && series.map((s, i) => (
+        <g key={i}>
+          <rect x={x(i) - bw - 1} y={y(s.assigned)} width={bw} height={base - y(s.assigned)} rx="2" fill="var(--an-accent-soft2)" />
+          <rect x={x(i) + 1} y={y(s.completed)} width={bw} height={base - y(s.completed)} rx="2" fill="var(--an-accent)" />
+        </g>
+      ))}
+
+      {mode === 'stacked' && series.map((s, i) => {
+        const yc = y(s.completed, stackMax);
+        const ya = y(s.completed + s.assigned, stackMax);
+        return (
+          <g key={i}>
+            <rect x={x(i) - bw} y={yc} width={bw * 2} height={base - yc} rx="2" fill="var(--an-accent)" />
+            <rect x={x(i) - bw} y={ya} width={bw * 2} height={yc - ya} rx="2" fill="var(--an-accent-soft2)" />
+          </g>
+        );
+      })}
+
       <g fill="var(--muted)" fontSize="10" textAnchor="middle">
-        {series.map((s, i) => (i % 2 === 0 || i === series.length - 1) && <text key={i} x={x(i)} y={H - 8}>{tick(s.label)}</text>)}
+        {series.map((s, i) => (i % 2 === 0 || i === n - 1) && <text key={i} x={x(i)} y={H - 8}>{tick(s.label)}</text>)}
       </g>
     </svg>
   );
 }
 
-// SVG donut for the compliance split.
 function Donut({ segments, total, centerLabel }) {
   const R = 15.9155, C = 2 * Math.PI * R;
-  let offset = 25; // start at 12 o'clock
+  let offset = 25;
   return (
     <svg viewBox="0 0 42 42" className="an-donut" role="img" aria-label="Compliance status">
       <circle cx="21" cy="21" r={R} fill="none" stroke="var(--an-grid)" strokeWidth="6" />
@@ -78,12 +114,11 @@ function Donut({ segments, total, centerLabel }) {
   );
 }
 
-// Quality-trend sparkline (avg stars by month).
 function QualityTrend({ points }) {
   const W = 340, H = 150;
   if (!points.length) return <div className="an-empty">No ratings yet in this range.</div>;
   const xs = points.map((_, i) => 20 + (i * (W - 40)) / Math.max(1, points.length - 1));
-  const y = (v) => H - 20 - ((H - 45) * (Math.max(3, Math.min(5, v)) - 3)) / 2; // 3..5 band
+  const y = (v) => H - 20 - ((H - 45) * (Math.max(3, Math.min(5, v)) - 3)) / 2;
   const line = points.map((p, i) => `${xs[i]},${y(p.avg)}`).join(' ');
   return (
     <svg className="an-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Quality trend">
@@ -101,11 +136,265 @@ function QualityTrend({ points }) {
   );
 }
 
-export default function AnalyticsView({ user, users = [] }) {
+// A compact 1–5 star distribution mini-bar.
+function DistBar({ dist }) {
+  const total = dist.reduce((a, b) => a + b, 0) || 1;
+  return (
+    <div className="an-dist" title={dist.map((c, i) => `${i + 1}★: ${c}`).join('  ')}>
+      {[5, 4, 3, 2, 1].map((star) => {
+        const c = dist[star - 1];
+        return <span key={star} className={`an-dist-seg s${star}`} style={{ flex: c / total || 0.0001 }} />;
+      })}
+    </div>
+  );
+}
+
+// ============ Overview tab ============
+function Overview({ data, chartStyle, setChartStyle }) {
+  const s = data.summary;
+  return (
+    <>
+      <section className="an-kpis">
+        <div className="an-kpi">
+          <div className="an-lab">Tasks completed</div>
+          <div className="an-val">{s.tasks_completed.value}</div>
+          <Delta pct={s.tasks_completed.delta} />
+        </div>
+        <div className="an-kpi">
+          <div className="an-lab">On-time rate</div>
+          <div className="an-val">{s.on_time.rate === null ? '—' : <>{s.on_time.rate}<small>%</small></>}</div>
+          <div className="an-note">{s.on_time.n ? `${s.on_time.n} with due dates` : 'no dated tasks'}</div>
+        </div>
+        <div className="an-kpi">
+          <div className="an-lab">Avg quality</div>
+          <div className="an-val">{s.quality.value ? <>{Number(s.quality.value).toFixed(1)}<small>/5</small></> : '—'}</div>
+          {s.quality.value ? <Stars value={s.quality.value} /> : <div className="an-note">no ratings yet</div>}
+        </div>
+        <div className="an-kpi">
+          <div className="an-lab">Billable hours</div>
+          <div className="an-val">{fmtHours(s.billable_hours.hours)}<small>h</small></div>
+          <span className="an-delta flat">● {s.billable_hours.billable_pct}% of logged</span>
+        </div>
+        <div className="an-kpi">
+          <div className="an-lab">Overdue filings</div>
+          <div className={`an-val ${s.overdue_filings ? 'an-bad' : ''}`}>{s.overdue_filings}</div>
+          <div className="an-note">{s.overdue_filings ? 'need action' : 'all clear'}</div>
+        </div>
+      </section>
+
+      <section className="an-card">
+        <div className="an-card-head">
+          <div><h3>Task throughput</h3><div className="an-ch-sub">Completed vs newly assigned</div></div>
+          <div className="an-head-right">
+            <div className="an-legend">
+              <span><i style={{ background: 'var(--an-accent)' }} />Completed</span>
+              <span><i style={{ background: 'var(--an-accent-soft2)' }} />Assigned</span>
+            </div>
+            <div className="an-seg an-seg-sm">
+              {CHART_STYLES.map((c) => <button key={c.key} className={chartStyle === c.key ? 'on' : ''} onClick={() => setChartStyle(c.key)}>{c.label}</button>)}
+            </div>
+          </div>
+        </div>
+        <ThroughputChart series={data.throughput} mode={chartStyle} />
+      </section>
+
+      <section className="an-grid-2">
+        <div className="an-card">
+          <div className="an-card-head"><div><h3>Compliance status</h3><div className="an-ch-sub">All filings in scope</div></div></div>
+          <div className="an-donut-wrap">
+            <Donut
+              total={data.compliance.total || 0}
+              centerLabel="filings"
+              segments={[
+                { value: data.compliance.filed || 0, color: 'var(--success)' },
+                { value: data.compliance.due_soon || 0, color: 'var(--warning)' },
+                { value: data.compliance.overdue || 0, color: 'var(--danger)' },
+              ]}
+            />
+            <div className="an-dlist">
+              <div className="an-dl"><span className="an-dot" style={{ background: 'var(--success)' }} /> Filed <b>{data.compliance.filed || 0}</b></div>
+              <div className="an-dl"><span className="an-dot" style={{ background: 'var(--warning)' }} /> Due soon <b>{data.compliance.due_soon || 0}</b></div>
+              <div className="an-dl"><span className="an-dot" style={{ background: 'var(--danger)' }} /> Overdue <b>{data.compliance.overdue || 0}</b></div>
+            </div>
+          </div>
+          {data.compliance.by_type?.length > 0 && (
+            <div className="an-badges">
+              {data.compliance.by_type.map((t) => <span key={t.name} className="an-badge">{t.name} · {t.n}</span>)}
+            </div>
+          )}
+        </div>
+
+        <div className="an-card">
+          <div className="an-card-head"><div><h3>Quality trend</h3><div className="an-ch-sub">Avg rating, 6 months</div></div></div>
+          <QualityTrend points={data.quality_trend} />
+        </div>
+      </section>
+
+      <section className="an-card">
+        <div className="an-card-head">
+          <div><h3>Needs attention</h3><div className="an-ch-sub">Open filings, soonest due first</div></div>
+          <span className="an-badge">{data.attention.length} open</span>
+        </div>
+        {data.attention.length === 0 ? (
+          <div className="an-empty">Nothing outstanding — every filing in scope is done. 🎉</div>
+        ) : (
+          <div className="an-table-wrap">
+            <table className="an-table">
+              <thead><tr><th>Filing</th><th>Client</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead>
+              <tbody>
+                {data.attention.map((r) => {
+                  const over = r.days_overdue > 0;
+                  const soon = !over && r.days_overdue >= -3;
+                  const chip = over ? 'c-bad' : soon ? 'c-warn' : 'c-ok';
+                  const label = over ? `${r.days_overdue}d overdue` : r.days_overdue === 0 ? 'due today' : `in ${-r.days_overdue}d`;
+                  return (
+                    <tr key={r.id}>
+                      <td className="an-t-name">{r.title}</td>
+                      <td>{r.client_name}</td>
+                      <td>{r.owner ? <span className="an-owner"><span className="an-mini-av" style={{ background: r.owner.avatar_color }}>{initials(r.owner.name)}</span>{r.owner.name}</span> : <span className="muted">Unassigned</span>}</td>
+                      <td>{r.due_date}</td>
+                      <td><span className={`an-chip ${chip}`}>{label}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+// ============ Appraisals tab ============
+const MEDAL = ['🥇', '🥈', '🥉'];
+function Appraisals({ user, isAdmin, focusUserId, onFocusUser, onOpenTask }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [minStars, setMinStars] = useState(0); // task-list filter
+
+  useEffect(() => {
+    setLoading(true); setErr('');
+    const qs = new URLSearchParams();
+    if (isAdmin && focusUserId) qs.set('user_id', focusUserId);
+    api(`/analytics/ratings?${qs.toString()}`).then(setData).catch((e) => setErr(e.message)).finally(() => setLoading(false));
+  }, [focusUserId, isAdmin]);
+
+  if (loading && !data) return <div className="an-loading">Loading…</div>;
+  if (err) return <div className="an-error">Couldn’t load appraisals: {err}</div>;
+  if (!data) return null;
+
+  const rows = data.tasks.filter((t) => t.stars >= minStars);
+  const sum = data.summary;
+
+  return (
+    <>
+      <section className="an-kpis an-kpis-4">
+        <div className="an-kpi">
+          <div className="an-lab">Ratings given</div>
+          <div className="an-val">{sum.total_ratings}</div>
+          <div className="an-note">{sum.rated_people} {sum.rated_people === 1 ? 'person' : 'people'} rated</div>
+        </div>
+        <div className="an-kpi">
+          <div className="an-lab">Firm average</div>
+          <div className="an-val">{sum.avg ? <>{sum.avg.toFixed(1)}<small>/5</small></> : '—'}</div>
+          {sum.avg ? <Stars value={sum.avg} /> : <div className="an-note">—</div>}
+        </div>
+        <div className="an-kpi">
+          <div className="an-lab">Rating spread</div>
+          <div className="an-dist-tall">
+            {[5, 4, 3, 2, 1].map((star) => {
+              const c = sum.distribution[star - 1];
+              const max = Math.max(1, ...sum.distribution);
+              return (
+                <div className="an-dist-row" key={star}>
+                  <span className="an-dist-star">{star}★</span>
+                  <div className="an-dist-track"><div className={`an-dist-fill s${star}`} style={{ width: `${(c / max) * 100}%` }} /></div>
+                  <span className="an-dist-c">{c}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="an-kpi">
+          <div className="an-lab">Pending reviews</div>
+          <div className={`an-val ${data.pending ? 'an-warn' : ''}`}>{data.pending}</div>
+          <div className="an-note">{data.pending ? 'awaiting a rating' : 'all caught up'}</div>
+        </div>
+      </section>
+
+      <section className="an-grid-appr">
+        {/* Leaderboard */}
+        <div className="an-card">
+          <div className="an-card-head">
+            <div><h3>Employee ranking</h3><div className="an-ch-sub">By average rating · click to filter tasks</div></div>
+            {focusUserId && <button className="an-clearfocus" onClick={() => onFocusUser('')}>Show all ✕</button>}
+          </div>
+          {data.ranking.length === 0 ? <div className="an-empty">No ratings recorded yet.</div> : (
+            <div className="an-rank">
+              {data.ranking.map((r, i) => (
+                <button key={r.id} className={`an-rank-row ${Number(focusUserId) === r.id ? 'on' : ''}`} onClick={() => onFocusUser(String(r.id))}>
+                  <span className="an-rank-pos">{i < 3 ? MEDAL[i] : i + 1}</span>
+                  <Avatar user={r} size={30} />
+                  <div className="an-rank-main">
+                    <div className="an-rank-name">{r.name}
+                      {r.trend != null && r.trend !== 0 && <span className={`an-trend ${r.trend > 0 ? 'up' : 'down'}`}>{r.trend > 0 ? '▲' : '▼'}{Math.abs(r.trend).toFixed(1)}</span>}
+                    </div>
+                    <DistBar dist={r.dist} />
+                  </div>
+                  <div className="an-rank-score"><b>{Number(r.avg).toFixed(1)}</b><span className="an-rank-n">{r.count}★</span></div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Task-wise ratings */}
+        <div className="an-card">
+          <div className="an-card-head">
+            <div>
+              <h3>Task ratings</h3>
+              <div className="an-ch-sub">{focusUserId ? `${data.ranking.find((r) => r.id === Number(focusUserId))?.name || 'Selected person'}’s rated tasks` : 'Every rated task · who, and who rated'}</div>
+            </div>
+            <select className="an-pick an-pick-sm" value={minStars} onChange={(e) => setMinStars(Number(e.target.value))}>
+              <option value={0}>All stars</option>
+              <option value={5}>5★ only</option>
+              <option value={4}>4★ &amp; up</option>
+              <option value={3}>3★ &amp; up</option>
+            </select>
+          </div>
+          {rows.length === 0 ? <div className="an-empty">No rated tasks yet.</div> : (
+            <div className="an-table-wrap">
+              <table className="an-table">
+                <thead><tr><th>Task</th>{!focusUserId && <th>Employee</th>}<th>Rating</th><th>Rated by</th><th>Date</th></tr></thead>
+                <tbody>
+                  {rows.map((t, i) => (
+                    <tr key={i} className={onOpenTask ? 'an-row-click' : ''} onClick={() => onOpenTask?.(t.task_id)}>
+                      <td className="an-t-name">{t.title}{t.client_name && <div className="an-t-client">{t.client_name}</div>}</td>
+                      {!focusUserId && <td><span className="an-owner"><span className="an-mini-av" style={{ background: t.ratee.avatar_color }}>{initials(t.ratee.name)}</span>{t.ratee.name}</span></td>}
+                      <td><Stars value={t.stars} size={13} /> {t.comment && <span className="an-cmt" title={t.comment}>“{t.comment}”</span>}</td>
+                      <td>{t.rater ? <span className="muted">{t.rater.name}<span className="an-role"> · {RATER_ROLE[t.role] || t.role}</span></span> : <span className="muted">—</span>}</td>
+                      <td className="muted">{(t.rated_at || '').slice(0, 10)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </section>
+    </>
+  );
+}
+
+export default function AnalyticsView({ user, users = [], onOpenTask }) {
   const isAdmin = user.role === 'admin';
+  const [tab, setTab] = useState('overview');
   const [period, setPeriod] = useState('month');
-  const [userId, setUserId] = useState(''); // admin-only person focus
+  const [userId, setUserId] = useState('');
   const [clientId, setClientId] = useState('');
+  const [chartStyle, setChartStyle] = useState('area');
   const [clients, setClients] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -116,19 +405,15 @@ export default function AnalyticsView({ user, users = [] }) {
   }, [isAdmin]);
 
   useEffect(() => {
+    if (tab !== 'overview') return;
     setLoading(true); setErr('');
     const qs = new URLSearchParams({ period });
     if (isAdmin && userId) qs.set('user_id', userId);
     if (clientId) qs.set('client_id', clientId);
-    api(`/analytics?${qs.toString()}`)
-      .then((d) => setData(d))
-      .catch((e) => setErr(e.message))
-      .finally(() => setLoading(false));
-  }, [period, userId, clientId, isAdmin]);
+    api(`/analytics?${qs.toString()}`).then(setData).catch((e) => setErr(e.message)).finally(() => setLoading(false));
+  }, [period, userId, clientId, isAdmin, tab]);
 
-  const s = data?.summary;
-  const maxOpen = Math.max(1, ...(data?.workload || []).map((w) => w.open_tasks));
-  const maxClientHrs = Math.max(1, ...(data?.time_by_client || []).map((c) => c.hours));
+  const focusName = (users.find((u) => u.id === Number(userId)) || user).name;
 
   return (
     <div className="an-page">
@@ -136,22 +421,22 @@ export default function AnalyticsView({ user, users = [] }) {
         <div>
           <h1>Practice Analytics</h1>
           <div className="an-sub">
-            {isAdmin && !userId ? 'Firm-wide performance & compliance' : `${(users.find((u) => u.id === Number(userId)) || user).name}'s performance`}
+            {isAdmin && !userId ? 'Firm-wide performance & compliance' : `${focusName}'s performance`}
           </div>
         </div>
         <div className="an-filters">
-          <div className="an-seg">
-            {PERIODS.map((p) => (
-              <button key={p.key} className={period === p.key ? 'on' : ''} onClick={() => setPeriod(p.key)}>{p.label}</button>
-            ))}
-          </div>
+          {tab === 'overview' && (
+            <div className="an-seg">
+              {PERIODS.map((p) => <button key={p.key} className={period === p.key ? 'on' : ''} onClick={() => setPeriod(p.key)}>{p.label}</button>)}
+            </div>
+          )}
           {isAdmin && (
             <select className="an-pick" value={userId} onChange={(e) => setUserId(e.target.value)}>
               <option value="">👤 Whole team</option>
               {users.filter((u) => u.name && u.role !== 'guest').map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           )}
-          {isAdmin && (
+          {isAdmin && tab === 'overview' && (
             <select className="an-pick" value={clientId} onChange={(e) => setClientId(e.target.value)}>
               <option value="">🗂️ All clients</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -160,157 +445,24 @@ export default function AnalyticsView({ user, users = [] }) {
         </div>
       </header>
 
-      {err && <div className="an-error">Couldn’t load analytics: {err}</div>}
-      {loading && !data && <div className="an-loading">Loading…</div>}
+      <div className="an-tabs">
+        <button className={tab === 'overview' ? 'on' : ''} onClick={() => setTab('overview')}>Overview</button>
+        <button className={tab === 'appraisals' ? 'on' : ''} onClick={() => setTab('appraisals')}>Appraisals</button>
+      </div>
 
-      {data && (
-        <div className={`an-body ${loading ? 'an-dim' : ''}`}>
-          {/* KPI tiles */}
-          <section className="an-kpis">
-            <div className="an-kpi">
-              <div className="an-lab">Tasks completed</div>
-              <div className="an-val">{s.tasks_completed.value}</div>
-              <Delta pct={s.tasks_completed.delta} />
-            </div>
-            <div className="an-kpi">
-              <div className="an-lab">On-time rate</div>
-              <div className="an-val">{s.on_time.rate === null ? '—' : <>{s.on_time.rate}<small>%</small></>}</div>
-              <div className="an-note">{s.on_time.n ? `${s.on_time.n} with due dates` : 'no dated tasks'}</div>
-            </div>
-            <div className="an-kpi">
-              <div className="an-lab">Avg quality</div>
-              <div className="an-val">{s.quality.value ? <>{Number(s.quality.value).toFixed(1)}<small>/5</small></> : '—'}</div>
-              {s.quality.value ? <Stars value={s.quality.value} /> : <div className="an-note">no ratings yet</div>}
-            </div>
-            <div className="an-kpi">
-              <div className="an-lab">Billable hours</div>
-              <div className="an-val">{fmtHours(s.billable_hours.hours)}<small>h</small></div>
-              <span className="an-delta flat">● {s.billable_hours.billable_pct}% of logged</span>
-            </div>
-            <div className="an-kpi">
-              <div className="an-lab">Overdue filings</div>
-              <div className={`an-val ${s.overdue_filings ? 'an-bad' : ''}`}>{s.overdue_filings}</div>
-              <div className="an-note">{s.overdue_filings ? 'need action' : 'all clear'}</div>
-            </div>
-          </section>
+      {tab === 'overview' && (<>
+        {err && <div className="an-error">Couldn’t load analytics: {err}</div>}
+        {loading && !data && <div className="an-loading">Loading…</div>}
+        {data && (
+          <div className={`an-body ${loading ? 'an-dim' : ''}`}>
+            <Overview data={data} chartStyle={chartStyle} setChartStyle={setChartStyle} />
+          </div>
+        )}
+      </>)}
 
-          {/* Row: throughput + workload */}
-          <section className="an-grid-2">
-            <div className="an-card">
-              <div className="an-card-head">
-                <div><h3>Task throughput</h3><div className="an-ch-sub">Completed vs newly assigned</div></div>
-                <div className="an-legend">
-                  <span><i style={{ background: 'var(--an-accent)' }} />Completed</span>
-                  <span><i style={{ background: 'var(--an-accent-soft2)' }} />Assigned</span>
-                </div>
-              </div>
-              <ThroughputChart series={data.throughput} />
-            </div>
-
-            <div className="an-card">
-              <div className="an-card-head"><div><h3>{userId || !isAdmin ? 'Workload' : 'Team workload'}</h3><div className="an-ch-sub">Open tasks · avg rating</div></div></div>
-              <div className="an-lb">
-                {data.workload.length === 0 && <div className="an-empty">No open work.</div>}
-                {data.workload.map((w) => (
-                  <div className="an-lb-row" key={w.id}>
-                    <Avatar user={w} size={30} />
-                    <div className="an-lb-main">
-                      <div className="an-lb-name">{w.name}</div>
-                      <div className="an-lb-meta">
-                        {w.avg_rating ? `★ ${w.avg_rating} · ` : ''}{w.open_tasks} open{w.overdue ? ` · ${w.overdue} overdue` : ''}
-                      </div>
-                      <div className="an-bar"><div className="an-bar-fill" style={{ width: `${(w.open_tasks / maxOpen) * 100}%` }} /></div>
-                    </div>
-                    <div className="an-lb-num">{w.open_tasks}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* Row: compliance + quality + time by client */}
-          <section className="an-grid-3">
-            <div className="an-card">
-              <div className="an-card-head"><div><h3>Compliance status</h3><div className="an-ch-sub">All filings in scope</div></div></div>
-              <div className="an-donut-wrap">
-                <Donut
-                  total={data.compliance.total || 0}
-                  centerLabel="filings"
-                  segments={[
-                    { value: data.compliance.filed || 0, color: 'var(--success)' },
-                    { value: data.compliance.due_soon || 0, color: 'var(--warning)' },
-                    { value: data.compliance.overdue || 0, color: 'var(--danger)' },
-                  ]}
-                />
-                <div className="an-dlist">
-                  <div className="an-dl"><span className="an-dot" style={{ background: 'var(--success)' }} /> Filed <b>{data.compliance.filed || 0}</b></div>
-                  <div className="an-dl"><span className="an-dot" style={{ background: 'var(--warning)' }} /> Due soon <b>{data.compliance.due_soon || 0}</b></div>
-                  <div className="an-dl"><span className="an-dot" style={{ background: 'var(--danger)' }} /> Overdue <b>{data.compliance.overdue || 0}</b></div>
-                </div>
-              </div>
-              {data.compliance.by_type?.length > 0 && (
-                <div className="an-badges">
-                  {data.compliance.by_type.map((t) => <span key={t.name} className="an-badge">{t.name} · {t.n}</span>)}
-                </div>
-              )}
-            </div>
-
-            <div className="an-card">
-              <div className="an-card-head"><div><h3>Quality trend</h3><div className="an-ch-sub">Avg rating, 6 months</div></div></div>
-              <QualityTrend points={data.quality_trend} />
-            </div>
-
-            <div className="an-card">
-              <div className="an-card-head"><div><h3>Billable hours by client</h3><div className="an-ch-sub">Top clients this period</div></div></div>
-              <div className="an-lb">
-                {data.time_by_client.length === 0 && <div className="an-empty">No billable time logged.</div>}
-                {data.time_by_client.map((c) => (
-                  <div className="an-lb-row" key={c.id}>
-                    <span />
-                    <div className="an-lb-main">
-                      <div className="an-lb-name">{c.name}</div>
-                      <div className="an-bar"><div className="an-bar-fill" style={{ width: `${(c.hours / maxClientHrs) * 100}%` }} /></div>
-                    </div>
-                    <div className="an-lb-num">{c.hours}h</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* Needs attention */}
-          <section className="an-card">
-            <div className="an-card-head">
-              <div><h3>Needs attention</h3><div className="an-ch-sub">Open filings, soonest due first</div></div>
-              <span className="an-badge">{data.attention.length} open</span>
-            </div>
-            {data.attention.length === 0 ? (
-              <div className="an-empty">Nothing outstanding — every filing in scope is done. 🎉</div>
-            ) : (
-              <div className="an-table-wrap">
-                <table className="an-table">
-                  <thead><tr><th>Filing</th><th>Client</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {data.attention.map((r) => {
-                      const over = r.days_overdue > 0;
-                      const soon = !over && r.days_overdue >= -3;
-                      const chip = over ? `c-bad` : soon ? 'c-warn' : 'c-ok';
-                      const label = over ? `${r.days_overdue}d overdue` : r.days_overdue === 0 ? 'due today' : `in ${-r.days_overdue}d`;
-                      return (
-                        <tr key={r.id}>
-                          <td className="an-t-name">{r.title}</td>
-                          <td>{r.client_name}</td>
-                          <td>{r.owner ? <span className="an-owner"><span className="an-mini-av" style={{ background: r.owner.avatar_color }}>{initials(r.owner.name)}</span>{r.owner.name}</span> : <span className="muted">Unassigned</span>}</td>
-                          <td>{r.due_date}</td>
-                          <td><span className={`an-chip ${chip}`}>{label}</span></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+      {tab === 'appraisals' && (
+        <div className="an-body">
+          <Appraisals user={user} isAdmin={isAdmin} focusUserId={userId} onFocusUser={setUserId} onOpenTask={onOpenTask} />
         </div>
       )}
     </div>

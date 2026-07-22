@@ -2286,3 +2286,57 @@ button.c360-stat:hover { border-color: var(--accent); }
 .an-chip.c-ok { background: var(--success-soft); color: var(--success); }
 .an-chip.c-warn { background: var(--warning-soft); color: var(--warning); }
 .an-chip.c-bad { background: var(--danger-soft); color: var(--danger); }
+
+/* ---- Analytics: tabs, chart-style toggle, appraisals ---- */
+.an-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+.an-tabs button { border: none; background: transparent; color: var(--muted); font-size: 14px; font-weight: 650; padding: 9px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.an-tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+.an-tabs button:hover:not(.on) { color: var(--text); }
+.an-head-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.an-seg-sm button { padding: 4px 9px; font-size: 11.5px; }
+.an-pick-sm { padding: 5px 9px; font-size: 12px; }
+.an-kpis-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 1100px) { .an-kpis-4 { grid-template-columns: repeat(2, 1fr); } }
+.an-val.an-warn { color: var(--warning); }
+
+/* star-distribution mini bar (in leaderboard rows) */
+.an-dist { display: flex; height: 6px; border-radius: 4px; overflow: hidden; margin-top: 6px; background: var(--an-grid); gap: 1px; }
+.an-dist-seg { display: block; min-width: 0; }
+.an-dist-seg.s5 { background: #16a34a; } .an-dist-seg.s4 { background: #84cc16; }
+.an-dist-seg.s3 { background: #f59e0b; } .an-dist-seg.s2 { background: #f97316; } .an-dist-seg.s1 { background: #dc2626; }
+
+/* tall distribution (KPI tile) */
+.an-dist-tall { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.an-dist-row { display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: var(--muted); }
+.an-dist-star { width: 18px; font-variant-numeric: tabular-nums; }
+.an-dist-track { flex: 1; height: 6px; background: var(--an-grid); border-radius: 4px; overflow: hidden; }
+.an-dist-fill { height: 100%; border-radius: 4px; }
+.an-dist-fill.s5 { background: #16a34a; } .an-dist-fill.s4 { background: #84cc16; }
+.an-dist-fill.s3 { background: #f59e0b; } .an-dist-fill.s2 { background: #f97316; } .an-dist-fill.s1 { background: #dc2626; }
+.an-dist-c { width: 16px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* appraisals layout: ranking beside task list */
+.an-grid-appr { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 16px; }
+@media (max-width: 1000px) { .an-grid-appr { grid-template-columns: 1fr; } }
+.an-clearfocus { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.an-clearfocus:hover { color: var(--text); }
+
+.an-rank { display: flex; flex-direction: column; gap: 4px; }
+.an-rank-row { display: grid; grid-template-columns: 26px 30px 1fr auto; gap: 10px; align-items: center; width: 100%; text-align: left; border: none; background: transparent; padding: 8px 8px; border-radius: 10px; cursor: pointer; }
+.an-rank-row:hover { background: var(--bg); }
+.an-rank-row.on { background: var(--accent-soft); }
+.an-rank-pos { font-size: 15px; text-align: center; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.an-rank-main { min-width: 0; }
+.an-rank-name { font-size: 13px; font-weight: 640; display: flex; align-items: center; gap: 6px; }
+.an-rank-score { text-align: right; }
+.an-rank-score b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.an-rank-n { display: block; font-size: 10px; color: var(--muted); }
+.an-trend { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 10px; }
+.an-trend.up { color: var(--success); background: var(--success-soft); }
+.an-trend.down { color: var(--danger); background: var(--danger-soft); }
+
+.an-t-client { font-size: 10.5px; color: var(--muted); font-weight: 400; margin-top: 1px; }
+.an-cmt { font-size: 11px; color: var(--muted); font-style: italic; margin-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; display: inline-block; vertical-align: bottom; }
+.an-role { font-size: 10.5px; opacity: .8; }
+.an-row-click { cursor: pointer; }
+.an-row-click:hover td { background: var(--bg); }

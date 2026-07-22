@@ -61,6 +61,10 @@ async function main() {
   const t1 = await req('POST', '/api/tasks', { token: a, body: { title: 'File GSTR-3B', workflow_id: wf.id, client_id: cid, assignee_id: bobId, due_date: shift(3) } });
   await req('POST', '/api/tasks', { token: a, body: { title: 'Draft balance sheet', workflow_id: wf.id, client_id: cid, assignee_id: bobId } });
   await req('PATCH', `/api/tasks/${t1.data.id}`, { token: b, body: { stage_id: doneStage.id } }); // Bob completes his own
+  // Completing it opened a pending rating for the assigner (Alice) to rate Bob.
+  const pending = await req('GET', '/api/tasks/ratings/pending', { token: a });
+  const pr = pending.data.ratings.find((r) => r.task_id === t1.data.id);
+  if (pr) await req('POST', `/api/tasks/ratings/${pr.id}`, { token: a, body: { stars: 4, comment: 'Solid, on time.' } });
 
   // Log a billable hour against the client (Bob).
   await req('POST', '/api/time', { token: b, body: { client_id: cid, task_id: t1.data.id, minutes: 90, billable: 1, entry_date: today() } });
@@ -90,6 +94,17 @@ async function main() {
   const bobView = await req('GET', `/api/analytics?period=fy&user_id=${aliceId}`, { token: b });
   check('member is pinned to self scope', bobView.status === 200 && bobView.data.scope.focus_user === bobId);
   check('member workload never leaks the whole team', bobView.data.workload.every((w) => w.id === bobId));
+
+  // --- Appraisals: ratings endpoint ---
+  const rat = await req('GET', '/api/analytics/ratings', { token: a });
+  check('ratings endpoint returns ranking + tasks', rat.status === 200 && Array.isArray(rat.data.ranking) && Array.isArray(rat.data.tasks));
+  check('Bob appears in the ranking with his 4-star avg', rat.data.ranking.some((r) => r.id === bobId && r.avg === 4));
+  check('the rated task lists ratee and rater', rat.data.tasks.some((t) => t.ratee.id === bobId && t.rater && t.rater.id === aliceId && t.stars === 4));
+  check('distribution has five buckets', rat.data.summary.distribution.length === 5);
+
+  // Member self-scope on ratings: Bob sees only his own, never the whole firm.
+  const bobRatings = await req('GET', `/api/analytics/ratings?user_id=${aliceId}`, { token: b });
+  check('member ratings pinned to self', bobRatings.data.scope.focus_user === bobId && bobRatings.data.tasks.every((t) => t.ratee.id === bobId));
 
   // --- Guests are blocked entirely (route is behind blockGuests) ---
   // (No guest here; blockGuests is covered by the mount. A missing token → 401.)

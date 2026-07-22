@@ -258,4 +258,81 @@ router.get('/', (req, res) => {
   });
 });
 
+// GET /api/analytics/ratings?user_id=  — the Appraisals view.
+// Employee ranking by average rating + every rated task (who was rated, who
+// rated them, the stars and comment). All-time so the leaderboard is stable.
+// Admins see the whole firm (and may focus one person); members see only the
+// ratings they themselves received.
+router.get('/ratings', (req, res) => {
+  const isAdmin = req.user.role === 'admin';
+  const ws = Number(req.workspaceId);
+  const focusUser = isAdmin
+    ? (req.query.user_id ? Number(req.query.user_id) : null)
+    : req.user.id;
+
+  // Per-employee leaderboard: average, count, and the 1–5 star distribution.
+  const rankP = [ws, ws];
+  let rankSql = `
+    SELECT u.id, u.name, u.avatar_color, u.avatar_url,
+      ROUND(AVG(r.stars), 2) AS avg, COUNT(*) AS count,
+      SUM(CASE WHEN r.stars = 1 THEN 1 ELSE 0 END) AS d1,
+      SUM(CASE WHEN r.stars = 2 THEN 1 ELSE 0 END) AS d2,
+      SUM(CASE WHEN r.stars = 3 THEN 1 ELSE 0 END) AS d3,
+      SUM(CASE WHEN r.stars = 4 THEN 1 ELSE 0 END) AS d4,
+      SUM(CASE WHEN r.stars = 5 THEN 1 ELSE 0 END) AS d5,
+      ROUND(AVG(CASE WHEN r.rated_at >= date('now','-30 day') THEN r.stars END), 2) AS avg_30,
+      ROUND(AVG(CASE WHEN r.rated_at <  date('now','-30 day') THEN r.stars END), 2) AS avg_prev
+    FROM users u
+    JOIN task_ratings r ON r.ratee_id = u.id AND r.status = 'done' AND r.stars IS NOT NULL AND r.workspace_id = ?
+    WHERE u.workspace_id = ? AND u.deleted = 0`;
+  if (focusUser) { rankSql += ' AND u.id = ?'; rankP.push(focusUser); }
+  rankSql += ' GROUP BY u.id HAVING count > 0 ORDER BY avg DESC, count DESC';
+  const ranking = db.prepare(rankSql).all(...rankP).map((r) => ({
+    id: r.id, name: r.name, avatar_color: r.avatar_color, avatar_url: r.avatar_url,
+    avg: r.avg, count: r.count,
+    dist: [r.d1, r.d2, r.d3, r.d4, r.d5],
+    trend: r.avg_30 != null && r.avg_prev != null ? Math.round((r.avg_30 - r.avg_prev) * 100) / 100 : null,
+  }));
+
+  // Every rated task: what it was, who was rated, who rated them.
+  const taskP = [ws];
+  let taskSql = `
+    SELECT r.task_id, t.title, t.client_id, cl.name AS client_name,
+      r.stars, r.comment, r.role, r.rated_at,
+      ratee.id AS ratee_id, ratee.name AS ratee_name, ratee.avatar_color AS ratee_color, ratee.avatar_url AS ratee_url,
+      rater.id AS rater_id, rater.name AS rater_name
+    FROM task_ratings r
+    JOIN tasks t ON t.id = r.task_id
+    JOIN users ratee ON ratee.id = r.ratee_id
+    LEFT JOIN users rater ON rater.id = r.rater_id
+    LEFT JOIN clients cl ON cl.id = t.client_id
+    WHERE r.workspace_id = ? AND r.status = 'done' AND r.stars IS NOT NULL`;
+  if (focusUser) { taskSql += ' AND r.ratee_id = ?'; taskP.push(focusUser); }
+  taskSql += ' ORDER BY r.rated_at DESC LIMIT 300';
+  const tasks = db.prepare(taskSql).all(...taskP).map((r) => ({
+    task_id: r.task_id, title: r.title, client_name: r.client_name,
+    stars: r.stars, comment: r.comment, role: r.role, rated_at: r.rated_at,
+    ratee: { id: r.ratee_id, name: r.ratee_name, avatar_color: r.ratee_color, avatar_url: r.ratee_url },
+    rater: r.rater_id ? { id: r.rater_id, name: r.rater_name } : null,
+  }));
+
+  // Ratings still waiting to be given (reminds managers what's outstanding).
+  const pendP = [ws];
+  let pendSql = `SELECT COUNT(*) n FROM task_ratings WHERE workspace_id = ? AND status = 'pending'`;
+  if (focusUser) { pendSql += ' AND ratee_id = ?'; pendP.push(focusUser); }
+  const pending = db.prepare(pendSql).get(...pendP).n;
+
+  // Firm-wide distribution + headline numbers.
+  const overall = tasks.reduce((a, t) => { a.sum += t.stars; a.dist[t.stars - 1]++; return a; }, { sum: 0, dist: [0, 0, 0, 0, 0] });
+  const avgAll = tasks.length ? Math.round((overall.sum / tasks.length) * 100) / 100 : null;
+
+  res.json({
+    scope: { is_admin: isAdmin, focus_user: focusUser },
+    ranking,
+    tasks,
+    pending,
+    summary: { total_ratings: tasks.length, avg: avgAll, distribution: overall.dist, rated_people: ranking.length },
+  });
+});
+
 export default router;
