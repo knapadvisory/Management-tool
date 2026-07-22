@@ -106,6 +106,18 @@ async function main() {
   const bobRatings = await req('GET', `/api/analytics/ratings?user_id=${aliceId}`, { token: b });
   check('member ratings pinned to self', bobRatings.data.scope.focus_user === bobId && bobRatings.data.tasks.every((t) => t.ratee.id === bobId));
 
+  // --- KPI drill-down detail ---
+  const detC = await req('GET', '/api/analytics/detail?metric=completed&period=fy', { token: a });
+  check('completed detail lists the finished task', detC.status === 200 && detC.data.rows.some((r) => r.id === t1.data.id));
+  const detO = await req('GET', '/api/analytics/detail?metric=overdue&period=fy', { token: a });
+  check('overdue detail lists the overdue filing', detO.data.rows.some((r) => r.title === 'GST payment' && r.days_overdue >= 1));
+  const detB = await req('GET', '/api/analytics/detail?metric=billable&period=fy', { token: a });
+  check('billable detail splits by person and client', Array.isArray(detB.data.by_user) && Array.isArray(detB.data.by_client) && detB.data.by_client.some((c) => c.hours >= 1));
+  const detBad = await req('GET', '/api/analytics/detail?metric=nonsense', { token: a });
+  check('unknown metric is rejected', detBad.status === 400);
+  const detMember = await req('GET', `/api/analytics/detail?metric=completed&period=fy&user_id=${aliceId}`, { token: b });
+  check('member detail cannot see another person’s tasks', detMember.data.rows.every((r) => r.who === null || r.who.name === 'Bob'));
+
   // --- Guests are blocked entirely (route is behind blockGuests) ---
   // (No guest here; blockGuests is covered by the mount. A missing token → 401.)
   const anon = await req('GET', '/api/analytics');

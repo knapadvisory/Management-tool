@@ -53,7 +53,7 @@ function ThroughputChart({ series, mode }) {
   const bw = Math.min(26, (W - padX * 2) / n / 2.4);
 
   return (
-    <svg className="an-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Task throughput">
+    <svg className="an-svg an-svg-throughput" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Task throughput">
       <g stroke="var(--an-grid)" strokeWidth="1">{gridYs.map((gy, i) => <line key={i} x1="0" y1={gy} x2={W} y2={gy} />)}</g>
 
       {mode === 'area' && (<>
@@ -150,36 +150,36 @@ function DistBar({ dist }) {
 }
 
 // ============ Overview tab ============
-function Overview({ data, chartStyle, setChartStyle }) {
+function Overview({ data, chartStyle, setChartStyle, onDrill, onQuality }) {
   const s = data.summary;
   return (
     <>
       <section className="an-kpis">
-        <div className="an-kpi">
-          <div className="an-lab">Tasks completed</div>
+        <button className="an-kpi an-kpi-btn" onClick={() => onDrill('completed')}>
+          <div className="an-lab">Tasks completed <span className="an-kpi-go">→</span></div>
           <div className="an-val">{s.tasks_completed.value}</div>
           <Delta pct={s.tasks_completed.delta} />
-        </div>
-        <div className="an-kpi">
-          <div className="an-lab">On-time rate</div>
+        </button>
+        <button className="an-kpi an-kpi-btn" onClick={() => onDrill('on_time')}>
+          <div className="an-lab">On-time rate <span className="an-kpi-go">→</span></div>
           <div className="an-val">{s.on_time.rate === null ? '—' : <>{s.on_time.rate}<small>%</small></>}</div>
           <div className="an-note">{s.on_time.n ? `${s.on_time.n} with due dates` : 'no dated tasks'}</div>
-        </div>
-        <div className="an-kpi">
-          <div className="an-lab">Avg quality</div>
+        </button>
+        <button className="an-kpi an-kpi-btn" onClick={onQuality}>
+          <div className="an-lab">Avg quality <span className="an-kpi-go">→</span></div>
           <div className="an-val">{s.quality.value ? <>{Number(s.quality.value).toFixed(1)}<small>/5</small></> : '—'}</div>
           {s.quality.value ? <Stars value={s.quality.value} /> : <div className="an-note">no ratings yet</div>}
-        </div>
-        <div className="an-kpi">
-          <div className="an-lab">Billable hours</div>
+        </button>
+        <button className="an-kpi an-kpi-btn" onClick={() => onDrill('billable')}>
+          <div className="an-lab">Billable hours <span className="an-kpi-go">→</span></div>
           <div className="an-val">{fmtHours(s.billable_hours.hours)}<small>h</small></div>
           <span className="an-delta flat">● {s.billable_hours.billable_pct}% of logged</span>
-        </div>
-        <div className="an-kpi">
-          <div className="an-lab">Overdue filings</div>
+        </button>
+        <button className="an-kpi an-kpi-btn" onClick={() => onDrill('overdue')}>
+          <div className="an-lab">Overdue filings <span className="an-kpi-go">→</span></div>
           <div className={`an-val ${s.overdue_filings ? 'an-bad' : ''}`}>{s.overdue_filings}</div>
           <div className="an-note">{s.overdue_filings ? 'need action' : 'all clear'}</div>
-        </div>
+        </button>
       </section>
 
       <section className="an-card">
@@ -388,6 +388,93 @@ function Appraisals({ user, isAdmin, focusUserId, onFocusUser, onOpenTask }) {
   );
 }
 
+// Drill-down modal behind a KPI tile.
+const METRIC_TITLE = {
+  completed: 'Completed tasks',
+  on_time: 'On-time breakdown',
+  billable: 'Billable hours',
+  overdue: 'Overdue filings',
+};
+function DetailModal({ metric, period, userId, clientId, isAdmin, onOpenTask, onClose }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    const qs = new URLSearchParams({ metric, period });
+    if (isAdmin && userId) qs.set('user_id', userId);
+    if (clientId) qs.set('client_id', clientId);
+    api(`/analytics/detail?${qs.toString()}`).then(setData).catch((e) => setErr(e.message));
+  }, [metric, period, userId, clientId, isAdmin]);
+
+  return (
+    <div className="an-modal-overlay" onClick={onClose}>
+      <div className="an-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="an-modal-head">
+          <strong>{METRIC_TITLE[metric]}</strong>
+          <button className="an-modal-x" onClick={onClose}>✕</button>
+        </div>
+        <div className="an-modal-body">
+          {err && <div className="an-error">{err}</div>}
+          {!data && !err && <div className="an-loading">Loading…</div>}
+
+          {data && (metric === 'completed' || metric === 'on_time') && (
+            data.rows.length === 0 ? <div className="an-empty">No tasks in this range.</div> : (
+              <table className="an-table">
+                <thead><tr><th>Task</th>{!userId && <th>Owner</th>}<th>Completed</th><th>Due</th></tr></thead>
+                <tbody>
+                  {data.rows.map((r) => (
+                    <tr key={r.id} className={onOpenTask ? 'an-row-click' : ''} onClick={() => onOpenTask?.(r.id)}>
+                      <td className="an-t-name">{r.title}{r.client_name && <div className="an-t-client">{r.client_name}</div>}</td>
+                      {!userId && <td>{r.who ? <span className="an-owner"><span className="an-mini-av" style={{ background: r.who.avatar_color }}>{initials(r.who.name)}</span>{r.who.name}</span> : <span className="muted">—</span>}</td>}
+                      <td className="muted">{(r.completed_at || '').slice(0, 10)}</td>
+                      <td>{r.due_date ? (r.on_time ? <span className="an-chip c-ok">on time</span> : <span className="an-chip c-bad">late</span>) : <span className="muted">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+
+          {data && metric === 'overdue' && (
+            data.rows.length === 0 ? <div className="an-empty">Nothing overdue. 🎉</div> : (
+              <table className="an-table">
+                <thead><tr><th>Filing</th><th>Client</th>{!userId && <th>Owner</th>}<th>Due</th><th>Late</th></tr></thead>
+                <tbody>
+                  {data.rows.map((r) => (
+                    <tr key={r.id}>
+                      <td className="an-t-name">{r.title}</td>
+                      <td>{r.client_name}</td>
+                      {!userId && <td>{r.who ? <span className="an-owner"><span className="an-mini-av" style={{ background: r.who.avatar_color }}>{initials(r.who.name)}</span>{r.who.name}</span> : <span className="muted">Unassigned</span>}</td>}
+                      <td className="muted">{r.due_date}</td>
+                      <td><span className="an-chip c-bad">{r.days_overdue}d</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+
+          {data && metric === 'billable' && (
+            <div className="an-bill-cols">
+              <div>
+                <div className="an-bill-h">By person</div>
+                {data.by_user.length === 0 ? <div className="an-empty">No billable time.</div> : data.by_user.map((r, i) => (
+                  <div className="an-bill-row" key={i}><span className="an-mini-av" style={{ background: r.avatar_color }}>{initials(r.name)}</span><span className="an-bill-name">{r.name}</span><b>{r.hours}h</b></div>
+                ))}
+              </div>
+              <div>
+                <div className="an-bill-h">By client</div>
+                {data.by_client.length === 0 ? <div className="an-empty">No billable time.</div> : data.by_client.map((r, i) => (
+                  <div className="an-bill-row" key={i}><span className="an-bill-name">{r.name}</span><b>{r.hours}h</b></div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyticsView({ user, users = [], onOpenTask }) {
   const isAdmin = user.role === 'admin';
   const [tab, setTab] = useState('overview');
@@ -395,6 +482,7 @@ export default function AnalyticsView({ user, users = [], onOpenTask }) {
   const [userId, setUserId] = useState('');
   const [clientId, setClientId] = useState('');
   const [chartStyle, setChartStyle] = useState('area');
+  const [drill, setDrill] = useState(null); // metric for the detail modal
   const [clients, setClients] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -455,7 +543,13 @@ export default function AnalyticsView({ user, users = [], onOpenTask }) {
         {loading && !data && <div className="an-loading">Loading…</div>}
         {data && (
           <div className={`an-body ${loading ? 'an-dim' : ''}`}>
-            <Overview data={data} chartStyle={chartStyle} setChartStyle={setChartStyle} />
+            <Overview
+              data={data}
+              chartStyle={chartStyle}
+              setChartStyle={setChartStyle}
+              onDrill={setDrill}
+              onQuality={() => setTab('appraisals')}
+            />
           </div>
         )}
       </>)}
@@ -464,6 +558,18 @@ export default function AnalyticsView({ user, users = [], onOpenTask }) {
         <div className="an-body">
           <Appraisals user={user} isAdmin={isAdmin} focusUserId={userId} onFocusUser={setUserId} onOpenTask={onOpenTask} />
         </div>
+      )}
+
+      {drill && (
+        <DetailModal
+          metric={drill}
+          period={period}
+          userId={userId}
+          clientId={clientId}
+          isAdmin={isAdmin}
+          onOpenTask={(id) => { setDrill(null); onOpenTask?.(id); }}
+          onClose={() => setDrill(null)}
+        />
       )}
     </div>
   );

@@ -335,4 +335,82 @@ router.get('/ratings', (req, res) => {
   });
 });
 
+// GET /api/analytics/detail?metric=&period=&user_id=&client_id=
+// The rows behind a KPI tile, so clicking a headline number drills into it.
+// metric ∈ completed | on_time | billable | overdue. Same scope rules as above.
+router.get('/detail', (req, res) => {
+  const isAdmin = req.user.role === 'admin';
+  const ws = Number(req.workspaceId);
+  const today = iso(new Date());
+  const { from, to } = resolvePeriod(req.query.period);
+  const focusUser = isAdmin ? (req.query.user_id ? Number(req.query.user_id) : null) : req.user.id;
+  const clientId = req.query.client_id ? Number(req.query.client_id) : null;
+  const metric = String(req.query.metric || '');
+
+  const taskScope = (alias, p) => {
+    if (!focusUser) return '';
+    p.push(focusUser, focusUser);
+    return ` AND (EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = ${alias}.id AND ta.user_id = ?) OR ${alias}.assignee_id = ?)`;
+  };
+  const clientClause = (alias, p) => { if (!clientId) return ''; p.push(clientId); return ` AND ${alias}.client_id = ?`; };
+
+  if (metric === 'completed' || metric === 'on_time') {
+    const p = [ws, from, to];
+    let sql = `SELECT t.id, t.title, t.completed_at, t.due_date, cl.name AS client_name,
+        u.name AS who_name, u.avatar_color AS who_color, u.avatar_url AS who_url
+      FROM tasks t
+      LEFT JOIN clients cl ON cl.id = t.client_id
+      LEFT JOIN users u ON u.id = t.assignee_id
+      WHERE t.workspace_id = ? AND t.completed_at IS NOT NULL AND date(t.completed_at) BETWEEN ? AND ?`;
+    sql += taskScope('t', p) + clientClause('t', p);
+    if (metric === 'on_time') sql += ` AND t.due_date IS NOT NULL AND t.due_date != ''`;
+    sql += ' ORDER BY t.completed_at DESC LIMIT 300';
+    const rows = db.prepare(sql).all(...p).map((r) => ({
+      id: r.id, title: r.title, client_name: r.client_name,
+      who: r.who_name ? { name: r.who_name, avatar_color: r.who_color, avatar_url: r.who_url } : null,
+      completed_at: r.completed_at, due_date: r.due_date,
+      on_time: r.due_date ? iso(new Date(r.completed_at)) <= r.due_date : null,
+    }));
+    return res.json({ metric, rows });
+  }
+
+  if (metric === 'billable') {
+    // `users` carry an avatar; `clients` don't — only select the avatar columns
+    // when grouping by person.
+    const mk = (groupCol, joinName, withAvatar) => {
+      const p = [ws, from, to];
+      const cols = withAvatar ? 'g.name AS name, g.avatar_color AS color, g.avatar_url AS url' : 'g.name AS name, NULL AS color, NULL AS url';
+      let sql = `SELECT ${cols}, COALESCE(SUM(te.minutes),0) AS minutes
+        FROM time_entries te JOIN ${joinName} g ON g.id = te.${groupCol}
+        WHERE te.workspace_id = ? AND te.is_running = 0 AND te.billable = 1 AND te.entry_date BETWEEN ? AND ?`;
+      if (focusUser) { sql += ' AND te.user_id = ?'; p.push(focusUser); }
+      if (clientId && groupCol !== 'client_id') { sql += ' AND te.client_id = ?'; p.push(clientId); }
+      sql += ' GROUP BY g.id HAVING SUM(te.minutes) > 0 ORDER BY minutes DESC LIMIT 50';
+      return db.prepare(sql).all(...p).map((r) => ({ name: r.name, avatar_color: r.color, avatar_url: r.url, hours: Math.round(r.minutes / 6) / 10 }));
+    };
+    return res.json({ metric, by_user: mk('user_id', 'users', true), by_client: mk('client_id', 'clients', false) });
+  }
+
+  if (metric === 'overdue') {
+    const p = [ws, today];
+    let sql = `SELECT d.id, d.title, d.due_date, c.name AS client_name,
+        u.name AS who_name, u.avatar_color AS who_color, u.avatar_url AS who_url
+      FROM client_deadlines d
+      JOIN clients c ON c.id = d.client_id
+      LEFT JOIN users u ON u.id = d.assignee_id
+      WHERE c.workspace_id = ? AND d.completed = 0 AND d.due_date < ?`;
+    if (clientId) { sql += ' AND d.client_id = ?'; p.push(clientId); }
+    if (focusUser) { sql += ' AND d.assignee_id = ?'; p.push(focusUser); }
+    sql += ' ORDER BY d.due_date ASC LIMIT 200';
+    const rows = db.prepare(sql).all(...p).map((r) => ({
+      id: r.id, title: r.title, client_name: r.client_name, due_date: r.due_date,
+      who: r.who_name ? { name: r.who_name, avatar_color: r.who_color, avatar_url: r.who_url } : null,
+      days_overdue: daysBetween(r.due_date, today),
+    }));
+    return res.json({ metric, rows });
+  }
+
+  return res.status(400).json({ error: 'Unknown metric' });
+});
+
 export default router;
