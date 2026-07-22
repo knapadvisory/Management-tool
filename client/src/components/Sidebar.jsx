@@ -16,7 +16,7 @@ import analyticsIco from '../assets/icons/Analytics.png';
 import timesheetIco from '../assets/icons/Timesheet.png';
 
 export default function Sidebar({
-  user, workspace, channels, joinable, users, onlineIds, view,
+  user, workspace, channels, joinable, users, onlineIds, view, hrEnabled = false, onOpenHr,
   onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onOpenSettings, darkMode, onToggleTheme, onOpenSearch,
   notifications = [], unreadCount = 0, onSelectNotification, onMarkAllRead,
 }) {
@@ -140,6 +140,11 @@ export default function Sidebar({
             onClick={() => onSelectView('tools')}
           >
             <img className="nav-ico" src={toolsIco} alt="" /> KNAP Tools
+          </button>
+        )}
+        {user.role === 'admin' && hrEnabled && (
+          <button className="nav-item" onClick={onOpenHr} title="Open HR & Payroll (opens in a new tab)">
+            <span className="nav-logo">👥</span> HR &amp; Payroll <span className="nav-ext">↗</span>
           </button>
         )}
         {user.role === 'admin' && (

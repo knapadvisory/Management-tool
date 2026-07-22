@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "node test/migration.mjs && node test/reminders.mjs && node test/signup-gate.mjs && node test/multitenant.mjs && node test/backup.mjs && node test/delete-workspace.mjs && node test/email.mjs && node test/callrooms.mjs && node test/clients.mjs && node test/time.mjs && node test/analytics.mjs && node test/smoke.mjs"
+    "test": "node test/migration.mjs && node test/reminders.mjs && node test/signup-gate.mjs && node test/multitenant.mjs && node test/backup.mjs && node test/delete-workspace.mjs && node test/email.mjs && node test/callrooms.mjs && node test/clients.mjs && node test/time.mjs && node test/analytics.mjs && node test/hr.mjs && node test/smoke.mjs"
   },
   "devDependencies": {
     "socket.io-client": "^4.8.1"

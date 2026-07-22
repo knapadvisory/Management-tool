@@ -62,6 +62,7 @@ export default function App() {
   const [collabs, setCollabs] = useState([]);
   const [users, setUsers] = useState([]);
   const [onlineIds, setOnlineIds] = useState([]);
+  const [hrEnabled, setHrEnabled] = useState(false); // KNAP-HRMS bridge available?
   // view: { type: 'channel', channel } | { type: 'tasks' } | { type: 'workflows' }
   const [view, setView] = useState(null);
   const [toast, setToast] = useState(null);
@@ -204,6 +205,8 @@ export default function App() {
       refreshUsers();
       setView((v) => v || { type: 'dashboard' });
       refreshChannels();
+      // Is the HR (KNAP-HRMS) bridge configured on this deployment? Admins only.
+      if (user.role === 'admin') api('/hr/config').then((c) => setHrEnabled(!!c.enabled)).catch(() => setHrEnabled(false));
     }
 
     return () => disconnectSocket();
@@ -385,6 +388,16 @@ export default function App() {
     setView({ type: 'channel', channel });
   }
 
+  // Hand off to the KNAP-HRMS app via single sign-on (opens in a new tab).
+  async function openHr() {
+    try {
+      const { url } = await api('/hr/sso');
+      if (url) window.open(url, '_blank', 'noopener');
+    } catch (e) {
+      showToast(e.message || 'Could not open HR.');
+    }
+  }
+
   // Open/find a DM and return the channel without changing the top-level view
   // (used by the Messenger's in-pane conversation switching).
   async function ensureDm(otherUser) {
@@ -438,6 +451,8 @@ export default function App() {
         users={users}
         onlineIds={onlineIds}
         view={view}
+        hrEnabled={hrEnabled}
+        onOpenHr={openHr}
         onSelectChannel={(channel) => { setView({ type: 'channel', channel }); setDrawerOpen(false); }}
         onSelectView={(type) => { setView({ type }); setDrawerOpen(false); }}
         onOpenDm={(u) => { openDm(u); setDrawerOpen(false); }}
@@ -474,6 +489,8 @@ export default function App() {
           <DashboardView
             user={user}
             users={users}
+            hrEnabled={hrEnabled}
+            onOpenHr={openHr}
             onOpenTasks={() => setView({ type: 'tasks' })}
             onOpenActivity={() => setView({ type: 'activity' })}
             onOpenTimesheet={() => setView({ type: 'timesheet' })}

@@ -45,8 +45,9 @@ function timeAgo(iso) {
 }
 
 import ReviewWidget from './ReviewWidget.jsx';
+import HrWidget from './HrWidget.jsx';
 
-export default function DashboardView({ user, users = [], onOpenTasks, onOpenActivity, onOpenTimesheet }) {
+export default function DashboardView({ user, users = [], hrEnabled = false, onOpenHr, onOpenTasks, onOpenActivity, onOpenTimesheet }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [workflows, setWorkflows] = useState([]);
@@ -159,6 +160,8 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
           <span className="dash-kpi-num">{s.clients ?? 0}</span><span className="dash-kpi-lbl">Active clients</span>
         </div>
       </div>
+
+      {user.role === 'admin' && hrEnabled && <HrWidget onOpenHr={onOpenHr} />}
 
       {data.upcoming.length > 0 && (
         <section className="dash-block">

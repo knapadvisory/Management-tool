@@ -24,6 +24,13 @@ if [ -z "${DOMAIN:-}" ]; then read -rp "Your domain (e.g. teamhub.knapadvisory.c
 if [ -z "${SIGNUP_CODE:-}" ]; then read -rp "Sign-up access code for your team: " SIGNUP_CODE; fi
 if [ -z "${JWT_SECRET:-}" ]; then JWT_SECRET="$(openssl rand -hex 32)"; fi
 
+# Shared secrets for the optional KNAP-HRMS integration. Generated once and
+# persisted; the HR deploy (deploy/hr-setup.sh in the KNAP-HRMS repo) must be
+# given these SAME values. HR_URL enables the HR nav item + SSO once HR is up.
+if [ -z "${TEAMHUB_SSO_SECRET:-}" ]; then TEAMHUB_SSO_SECRET="$(openssl rand -hex 32)"; fi
+if [ -z "${TEAMHUB_API_TOKEN:-}" ]; then TEAMHUB_API_TOKEN="$(openssl rand -hex 32)"; fi
+HR_URL="${HR_URL:-}"   # e.g. https://hr.$DOMAIN — leave blank until HR is deployed
+
 # Workspace creation can be gated by a code (defaults to your sign-up code so
 # behaviour is preserved: a code is needed to start a new workspace). Optional
 # TURN settings make audio/video calls work across restrictive networks.
@@ -64,6 +71,12 @@ FCM_SERVICE_ACCOUNT="${FCM_SERVICE_ACCOUNT:-}"
 WEB_PUSH_PUBLIC_KEY="${WEB_PUSH_PUBLIC_KEY:-}"
 WEB_PUSH_PRIVATE_KEY="${WEB_PUSH_PRIVATE_KEY:-}"
 WEB_PUSH_SUBJECT="${WEB_PUSH_SUBJECT:-}"
+# KNAP-HRMS integration (optional). Secrets are shared with the HR container;
+# set HR_URL to https://hr.$DOMAIN after running the HR deploy to light up the
+# HR nav item + dashboard widget in TeamHub.
+TEAMHUB_SSO_SECRET="$TEAMHUB_SSO_SECRET"
+TEAMHUB_API_TOKEN="$TEAMHUB_API_TOKEN"
+HR_URL="$HR_URL"
 EOF
 
 # Clean up a broken Caddy apt source from earlier script versions, if present.
@@ -111,15 +124,24 @@ docker run -d --name teamhub --restart unless-stopped \
   ${WEB_PUSH_PUBLIC_KEY:+-e WEB_PUSH_PUBLIC_KEY="$WEB_PUSH_PUBLIC_KEY"} \
   ${WEB_PUSH_PRIVATE_KEY:+-e WEB_PUSH_PRIVATE_KEY="$WEB_PUSH_PRIVATE_KEY"} \
   ${WEB_PUSH_SUBJECT:+-e WEB_PUSH_SUBJECT="$WEB_PUSH_SUBJECT"} \
+  ${TEAMHUB_SSO_SECRET:+-e TEAMHUB_SSO_SECRET="$TEAMHUB_SSO_SECRET"} \
+  ${TEAMHUB_API_TOKEN:+-e TEAMHUB_API_TOKEN="$TEAMHUB_API_TOKEN"} \
+  ${HR_URL:+-e HR_URL="$HR_URL"} \
   -v teamhub-data:/data \
   teamhub:latest
 
 echo "==> Configuring HTTPS (Caddy) for $DOMAIN..."
 mkdir -p /etc/teamhub
+# Sibling tools (e.g. KNAP-HRMS at hr.$DOMAIN) drop their own site block into
+# conf.d; the import keeps those routes across TeamHub redeploys that rewrite
+# this Caddyfile. Safe when conf.d is empty.
+mkdir -p /etc/teamhub/conf.d
 cat > /etc/teamhub/Caddyfile <<EOF
 $DOMAIN {
     reverse_proxy teamhub:3001
 }
+
+import /etc/caddy/conf.d/*.caddy
 EOF
 
 docker rm -f caddy 2>/dev/null || true
@@ -127,6 +149,7 @@ docker run -d --name caddy --restart unless-stopped \
   --network teamhub-net \
   -p 80:80 -p 443:443 \
   -v /etc/teamhub/Caddyfile:/etc/caddy/Caddyfile:ro \
+  -v /etc/teamhub/conf.d:/etc/caddy/conf.d:ro \
   -v caddy-data:/data \
   -v caddy-config:/config \
   caddy:latest
