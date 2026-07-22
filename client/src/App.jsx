@@ -10,7 +10,7 @@ import Sidebar from './components/Sidebar.jsx';
 import ChatView from './components/ChatView.jsx';
 import TasksBoard from './components/TasksBoard.jsx';
 import WorkflowsView from './components/WorkflowsView.jsx';
-import FeeParserTool from './components/FeeParserTool.jsx';
+import KnapTools from './components/KnapTools.jsx';
 import ClientsView from './components/ClientsView.jsx';
 import TimesheetView from './components/TimesheetView.jsx';
 import AdminPanel from './components/AdminPanel.jsx';
@@ -483,7 +483,7 @@ export default function App() {
         )}
         {view?.type === 'timesheet' && <TimesheetView user={user} />}
         {view?.type === 'workflows' && <WorkflowsView />}
-        {view?.type === 'tools' && user.role !== 'guest' && <FeeParserTool />}
+        {view?.type === 'tools' && user.role !== 'guest' && <KnapTools />}
         {view?.type === 'admin' && user.role === 'admin' && (
           <AdminPanel user={user} />
         )}

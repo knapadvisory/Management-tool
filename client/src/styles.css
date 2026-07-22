@@ -2161,3 +2161,15 @@ button.c360-stat:hover { border-color: var(--accent); }
 .feeparser-chip.check { background: rgba(177,86,24,.15); color: #b15618; }
 .feeparser-actions { margin-top: 18px; display: flex; gap: 12px; flex-wrap: wrap; }
 .feeparser-note { margin-top: 14px; font-size: 12.5px; }
+
+/* --- KNAP Tools hub --- */
+.tools-page { max-width: 960px; margin: 0 auto; padding: 24px; height: 100%; overflow-y: auto; }
+.tools-head h2 { font-size: 22px; }
+.tools-head .muted { margin: 4px 0 20px; }
+.tools-back { margin-bottom: 16px; }
+.tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.tool-card { text-align: left; display: flex; flex-direction: column; gap: 8px; padding: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); cursor: pointer; transition: border-color .15s, transform .1s; }
+.tool-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.tool-card-icon { font-size: 30px; }
+.tool-card-name { font-weight: 700; font-size: 15px; }
+.tool-card-desc { font-size: 12.5px; color: var(--muted); line-height: 1.45; }

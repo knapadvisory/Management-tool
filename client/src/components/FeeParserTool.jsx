@@ -2,10 +2,14 @@
 // Drops marketplace fee PDFs, gets one reconciled Excel register back. The
 // server does the parsing (Python) and enforces staff-only access; this page
 // is also only shown to non-guests (see App/Sidebar).
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { getToken } from '../api.js';
 
 const API = '/api/tools/fee-parser';
+
+// Module-level so a half-done batch survives leaving the tool and coming back
+// (File objects stay in memory for the session; cleared on send).
+const keep = { files: [], result: null };
 
 // Authenticated fetch using TeamHub's JWT (localStorage teamhub_token).
 function apiFetch(url, opts = {}) {
@@ -17,11 +21,15 @@ function apiFetch(url, opts = {}) {
 }
 
 export default function FeeParserTool() {
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState(keep.files);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(keep.result);
   const [error, setError] = useState('');
   const inputRef = useRef(null);
+
+  // Mirror to the module store so navigating away and back restores the batch.
+  useEffect(() => { keep.files = files; }, [files]);
+  useEffect(() => { keep.result = result; }, [result]);
 
   const addFiles = useCallback((list) => {
     const pdfs = Array.from(list).filter((f) => f.name.toLowerCase().endsWith('.pdf'));

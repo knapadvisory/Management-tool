@@ -119,7 +119,7 @@ export default function Sidebar({
             className={`nav-item ${view?.type === 'tools' ? 'active' : ''}`}
             onClick={() => onSelectView('tools')}
           >
-            🧾 Fee Parser
+            🧰 KNAP Tools
           </button>
         )}
         {user.role === 'admin' && (
