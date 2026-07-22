@@ -156,6 +156,26 @@ export default function App() {
     socket.on('mention', ({ from, preview }) => showToast(`${from.name} mentioned you: "${preview}"`));
     socket.on('directory:changed', () => { refreshUsers(); refreshChannels(); });
     socket.on('collabs:changed', () => { refreshCollabs(); });
+    // Keep the conversation list's preview + ordering live: patch the matching
+    // channel's last message/activity when any message arrives (or refetch if
+    // it's a conversation we don't have loaded yet, e.g. a brand-new DM).
+    socket.on('message:new', ({ message }) => {
+      if (!message?.channel_id) return;
+      setChannels((cs) => {
+        let found = false;
+        const next = cs.map((c) => {
+          if (c.id !== message.channel_id) return c;
+          found = true;
+          return {
+            ...c,
+            last_message: { user_id: message.user_id, user_name: message.user_name, content: message.content || '📎 Attachment' },
+            last_activity: message.created_at,
+          };
+        });
+        if (!found) refreshChannels();
+        return found ? next : cs;
+      });
+    });
     socket.on('account:deactivated', () => { showToast('Your access has been revoked by an administrator.'); logout(); });
     socket.on('notification:new', ({ notification, unread_count }) => {
       setNotifications((ns) => [notification, ...ns].slice(0, 50));
