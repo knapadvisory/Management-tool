@@ -126,6 +126,14 @@ export default function Sidebar({
         </button>
         {user.role !== 'guest' && (
           <button
+            className={`nav-item ${view?.type === 'analytics' ? 'active' : ''}`}
+            onClick={() => onSelectView('analytics')}
+          >
+            <span className="nav-logo">📊</span> Analytics
+          </button>
+        )}
+        {user.role !== 'guest' && (
+          <button
             className={`nav-item ${view?.type === 'tools' ? 'active' : ''}`}
             onClick={() => onSelectView('tools')}
           >

@@ -519,6 +519,10 @@ ensureColumn('tasks', 'client_id', 'INTEGER REFERENCES clients(id)');
 // once turned into an actionable task, linked to that task.
 ensureColumn('client_deadlines', 'assignee_id', 'INTEGER REFERENCES users(id)');
 ensureColumn('client_deadlines', 'task_id', 'INTEGER REFERENCES tasks(id)');
+// Stamped when a deadline is filed, so Practice Analytics can measure whether a
+// filing landed on or before its due date (on-time rate). Older filings that
+// were completed before this column existed stay NULL (excluded from the rate).
+ensureColumn('client_deadlines', 'completed_at', 'TEXT');
 
 // Richer client master fields (imported from a firm's client-master workbook).
 // All optional; existing rows keep '' defaults.

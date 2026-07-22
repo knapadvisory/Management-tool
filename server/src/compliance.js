@@ -15,7 +15,7 @@ export function advanceDate(dateStr, recurrence) {
 // (carrying the same assignee). Used both from the client UI and when the
 // deadline's linked task is completed.
 export function completeDeadline(dl, userId) {
-  db.prepare('UPDATE client_deadlines SET completed = 1 WHERE id = ?').run(dl.id);
+  db.prepare("UPDATE client_deadlines SET completed = 1, completed_at = datetime('now') WHERE id = ?").run(dl.id);
   if (dl.recurrence && dl.recurrence !== 'none') {
     const next = advanceDate(dl.due_date, dl.recurrence);
     if (next) db.prepare(`

@@ -452,7 +452,7 @@ router.patch('/:id/deadlines/:did', (req, res) => {
   if (!dl) return res.status(404).json({ error: 'Deadline not found' });
   if (req.body.completed !== undefined) {
     if (req.body.completed) completeDeadline(dl, req.user.id);
-    else db.prepare('UPDATE client_deadlines SET completed = 0 WHERE id = ?').run(dl.id);
+    else db.prepare('UPDATE client_deadlines SET completed = 0, completed_at = NULL WHERE id = ?').run(dl.id);
   }
   if (req.body.assignee_id !== undefined) {
     const aid = isWsUser(req.body.assignee_id, req.workspaceId) ? req.body.assignee_id : null;

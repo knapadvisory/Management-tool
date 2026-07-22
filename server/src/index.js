@@ -19,6 +19,7 @@ import tasksRouter from './routes/tasks.js';
 import workflowsRouter from './routes/workflows.js';
 import projectsRouter from './routes/projects.js';
 import clientsRouter from './routes/clients.js';
+import analyticsRouter from './routes/analytics.js';
 import templatesRouter from './routes/templates.js';
 import notificationsRouter from './routes/notifications.js';
 import uploadsRouter from './routes/uploads.js';
@@ -324,6 +325,7 @@ app.use('/api/time', requireAuth, blockGuests, timeRouter);
 app.use('/api/tools/fee-parser', requireAuth, blockGuests, feeParserRouter); // staff-only marketplace fee parser
 app.use('/api/push', requireAuth, pushRouter);
 app.use('/api/clients', requireAuth, blockGuests, clientsRouter);
+app.use('/api/analytics', requireAuth, blockGuests, analyticsRouter); // staff-only practice analytics
 
 // Serve the built client in production.
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');

@@ -17,6 +17,7 @@ import dmsIco from './assets/icons/DMs.png';
 import filesIco from './assets/icons/Files.png';
 import clientIco from './assets/icons/Client.png';
 import ClientsView from './components/ClientsView.jsx';
+import AnalyticsView from './components/AnalyticsView.jsx';
 import TimesheetView from './components/TimesheetView.jsx';
 import AdminPanel from './components/AdminPanel.jsx';
 import Messenger from './components/Messenger.jsx';
@@ -510,6 +511,7 @@ export default function App() {
           <ClientsView user={user} users={users} initialClientId={view.clientId} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
         )}
         {view?.type === 'timesheet' && <TimesheetView user={user} />}
+        {view?.type === 'analytics' && user.role !== 'guest' && <AnalyticsView user={user} users={users} />}
         {view?.type === 'workflows' && <WorkflowsView />}
         {view?.type === 'tools' && user.role !== 'guest' && <KnapTools />}
         {view?.type === 'admin' && user.role === 'admin' && (
