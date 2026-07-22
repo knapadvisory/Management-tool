@@ -44,6 +44,8 @@ function timeAgo(iso) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
+import ReviewWidget from './ReviewWidget.jsx';
+
 export default function DashboardView({ user, users = [], onOpenTasks, onOpenActivity, onOpenTimesheet }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -139,6 +141,8 @@ export default function DashboardView({ user, users = [], onOpenTasks, onOpenAct
           <button className="btn btn-primary" onClick={onOpenTasks}>{t('dash.opentasks')} →</button>
         </div>
       </header>
+
+      <ReviewWidget user={user} users={users} />
 
       {/* Practice command-centre KPIs */}
       <div className="dash-kpis">

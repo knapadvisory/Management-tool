@@ -486,6 +486,27 @@ ensureColumn('channel_members', 'cleared_before', 'TEXT');
 ensureColumn('channel_members', 'last_read_at', 'TEXT');
 ensureColumn('channel_members', 'last_delivered_at', 'TEXT');
 
+// Task ratings / appraisals. When a task is completed, the assigner (or, for a
+// self-assigned task, a chosen reporting manager) rates the work: 1-5 stars +
+// a required comment. One flow per completion; role says who the rater is.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS task_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    workspace_id INTEGER,
+    ratee_id INTEGER NOT NULL REFERENCES users(id),
+    rater_id INTEGER REFERENCES users(id),
+    role TEXT NOT NULL,                              -- 'self' | 'assigner' | 'manager'
+    stars INTEGER,                                   -- 1..5 once rated
+    comment TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',          -- 'pending' | 'done'
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    rated_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_task_ratings_rater ON task_ratings(rater_id, status);
+  CREATE INDEX IF NOT EXISTS idx_task_ratings_task ON task_ratings(task_id);
+`);
+
 // --- Multi-tenancy: every root entity belongs to a workspace ---
 // Added as plain columns (nullable at the DB level) and always set in code;
 // existing rows are backfilled into a default workspace just below.

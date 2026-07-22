@@ -2173,3 +2173,26 @@ button.c360-stat:hover { border-color: var(--accent); }
 .tool-card-icon { font-size: 30px; }
 .tool-card-name { font-weight: 700; font-size: 15px; }
 .tool-card-desc { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+
+/* --- For Your Review (task ratings) --- */
+.review-widget { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; }
+.review-head { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.review-count { background: var(--accent); color: #fff; border-radius: 999px; font-size: 12px; font-weight: 700; padding: 1px 8px; }
+.review-sub { margin: 2px 0 10px; font-size: 13px; }
+.review-list { display: flex; flex-direction: column; gap: 8px; }
+.review-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; cursor: pointer; }
+.review-item:hover { border-color: var(--accent); }
+.review-item-main { display: flex; flex-direction: column; min-width: 0; }
+.review-item-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-item-sub { font-size: 12px; }
+.review-item-cta { color: var(--accent); font-weight: 600; font-size: 13px; white-space: nowrap; }
+.rating-modal { width: 440px; max-width: 94vw; }
+.rating-body { padding: 16px 18px; }
+.rating-task { font-weight: 700; font-size: 16px; }
+.rating-who { font-size: 13px; margin-bottom: 12px; }
+.rating-stars { display: flex; align-items: center; gap: 4px; margin: 6px 0 14px; }
+.rating-stars .star { background: none; border: none; cursor: pointer; font-size: 30px; line-height: 1; color: var(--border); padding: 0 2px; transition: color .1s; }
+.rating-stars .star.on { color: #f5b301; }
+.rating-stars-val { margin-left: 8px; font-weight: 700; color: var(--muted); font-size: 14px; }
+.rating-comment { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font: inherit; resize: vertical; background: var(--surface); color: var(--text); }
+.rating-hint { font-size: 12px; margin-top: 6px; }

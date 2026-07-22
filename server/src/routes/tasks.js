@@ -201,6 +201,76 @@ function loadTask(req, res) {
 
 // --- Tasks list & CRUD ---
 
+// Start the rating flow when a task is completed. If it was assigned by
+// someone else, that assigner rates it; if it was self-assigned, the doer
+// rates themselves and then names a reporting manager who rates it too.
+function openTaskRating(io, task, completerId) {
+  if (!task) return;
+  // Only one open flow per task at a time.
+  if (db.prepare("SELECT 1 FROM task_ratings WHERE task_id = ? AND status = 'pending'").get(task.id)) return;
+  const selfAssigned = !task.creator_id || task.creator_id === completerId;
+  if (selfAssigned) {
+    db.prepare("INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role) VALUES (?, ?, ?, ?, 'self')")
+      .run(task.id, task.workspace_id, completerId, completerId);
+    createNotification(io, { user_id: completerId, type: 'rating_self', actor_id: completerId, task_id: task.id,
+      text: `Rate your completed task "${task.title}" and choose a reporting manager` });
+  } else {
+    db.prepare("INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role) VALUES (?, ?, ?, ?, 'assigner')")
+      .run(task.id, task.workspace_id, completerId, task.creator_id);
+    createNotification(io, { user_id: task.creator_id, type: 'rating_request', actor_id: completerId, task_id: task.id,
+      text: `Rate the completed task "${task.title}"` });
+  }
+}
+
+// Tasks awaiting MY rating (assigner / manager / my own self-rating).
+router.get('/ratings/pending', (req, res) => {
+  const rows = db.prepare(`
+    SELECT r.id, r.task_id, r.role, r.ratee_id, t.title AS task_title,
+           u.name AS ratee_name, u.avatar_color AS ratee_color
+    FROM task_ratings r
+    JOIN tasks t ON t.id = r.task_id
+    JOIN users u ON u.id = r.ratee_id
+    WHERE r.rater_id = ? AND r.status = 'pending' AND r.workspace_id = ?
+    ORDER BY r.created_at DESC
+  `).all(req.user.id, req.workspaceId);
+  res.json({ ratings: rows });
+});
+
+// Submit a rating: 1-5 stars + required comment. A self-rating also names the
+// reporting manager, which spawns that manager's pending rating.
+router.post('/ratings/:id', (req, res) => {
+  const r = db.prepare("SELECT * FROM task_ratings WHERE id = ? AND rater_id = ? AND status = 'pending'").get(req.params.id, req.user.id);
+  if (!r) return res.status(404).json({ error: 'Rating not found' });
+  const stars = Math.max(0, Math.min(5, parseInt(req.body.stars, 10) || 0));
+  const comment = (req.body.comment || '').trim();
+  if (!stars) return res.status(400).json({ error: 'Please give a star rating.' });
+  if (!comment) return res.status(400).json({ error: 'A short comment is required.' });
+
+  let managerId = null;
+  if (r.role === 'self') {
+    managerId = Number(req.body.manager_id);
+    if (!wsUser(managerId, req.workspaceId) || managerId === req.user.id) {
+      return res.status(400).json({ error: 'Choose a reporting manager (not yourself).' });
+    }
+  }
+
+  const io = req.app.get('io');
+  db.prepare("UPDATE task_ratings SET stars = ?, comment = ?, status = 'done', rated_at = datetime('now') WHERE id = ?")
+    .run(stars, comment, r.id);
+  const task = db.prepare('SELECT title FROM tasks WHERE id = ?').get(r.task_id);
+
+  if (r.role === 'self') {
+    db.prepare("INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role) VALUES (?, ?, ?, ?, 'manager')")
+      .run(r.task_id, r.workspace_id, r.ratee_id, managerId);
+    createNotification(io, { user_id: managerId, type: 'rating_request', actor_id: req.user.id, task_id: r.task_id,
+      text: `${req.user.name} asked you to rate their completed task "${task?.title || ''}"` });
+  } else {
+    createNotification(io, { user_id: r.ratee_id, type: 'rating_received', actor_id: req.user.id, task_id: r.task_id,
+      text: `${req.user.name} rated your task "${task?.title || ''}" ${stars}★` });
+  }
+  res.json({ ok: true });
+});
+
 router.get('/', (req, res) => {
   const { workflow_id, project_id, client_id, assignee_id, creator_id, tag, overdue, watching } = req.query;
   let sql = 'SELECT DISTINCT t.* FROM tasks t';
@@ -421,6 +491,8 @@ router.patch('/:id', (req, res) => {
     // If this task was generated from a compliance deadline, tick the deadline
     // off (and roll a recurring one to its next period).
     completeDeadlinesForTask(task.id, req.user.id);
+    // Kick off the rating flow (assigner rates, or self → pick a manager).
+    openTaskRating(req.app.get('io'), task, req.user.id);
   } else if (!isDoneNow && now.completed_at) {
     db.prepare('UPDATE tasks SET completed_at = NULL, archived_at = NULL WHERE id = ?').run(task.id);
   }
