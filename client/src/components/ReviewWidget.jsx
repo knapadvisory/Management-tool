@@ -57,12 +57,14 @@ function RatingModal({ item, user, users, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const isSelf = item.role === 'self';
+  const isAdmin = user.role === 'admin';
+  const managerOptional = isSelf && isAdmin; // admins are the senior — no reviewer required
   const managers = users.filter((u) => u.id !== user.id && u.name);
 
   async function submit() {
     if (!stars) { setErr('Please tap a star rating.'); return; }
     if (!comment.trim()) { setErr('A short comment is required.'); return; }
-    if (isSelf && !managerId) { setErr('Choose a reporting manager.'); return; }
+    if (isSelf && !managerId && !managerOptional) { setErr('Choose a reporting manager.'); return; }
     setBusy(true); setErr('');
     try {
       await api(`/tasks/ratings/${item.id}`, {
@@ -109,12 +111,16 @@ function RatingModal({ item, user, users, onClose, onDone }) {
 
           {isSelf && (
             <>
-              <label className="profile-label">Reporting manager</label>
+              <label className="profile-label">Reporting manager {managerOptional && <span className="muted">(optional)</span>}</label>
               <select className="profile-input" value={managerId} onChange={(e) => setManagerId(e.target.value)}>
-                <option value="">Select a teammate…</option>
+                <option value="">{managerOptional ? 'No reviewer — finalise my rating' : 'Select a teammate…'}</option>
                 {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
-              <p className="muted rating-hint">They’ll be notified to review and rate this task.</p>
+              <p className="muted rating-hint">
+                {managerOptional
+                  ? 'As an admin you can finalise your own rating, or pick someone to review it.'
+                  : 'They’ll be notified to review and rate this task.'}
+              </p>
             </>
           )}
 
@@ -123,7 +129,7 @@ function RatingModal({ item, user, users, onClose, onDone }) {
         <div className="editor-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" disabled={busy} onClick={submit}>
-            {busy ? 'Saving…' : (isSelf ? 'Submit & notify manager' : 'Submit rating')}
+            {busy ? 'Saving…' : (isSelf && managerId ? 'Submit & notify manager' : 'Submit rating')}
           </button>
         </div>
       </div>

@@ -248,9 +248,16 @@ router.post('/ratings/:id', (req, res) => {
 
   let managerId = null;
   if (r.role === 'self') {
-    managerId = Number(req.body.manager_id);
-    if (!wsUser(managerId, req.workspaceId) || managerId === req.user.id) {
-      return res.status(400).json({ error: 'Choose a reporting manager (not yourself).' });
+    const raw = req.body.manager_id;
+    if (raw) {
+      managerId = Number(raw);
+      if (!wsUser(managerId, req.workspaceId) || managerId === req.user.id) {
+        return res.status(400).json({ error: 'Choose a valid reporting manager (not yourself).' });
+      }
+    } else if (req.user.role !== 'admin') {
+      // Non-admins must name a reviewer; an admin is the senior, so their
+      // self-rating is final and no manager is required.
+      return res.status(400).json({ error: 'Choose a reporting manager.' });
     }
   }
 
@@ -259,15 +266,16 @@ router.post('/ratings/:id', (req, res) => {
     .run(stars, comment, r.id);
   const task = db.prepare('SELECT title FROM tasks WHERE id = ?').get(r.task_id);
 
-  if (r.role === 'self') {
+  if (r.role === 'self' && managerId) {
     db.prepare("INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role) VALUES (?, ?, ?, ?, 'manager')")
       .run(r.task_id, r.workspace_id, r.ratee_id, managerId);
     createNotification(io, { user_id: managerId, type: 'rating_request', actor_id: req.user.id, task_id: r.task_id,
       text: `${req.user.name} asked you to rate their completed task "${task?.title || ''}"` });
-  } else {
+  } else if (r.role !== 'self') {
     createNotification(io, { user_id: r.ratee_id, type: 'rating_received', actor_id: req.user.id, task_id: r.task_id,
       text: `${req.user.name} rated your task "${task?.title || ''}" ${stars}★` });
   }
+  // (admin self-rating with no manager: nothing further — it's final)
   res.json({ ok: true });
 });
 
@@ -507,6 +515,9 @@ router.patch('/:id', (req, res) => {
     openTaskRating(req.app.get('io'), task, req.user.id);
   } else if (!isDoneNow && now.completed_at) {
     db.prepare('UPDATE tasks SET completed_at = NULL, archived_at = NULL WHERE id = ?').run(task.id);
+    // Reopened before it was rated — drop any pending rating so it stops
+    // showing in "For Your Review". Ratings already given stay as history.
+    db.prepare("DELETE FROM task_ratings WHERE task_id = ? AND status = 'pending'").run(task.id);
   }
 
   const updated = emitChanged(req, task.id);
