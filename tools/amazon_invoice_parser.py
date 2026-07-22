@@ -21,7 +21,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-VERSION = "2026-07-21e (Amazon + Flipkart + Myntra + Nykaa; Myntra CN sign fix + duplicate flag & highlight)"
+VERSION = "2026-07-22a (Amazon + Flipkart + Myntra + Nykaa; Myntra CN sign fix + duplicate flag & highlight)"
 
 # ------------------------------------------------------------------ CONFIG
 TDS_MAP = {
@@ -128,8 +128,15 @@ def parse_amazon(pdf):
             if sac_here:
                 last_sac = sac_here
             dl = desc.lower()
-            if dl in TAX_WORDS and cur:
-                cur[dl] = amt or 0.0
+            # A GST row (SGST/CGST/IGST) belongs to a fee line, never a fee line
+            # of its own — attach it to the current line, or (if the previous
+            # line was already flushed at a table boundary) the last one added.
+            # Otherwise a standalone "SGST" row leaks in as a fake fee, wrongly
+            # inflating the TDS base.
+            if dl in TAX_WORDS:
+                target = cur if cur else (lines[-1] if lines else None)
+                if target is not None:
+                    target[dl] = amt or 0.0
                 continue
             if amt is None or not desc or "total" in dl or dl in ("amount", "description of service"):
                 continue
