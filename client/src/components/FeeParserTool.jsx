@@ -39,6 +39,8 @@ export default function FeeParserTool() {
 
   const onDrop = (e) => { e.preventDefault(); addFiles(e.dataTransfer.files); };
 
+  function reset() { setFiles([]); setResult(null); setError(''); if (inputRef.current) inputRef.current.value = ''; }
+
   async function process() {
     setBusy(true); setError('');
     const fd = new FormData();
@@ -101,9 +103,12 @@ export default function FeeParserTool() {
               </li>
             ))}
           </ul>
-          <button className="btn btn-primary" disabled={busy} onClick={process}>
-            {busy ? 'Reading documents…' : `Generate register (${files.length})`}
-          </button>
+          <div className="feeparser-actions-row">
+            <button className="btn btn-primary" disabled={busy} onClick={process}>
+              {busy ? 'Reading documents…' : `Generate register (${files.length})`}
+            </button>
+            <button className="btn" disabled={busy} onClick={reset}>↺ Reset</button>
+          </div>
         </div>
       )}
 
