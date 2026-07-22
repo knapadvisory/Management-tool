@@ -2368,3 +2368,13 @@ button.c360-stat:hover { border-color: var(--accent); }
 .an-bill-row:last-child { border-bottom: none; }
 .an-bill-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .an-bill-row b { font-variant-numeric: tabular-nums; }
+
+/* ---- Analytics: three charts share one compact row ---- */
+.an-card-head { flex-wrap: wrap; gap: 8px; }
+.an-seg-wrap { flex-wrap: wrap; }
+/* Throughput sits in a third of the row now — keep it short. */
+.an-svg-throughput { height: 168px; }
+.an-legend-btm { margin-top: 10px; justify-content: center; }
+/* Even out the three chart cards so the row reads as one band. */
+.an-grid-3 > .an-card-chart { display: flex; flex-direction: column; }
+.an-card-chart .an-donut-wrap { margin-top: auto; margin-bottom: auto; }

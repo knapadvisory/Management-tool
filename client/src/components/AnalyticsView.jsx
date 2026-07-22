@@ -117,7 +117,10 @@ function Donut({ segments, total, centerLabel }) {
 function QualityTrend({ points }) {
   const W = 340, H = 150;
   if (!points.length) return <div className="an-empty">No ratings yet in this range.</div>;
-  const xs = points.map((_, i) => 20 + (i * (W - 40)) / Math.max(1, points.length - 1));
+  // With a single month of data, centre the point instead of pinning it left.
+  const xs = points.length === 1
+    ? [W / 2]
+    : points.map((_, i) => 20 + (i * (W - 40)) / (points.length - 1));
   const y = (v) => H - 20 - ((H - 45) * (Math.max(3, Math.min(5, v)) - 3)) / 2;
   const line = points.map((p, i) => `${xs[i]},${y(p.avg)}`).join(' ');
   return (
@@ -182,24 +185,22 @@ function Overview({ data, chartStyle, setChartStyle, onDrill, onQuality }) {
         </button>
       </section>
 
-      <section className="an-card">
-        <div className="an-card-head">
-          <div><h3>Task throughput</h3><div className="an-ch-sub">Completed vs newly assigned</div></div>
-          <div className="an-head-right">
-            <div className="an-legend">
-              <span><i style={{ background: 'var(--an-accent)' }} />Completed</span>
-              <span><i style={{ background: 'var(--an-accent-soft2)' }} />Assigned</span>
-            </div>
-            <div className="an-seg an-seg-sm">
+      <section className="an-grid-3">
+        <div className="an-card an-card-chart">
+          <div className="an-card-head">
+            <div><h3>Task throughput</h3><div className="an-ch-sub">Completed vs assigned</div></div>
+            <div className="an-seg an-seg-sm an-seg-wrap">
               {CHART_STYLES.map((c) => <button key={c.key} className={chartStyle === c.key ? 'on' : ''} onClick={() => setChartStyle(c.key)}>{c.label}</button>)}
             </div>
           </div>
+          <ThroughputChart series={data.throughput} mode={chartStyle} />
+          <div className="an-legend an-legend-btm">
+            <span><i style={{ background: 'var(--an-accent)' }} />Completed</span>
+            <span><i style={{ background: 'var(--an-accent-soft2)' }} />Assigned</span>
+          </div>
         </div>
-        <ThroughputChart series={data.throughput} mode={chartStyle} />
-      </section>
 
-      <section className="an-grid-2">
-        <div className="an-card">
+        <div className="an-card an-card-chart">
           <div className="an-card-head"><div><h3>Compliance status</h3><div className="an-ch-sub">All filings in scope</div></div></div>
           <div className="an-donut-wrap">
             <Donut
@@ -224,7 +225,7 @@ function Overview({ data, chartStyle, setChartStyle, onDrill, onQuality }) {
           )}
         </div>
 
-        <div className="an-card">
+        <div className="an-card an-card-chart">
           <div className="an-card-head"><div><h3>Quality trend</h3><div className="an-ch-sub">Avg rating, 6 months</div></div></div>
           <QualityTrend points={data.quality_trend} />
         </div>
