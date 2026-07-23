@@ -102,6 +102,7 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [tagFilter, setTagFilter] = useState('');
   const [letter, setLetter] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
@@ -127,9 +128,12 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
   }, [initialClientId]);
 
   const q = query.trim().toLowerCase();
+  // Every tag in use across the book, for the segment filter (GST, TDS, Audit…).
+  const allTags = [...new Set(clients.flatMap((c) => c.tags || []))].sort((a, b) => a.localeCompare(b));
   const visible = clients.filter((c) =>
     (!q || c.name.toLowerCase().includes(q)) &&
     (statusFilter === 'all' || c.status === statusFilter) &&
+    (!tagFilter || (c.tags || []).some((t) => t.toLowerCase() === tagFilter.toLowerCase())) &&
     (!letter || c.name.trim().toUpperCase().startsWith(letter)));
   // Which first-letters actually have clients (for the A–Z rail).
   const activeLetters = new Set(clients.map((c) => (c.name.trim()[0] || '').toUpperCase()));
@@ -163,9 +167,21 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
             <option value="prospect">Prospect</option>
             <option value="inactive">Inactive</option>
           </select>
+          {allTags.length > 0 && (
+            <select className="client-status-filter" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} title="Filter by tag / compliance segment">
+              <option value="">All tags</option>
+              {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
           <button className="btn btn-sm" onClick={() => setShowImport(true)}>⬆ Import list</button>
           <button className="btn btn-sm" onClick={() => setShowBulk(true)}>🗓 Bulk deadlines</button>
         </div>
+        {tagFilter && (
+          <div className="client-filter-note">
+            Showing <strong>{visible.length}</strong> {tagFilter} client{visible.length === 1 ? '' : 's'}
+            <button className="link-btn" onClick={() => setTagFilter('')}>clear</button>
+          </div>
+        )}
         <div className="az-rail">
           <button className={`az-key ${letter === '' ? 'on' : ''}`} onClick={() => setLetter('')}>All</button>
           {'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((L) => (
@@ -187,6 +203,14 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
                   ? <span className={overdue(c.next_deadline.due_date) ? 'due-warn' : ''}>⏳ {c.next_deadline.title} · {fmtDate(c.next_deadline.due_date)}</span>
                   : `${c.open_task_count} open task${c.open_task_count === 1 ? '' : 's'}`}
               </div>
+              {(c.tags || []).length > 0 && (
+                <div className="client-row-tags">
+                  {c.tags.slice(0, 4).map((t) => (
+                    <span key={t} className={`client-row-tag ${tagFilter && t.toLowerCase() === tagFilter.toLowerCase() ? 'on' : ''}`}>{t}</span>
+                  ))}
+                  {c.tags.length > 4 && <span className="client-row-tag more">+{c.tags.length - 4}</span>}
+                </div>
+              )}
             </div>
           </button>
         ))}
@@ -224,7 +248,7 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
       )}
       {showBulk && (
         <BulkDeadlinesModal
-          clients={clients} staff={staff}
+          clients={clients} staff={staff} initialTag={tagFilter}
           onClose={() => setShowBulk(false)}
           onDone={(r) => { setShowBulk(false); load(); setFlash(`Set on ${r.created} client${r.created === 1 ? '' : 's'}${r.tasks ? ` · ${r.tasks} task${r.tasks === 1 ? '' : 's'} created` : ''}${r.skipped ? ` · ${r.skipped} already had it` : ''}`); }}
         />
@@ -539,7 +563,7 @@ function BulkImportModal({ onClose, onDone }) {
   );
 }
 
-function BulkDeadlinesModal({ clients, staff = [], onClose, onDone }) {
+function BulkDeadlinesModal({ clients, staff = [], initialTag = '', onClose, onDone }) {
   const [title, setTitle] = useState('GSTR-3B');
   const [due, setDue] = useState('');
   const [rec, setRec] = useState('monthly');
@@ -548,7 +572,7 @@ function BulkDeadlinesModal({ clients, staff = [], onClose, onDone }) {
   const [sel, setSel] = useState(() => new Set());
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
-  const [tagFilter, setTagFilter] = useState('');
+  const [tagFilter, setTagFilter] = useState(initialTag);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [types, setTypes] = useState([]);       // firm-added filing types

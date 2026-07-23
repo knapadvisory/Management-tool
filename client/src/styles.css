@@ -1918,6 +1918,14 @@ button.c360-stat:hover { border-color: var(--accent); }
 
 /* Client list: status filter + A–Z rail */
 .client-status-filter { padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 13px; }
+/* Active tag-segment note under the toolbar */
+.client-filter-note { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 12px; color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.client-filter-note strong { color: var(--text); }
+/* Tag chips shown on each client row */
+.client-row-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.client-row-tag { font-size: 10px; font-weight: 600; line-height: 1.4; background: var(--surface-2); color: var(--muted); border-radius: 8px; padding: 1px 7px; }
+.client-row-tag.on { background: var(--accent-soft); color: var(--accent); }
+.client-row-tag.more { background: none; }
 .az-rail { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .az-key { border: none; background: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 1px 4px; border-radius: 4px; min-width: 16px; }
 .az-key:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
