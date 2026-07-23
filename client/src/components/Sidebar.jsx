@@ -142,9 +142,9 @@ export default function Sidebar({
             <img className="nav-ico" src={toolsIco} alt="" /> KNAP Tools
           </button>
         )}
-        {user.role === 'admin' && hrEnabled && (
-          <button className="nav-item" onClick={onOpenHr} title="Open HR & Payroll (opens in a new tab)">
-            <span className="nav-logo">👥</span> HR &amp; Payroll <span className="nav-ext">↗</span>
+        {user.role !== 'guest' && hrEnabled && (
+          <button className="nav-item" onClick={onOpenHr} title={user.role === 'admin' ? 'Open HR & Payroll (opens in a new tab)' : 'Open My HR — payslips, leave & profile (opens in a new tab)'}>
+            <span className="nav-logo">👥</span> {user.role === 'admin' ? 'HR & Payroll' : 'My HR'} <span className="nav-ext">↗</span>
           </button>
         )}
         {user.role === 'admin' && (

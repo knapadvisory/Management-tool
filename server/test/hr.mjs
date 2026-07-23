@@ -91,6 +91,7 @@ async function main() {
   check('the token signature verifies with the shared secret', claims !== null);
   check('the token carries the caller’s email + a future expiry', claims && claims.email === 'a@a.test' && claims.exp > Math.floor(Date.now() / 1000));
   check('the token carries the workspace + role for HR tenant isolation', claims && claims.ws === slug && claims.wsname === 'HR Co' && claims.role === 'admin');
+  check('the token carries the TeamHub user id so HR links the employee', claims && Number.isInteger(claims.uid) && claims.uid > 0);
   check('a wrong secret rejects the token', verify(token, 'not-the-secret') === null);
 
   // Opening HR fires a fire-and-forget roster push; wait briefly for it.
@@ -105,6 +106,20 @@ async function main() {
     && emails.join(',') === 'a@a.test,b@b.test'
     && lastRoster.body.employees.every((e) => e.teamhub_user_id && e.name && e.active === true));
 
+  // Members CAN open HR now — they land in their own self-service portal.
+  const memberSso = await req('GET', '/api/hr/sso', { token: b });
+  const memberToken = memberSso.status === 200 ? new URL(memberSso.data.url).searchParams.get('token') : null;
+  const memberClaims = memberToken ? verify(memberToken, SSO_SECRET) : null;
+  check('a member can mint an SSO token', memberSso.status === 200 && memberClaims !== null);
+  check('the member token carries role=member + their own uid', memberClaims && memberClaims.role === 'member' && Number.isInteger(memberClaims.uid) && memberClaims.uid > 0);
+
+  // …but the firm-wide summary widget stays admin-only.
+  const memberSummary = await req('GET', '/api/hr/summary', { token: b });
+  check('members cannot read the firm-wide HR summary (403)', memberSummary.status === 403);
+
+  const summary = await req('GET', '/api/hr/summary', { token: a });
+  check('summary proxy returns 502 when HR has no summary endpoint', summary.status === 502);
+
   // Deactivating a member re-pushes a roster without them.
   lastRoster = null;
   await req('POST', `/api/admin/users/${bobId}/deactivate`, { token: a });
@@ -113,12 +128,6 @@ async function main() {
   check('the deactivated member drops off the active roster', lastRoster
     && lastRoster.body.employees.length === 1
     && lastRoster.body.employees[0].email === 'a@a.test');
-
-  const memberSso = await req('GET', '/api/hr/sso', { token: b });
-  check('non-admins cannot mint an SSO token (403)', memberSso.status === 403);
-
-  const summary = await req('GET', '/api/hr/summary', { token: a });
-  check('summary proxy returns 502 when HR has no summary endpoint', summary.status === 502);
 
   server.kill();
   mockHr.close();

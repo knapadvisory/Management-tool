@@ -327,7 +327,9 @@ app.use('/api/tools/fee-parser', requireAuth, blockGuests, feeParserRouter); // 
 app.use('/api/push', requireAuth, pushRouter);
 app.use('/api/clients', requireAuth, blockGuests, clientsRouter);
 app.use('/api/analytics', requireAuth, blockGuests, analyticsRouter); // staff-only practice analytics
-app.use('/api/hr', requireAuth, requireAdmin, hrRouter); // bridge to KNAP-HRMS (admin-only)
+// Bridge to KNAP-HRMS. Any member can open HR (they land in their own
+// self-service portal); /summary is gated to admins inside the router.
+app.use('/api/hr', requireAuth, blockGuests, hrRouter);
 
 // Serve the built client in production.
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');

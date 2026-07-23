@@ -205,8 +205,9 @@ export default function App() {
       refreshUsers();
       setView((v) => v || { type: 'dashboard' });
       refreshChannels();
-      // Is the HR (KNAP-HRMS) bridge configured on this deployment? Admins only.
-      if (user.role === 'admin') api('/hr/config').then((c) => setHrEnabled(!!c.enabled)).catch(() => setHrEnabled(false));
+      // Is the HR (KNAP-HRMS) bridge configured on this deployment? Any member
+      // can open HR (they land in their own self-service portal); guests can't.
+      if (user.role !== 'guest') api('/hr/config').then((c) => setHrEnabled(!!c.enabled)).catch(() => setHrEnabled(false));
     }
 
     return () => disconnectSocket();

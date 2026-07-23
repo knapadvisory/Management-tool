@@ -11,6 +11,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import db from '../db.js';
+import { requireAdmin } from '../auth.js';
 
 const router = Router();
 
@@ -78,6 +79,7 @@ router.get('/sso', (req, res) => {
   const claims = {
     email: req.user.email, name: req.user.name, exp,
     ws: ws.slug || String(req.user.workspace_id), wsname: ws.name || '', role: req.user.role || 'admin',
+    uid: req.user.id, // lets HR link the person to their own employee record
   };
   const body = Buffer.from(JSON.stringify(claims)).toString('base64url');
   const sig = crypto.createHmac('sha256', SSO_SECRET).update(body).digest('base64url');
@@ -89,7 +91,8 @@ router.get('/sso', (req, res) => {
 
 // Proxy HR's aggregate summary for the dashboard widget. Aggregate counts only
 // (headcount, on-leave, pending approvals) — never any individual's pay data.
-router.get('/summary', async (req, res) => {
+// Admin-only: the firm-wide widget is for admins; members see their own portal.
+router.get('/summary', requireAdmin, async (req, res) => {
   if (!API_TOKEN) return res.status(503).json({ error: 'HR is not configured.' });
   try {
     const ws = db.prepare('SELECT slug FROM workspaces WHERE id = ?').get(req.user.workspace_id)?.slug || String(req.user.workspace_id);
