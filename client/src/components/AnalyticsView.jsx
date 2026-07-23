@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
+import TaskModal from './TaskModal.jsx';
 
 // Practice Analytics — two tabs:
 //  • Overview  — firm-wide (or personal) KPIs, throughput, compliance, quality.
@@ -476,7 +477,7 @@ function DetailModal({ metric, period, userId, clientId, isAdmin, onOpenTask, on
   );
 }
 
-export default function AnalyticsView({ user, users = [], onOpenTask }) {
+export default function AnalyticsView({ user, users = [] }) {
   const isAdmin = user.role === 'admin';
   const [tab, setTab] = useState('overview');
   const [period, setPeriod] = useState('month');
@@ -488,9 +489,16 @@ export default function AnalyticsView({ user, users = [], onOpenTask }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  // Open tasks in a modal in place, so clicking one keeps you on the current tab.
+  const [openTaskId, setOpenTaskId] = useState(null);
+  const [workflows, setWorkflows] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const openTask = (id) => setOpenTaskId(id);
 
   useEffect(() => {
     if (isAdmin) api('/clients').then((d) => setClients(d.clients || [])).catch(() => {});
+    api('/workflows').then((d) => setWorkflows(d.workflows || d || [])).catch(() => {});
+    api('/projects').then((d) => setProjects(d.projects || d || [])).catch(() => {});
   }, [isAdmin]);
 
   useEffect(() => {
@@ -557,7 +565,7 @@ export default function AnalyticsView({ user, users = [], onOpenTask }) {
 
       {tab === 'appraisals' && (
         <div className="an-body">
-          <Appraisals user={user} isAdmin={isAdmin} focusUserId={userId} onFocusUser={setUserId} onOpenTask={onOpenTask} />
+          <Appraisals user={user} isAdmin={isAdmin} focusUserId={userId} onFocusUser={setUserId} onOpenTask={openTask} />
         </div>
       )}
 
@@ -568,8 +576,16 @@ export default function AnalyticsView({ user, users = [], onOpenTask }) {
           userId={userId}
           clientId={clientId}
           isAdmin={isAdmin}
-          onOpenTask={(id) => { setDrill(null); onOpenTask?.(id); }}
+          onOpenTask={(id) => { setDrill(null); openTask(id); }}
           onClose={() => setDrill(null)}
+        />
+      )}
+
+      {openTaskId && (
+        <TaskModal
+          taskId={openTaskId} user={user} users={users}
+          workflows={workflows} projects={projects}
+          onClose={() => setOpenTaskId(null)}
         />
       )}
     </div>

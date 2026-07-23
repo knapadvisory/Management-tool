@@ -516,6 +516,25 @@ router.patch('/:id', (req, res) => {
   // Apply the new assignee set (rewrites junction, keeps primary assignee_id).
   if (newAssignees !== undefined) setAssignees(task.id, newAssignees);
 
+  // Auto-sync the lifecycle status with the board column when the stage changed
+  // and the caller didn't set status explicitly: dragging a task into a "done"
+  // column marks it Completed; dragging it back out reopens it to In Progress.
+  // Keys on the stage's is_done flag, so this works for the default board AND any
+  // custom workflow whose final column is flagged done — no per-board config.
+  const stageChanged = stage_id !== undefined && stage_id !== task.stage_id;
+  if (stageChanged && status === undefined) {
+    const st = db.prepare('SELECT t.status, s.is_done FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id WHERE t.id = ?').get(task.id);
+    if (st.is_done && st.status !== 'completed') {
+      db.prepare("UPDATE tasks SET status = 'completed', status_reason = '' WHERE id = ?").run(task.id);
+      logActivity(task.id, req.user.id, 'marked it Completed');
+      notifyWatchers(req, task, 'marked it Completed', 'task_status');
+    } else if (!st.is_done && st.status === 'completed') {
+      db.prepare("UPDATE tasks SET status = 'in_progress' WHERE id = ?").run(task.id);
+      logActivity(task.id, req.user.id, 'reopened it (In Progress)');
+      notifyWatchers(req, task, 'reopened it (In Progress)', 'task_status');
+    }
+  }
+
   // Keep completed_at accurate: stamp it when the task becomes "done"
   // (completed status or a done stage); clear it (and any archive) if reopened.
   const now = db.prepare('SELECT t.status, t.completed_at, s.is_done FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id WHERE t.id = ?').get(task.id);

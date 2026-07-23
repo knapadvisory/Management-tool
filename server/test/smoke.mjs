@@ -337,6 +337,8 @@ async function main() {
   const countBefore = beforeList.data.tasks.length;
   const doneStageId = wf.data.stages[2].id; // 'Signed' is a done stage
   await req('PATCH', `/api/tasks/${recId}`, { token: a, body: { stage_id: doneStageId } });
+  const recDone = await req('GET', `/api/tasks/${recId}`, { token: a });
+  check('moving into a done stage auto-marks the task Completed', recDone.data.task.status === 'completed');
   const afterList = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
   check('completing a recurring task spawns the next occurrence', afterList.data.tasks.length === countBefore + 1);
   const nextOcc = afterList.data.tasks.find((t) => t.title === 'Weekly compliance' && t.id !== recId);
@@ -352,6 +354,10 @@ async function main() {
   await req('PATCH', `/api/tasks/${oneOff.data.id}`, { token: a, body: { stage_id: doneStageId } });
   const afterOne = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
   check('non-recurring task does not spawn a copy', afterOne === beforeOne);
+  // Dragging it back out of the done column reopens it to In Progress.
+  await req('PATCH', `/api/tasks/${oneOff.data.id}`, { token: a, body: { stage_id: wf.data.stages[0].id } });
+  const oneReopen = await req('GET', `/api/tasks/${oneOff.data.id}`, { token: a });
+  check('moving out of a done stage reopens to In Progress', oneReopen.data.task.status === 'in_progress');
 
   console.log('Admin & roles');
   const memberBlocked = await req('GET', '/api/admin/users', { token: b });
