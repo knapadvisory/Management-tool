@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
 import TaskModal from './TaskModal.jsx';
@@ -275,6 +275,10 @@ function Appraisals({ user, isAdmin, focusUserId, onFocusUser, onOpenTask }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [minStars, setMinStars] = useState(0); // task-list filter
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState('date');
+  const [empF, setEmpF] = useState('');   // filter table by employee
+  const [roleF, setRoleF] = useState(''); // self | assigner | manager
 
   useEffect(() => {
     setLoading(true); setErr('');
@@ -287,7 +291,21 @@ function Appraisals({ user, isAdmin, focusUserId, onFocusUser, onOpenTask }) {
   if (err) return <div className="an-error">Couldn’t load appraisals: {err}</div>;
   if (!data) return null;
 
-  const rows = data.tasks.filter((t) => t.stars >= minStars);
+  const employees = [...new Map(data.tasks.map((t) => [t.ratee.name, t.ratee])).values()].sort((a, b) => a.name.localeCompare(b.name));
+  const needle = q.trim().toLowerCase();
+  const rows = (() => {
+    let out = data.tasks.filter((t) => t.stars >= minStars);
+    if (empF) out = out.filter((t) => t.ratee.name === empF);
+    if (roleF) out = out.filter((t) => t.role === roleF);
+    if (needle) out = out.filter((t) => [t.title, t.ratee?.name, t.client_name, t.comment, t.rater?.name].some((s) => (s || '').toLowerCase().includes(needle)));
+    const cmp = {
+      date: (a, b) => String(b.rated_at || '').localeCompare(String(a.rated_at || '')),
+      rating_desc: (a, b) => b.stars - a.stars,
+      rating_asc: (a, b) => a.stars - b.stars,
+      employee: (a, b) => (a.ratee?.name || '').localeCompare(b.ratee?.name || ''),
+    }[sort];
+    return cmp ? [...out].sort(cmp) : out;
+  })();
   const sum = data.summary;
 
   return (
@@ -359,14 +377,36 @@ function Appraisals({ user, isAdmin, focusUserId, onFocusUser, onOpenTask }) {
               <h3>Task ratings</h3>
               <div className="an-ch-sub">{focusUserId ? `${data.ranking.find((r) => r.id === Number(focusUserId))?.name || 'Selected person'}’s rated tasks` : 'Every rated task · who, and who rated'}</div>
             </div>
-            <select className="an-pick an-pick-sm" value={minStars} onChange={(e) => setMinStars(Number(e.target.value))}>
+          </div>
+          <div className="an-tbar">
+            <input className="an-tbar-search" placeholder="Search task, person, comment…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <select value={sort} onChange={(e) => setSort(e.target.value)}>
+              <option value="date">Date (newest)</option>
+              <option value="rating_desc">Rating (high→low)</option>
+              <option value="rating_asc">Rating (low→high)</option>
+              <option value="employee">Employee A–Z</option>
+            </select>
+            {!focusUserId && employees.length > 1 && (
+              <select value={empF} onChange={(e) => setEmpF(e.target.value)}>
+                <option value="">All employees</option>
+                {employees.map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
+              </select>
+            )}
+            <select value={roleF} onChange={(e) => setRoleF(e.target.value)}>
+              <option value="">All reviewers</option>
+              <option value="assigner">Assigner</option>
+              <option value="manager">Manager</option>
+              <option value="self">Self-review</option>
+            </select>
+            <select value={minStars} onChange={(e) => setMinStars(Number(e.target.value))}>
               <option value={0}>All stars</option>
               <option value={5}>5★ only</option>
               <option value={4}>4★ &amp; up</option>
               <option value={3}>3★ &amp; up</option>
             </select>
+            <span className="an-tbar-count">{rows.length} of {data.tasks.length}</span>
           </div>
-          {rows.length === 0 ? <div className="an-empty">No rated tasks yet.</div> : (
+          {rows.length === 0 ? <div className="an-empty">No rated tasks match.</div> : (
             <div className="an-table-wrap">
               <table className="an-table">
                 <thead><tr><th>Task</th>{!focusUserId && <th>Employee</th>}<th>Rating</th><th>Rated by</th><th>Date</th></tr></thead>
@@ -400,12 +440,43 @@ const METRIC_TITLE = {
 function DetailModal({ metric, period, userId, clientId, isAdmin, onOpenTask, onClose }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState(metric === 'overdue' ? 'overdue' : 'date');
+  const [ownerF, setOwnerF] = useState('');
+  const [timing, setTiming] = useState(''); // completed/on_time: '' | ontime | late
   useEffect(() => {
     const qs = new URLSearchParams({ metric, period });
     if (isAdmin && userId) qs.set('user_id', userId);
     if (clientId) qs.set('client_id', clientId);
     api(`/analytics/detail?${qs.toString()}`).then(setData).catch((e) => setErr(e.message));
   }, [metric, period, userId, clientId, isAdmin]);
+
+  const rowsRaw = data?.rows || [];
+  const owners = useMemo(() => {
+    const m = new Map();
+    for (const r of rowsRaw) if (r.who?.name) m.set(r.who.name, r.who);
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [rowsRaw]);
+  const rows = useMemo(() => {
+    let out = rowsRaw;
+    const needle = q.trim().toLowerCase();
+    if (needle) out = out.filter((r) => (r.title || '').toLowerCase().includes(needle) || (r.client_name || '').toLowerCase().includes(needle) || (r.who?.name || '').toLowerCase().includes(needle));
+    if (ownerF) out = out.filter((r) => (r.who?.name || '') === ownerF);
+    if (timing) out = out.filter((r) => (timing === 'late' ? r.on_time === false : r.on_time !== false));
+    const cmp = {
+      date: (a, b) => String(b.completed_at || '').localeCompare(String(a.completed_at || '')),
+      due: (a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')),
+      timing: (a, b) => (a.on_time === false ? 1 : 0) - (b.on_time === false ? 1 : 0),
+      overdue: (a, b) => (b.days_overdue || 0) - (a.days_overdue || 0),
+      title: (a, b) => (a.title || '').localeCompare(b.title || ''),
+    }[sort];
+    return cmp ? [...out].sort(cmp) : out;
+  }, [rowsRaw, q, ownerF, timing, sort]);
+
+  const isTaskMetric = metric === 'completed' || metric === 'on_time';
+  const sortOpts = isTaskMetric
+    ? [['date', 'Completed (newest)'], ['due', 'Due date'], ['timing', 'On-time first'], ['title', 'Title A–Z']]
+    : [['overdue', 'Most overdue'], ['due', 'Due date'], ['title', 'Title A–Z']];
 
   return (
     <div className="an-modal-overlay" onClick={onClose}>
@@ -418,12 +489,35 @@ function DetailModal({ metric, period, userId, clientId, isAdmin, onOpenTask, on
           {err && <div className="an-error">{err}</div>}
           {!data && !err && <div className="an-loading">Loading…</div>}
 
-          {data && (metric === 'completed' || metric === 'on_time') && (
-            data.rows.length === 0 ? <div className="an-empty">No tasks in this range.</div> : (
+          {data && metric !== 'billable' && (
+            <div className="an-tbar">
+              <input className="an-tbar-search" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
+              <select value={sort} onChange={(e) => setSort(e.target.value)}>
+                {sortOpts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              {!userId && owners.length > 1 && (
+                <select value={ownerF} onChange={(e) => setOwnerF(e.target.value)}>
+                  <option value="">All owners</option>
+                  {owners.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
+                </select>
+              )}
+              {isTaskMetric && (
+                <select value={timing} onChange={(e) => setTiming(e.target.value)}>
+                  <option value="">On-time &amp; late</option>
+                  <option value="ontime">On time</option>
+                  <option value="late">Late</option>
+                </select>
+              )}
+              <span className="an-tbar-count">{rows.length} of {rowsRaw.length}</span>
+            </div>
+          )}
+
+          {data && isTaskMetric && (
+            rows.length === 0 ? <div className="an-empty">No tasks match.</div> : (
               <table className="an-table">
                 <thead><tr><th>Task</th>{!userId && <th>Owner</th>}<th>Completed</th><th>Due</th></tr></thead>
                 <tbody>
-                  {data.rows.map((r) => (
+                  {rows.map((r) => (
                     <tr key={r.id} className={onOpenTask ? 'an-row-click' : ''} onClick={() => onOpenTask?.(r.id)}>
                       <td className="an-t-name">{r.title}{r.client_name && <div className="an-t-client">{r.client_name}</div>}</td>
                       {!userId && <td>{r.who ? <span className="an-owner"><span className="an-mini-av" style={{ background: r.who.avatar_color }}>{initials(r.who.name)}</span>{r.who.name}</span> : <span className="muted">—</span>}</td>}
@@ -437,11 +531,11 @@ function DetailModal({ metric, period, userId, clientId, isAdmin, onOpenTask, on
           )}
 
           {data && metric === 'overdue' && (
-            data.rows.length === 0 ? <div className="an-empty">Nothing overdue. 🎉</div> : (
+            rows.length === 0 ? <div className="an-empty">Nothing matches.</div> : (
               <table className="an-table">
                 <thead><tr><th>Filing</th><th>Client</th>{!userId && <th>Owner</th>}<th>Due</th><th>Late</th></tr></thead>
                 <tbody>
-                  {data.rows.map((r) => (
+                  {rows.map((r) => (
                     <tr key={r.id}>
                       <td className="an-t-name">{r.title}</td>
                       <td>{r.client_name}</td>

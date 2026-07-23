@@ -46,6 +46,7 @@ function timeAgo(iso) {
 
 import ReviewWidget from './ReviewWidget.jsx';
 import HrWidget from './HrWidget.jsx';
+import TaskListPanel from './TaskListPanel.jsx';
 
 export default function DashboardView({ user, users = [], hrEnabled = false, onOpenHr, onOpenTasks, onOpenActivity, onOpenTimesheet }) {
   const [data, setData] = useState(null);
@@ -331,9 +332,14 @@ export default function DashboardView({ user, users = [], hrEnabled = false, onO
               <button className="icon-btn" onClick={() => setListPopup(null)}>✕</button>
             </div>
             <div className="dash-listpopup-body">
-              {listPopup.mode === 'closed'
-                ? <ClosedList tasks={listPopup.tasks} onOpenTask={(id) => { setListPopup(null); openTask(id); }} />
-                : <TaskList tasks={listPopup.tasks} onOpenTask={(id) => { setListPopup(null); openTask(id); }} empty="No tasks here." detailed currentUserId={user.id} />}
+              <TaskListPanel
+                tasks={listPopup.tasks}
+                mode={listPopup.mode}
+                onOpenTask={(id) => { setListPopup(null); openTask(id); }}
+                currentUserId={user.id}
+                TaskList={TaskList}
+                ClosedList={ClosedList}
+              />
             </div>
           </div>
         </div>
