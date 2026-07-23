@@ -343,8 +343,15 @@ export default function App() {
         if (overlays.length) { overlays[overlays.length - 1].click(); return; }
         // 2. Mobile sidebar drawer.
         if (backStateRef.current.drawerOpen) { setDrawerOpen(false); return; }
-        // 3. Retrace the in-app history one step (DM → DMs list, task → wherever
-        //    you opened it from, …).
+        // 2b. A two-pane view showing its detail pane (a DM/chat conversation,
+        //     a client, an activity) renders a mobile "← back to list" control.
+        //     Use it so back returns to that list, not out of the section. These
+        //     panes keep their selection in local state, invisible to the view
+        //     history below — this is what makes "DM → back → DMs list" work.
+        const detailBack = [...document.querySelectorAll('.mobile-back')].find((b) => b.offsetParent !== null);
+        if (detailBack) { detailBack.click(); return; }
+        // 3. Retrace the in-app history one step (open a section → back to the
+        //    previous section).
         const hist = viewHistoryRef.current;
         if (hist.length) {
           const prev = hist.pop();
