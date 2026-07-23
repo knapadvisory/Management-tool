@@ -14,6 +14,7 @@ import toolsIco from '../assets/icons/Tools.png';
 import adminIco from '../assets/icons/admin.png';
 import analyticsIco from '../assets/icons/Analytics.png';
 import timesheetIco from '../assets/icons/Timesheet.png';
+import hrIco from '../assets/icons/HRMS.png';
 
 export default function Sidebar({
   user, workspace, channels, joinable, users, onlineIds, view, hrEnabled = false, onOpenHr,
@@ -144,7 +145,7 @@ export default function Sidebar({
         )}
         {user.role !== 'guest' && hrEnabled && (
           <button className="nav-item" onClick={onOpenHr} title={user.role === 'admin' ? 'Open HR & Payroll (opens in a new tab)' : 'Open My HR — payslips, leave & profile (opens in a new tab)'}>
-            <span className="nav-logo">👥</span> {user.role === 'admin' ? 'HR & Payroll' : 'My HR'} <span className="nav-ext">↗</span>
+            <img className="nav-ico" src={hrIco} alt="" /> {user.role === 'admin' ? 'HR & Payroll' : 'My HR'} <span className="nav-ext">↗</span>
           </button>
         )}
         {user.role === 'admin' && (
