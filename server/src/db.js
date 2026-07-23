@@ -310,6 +310,18 @@ CREATE TABLE IF NOT EXISTS task_reminders (
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_due ON task_reminders(sent, remind_at);
 
+-- Which compliance-deadline reminders have already gone out, so the hourly
+-- sweep never nudges the same person twice for the same milestone. Keyed on
+-- the occurrence + its due date + the milestone (3-days / 1-day / today /
+-- overdue) so a recurring deadline's next period reminds afresh.
+CREATE TABLE IF NOT EXISTS deadline_reminders_sent (
+  deadline_id INTEGER NOT NULL REFERENCES client_deadlines(id) ON DELETE CASCADE,
+  due_date TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (deadline_id, due_date, kind)
+);
+
 -- Real-time chat scoped to a single task (distinct from async "Notes").
 CREATE TABLE IF NOT EXISTS task_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

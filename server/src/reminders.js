@@ -1,5 +1,6 @@
 import db from './db.js';
 import { createNotification } from './notifications.js';
+import { emailEnabled, sendMail, layout } from './email.js';
 
 // Advance a YYYY-MM-DD date by one recurrence interval. Returns null for
 // 'none' or a missing date. Month/year math clamps to end-of-month naturally
@@ -48,6 +49,102 @@ export function startReminderScheduler(io) {
   processDueReminders(io);
   const timer = setInterval(() => processDueReminders(io), 60 * 1000);
   timer.unref?.(); // don't keep the process alive just for the scheduler
+  return timer;
+}
+
+// --- Compliance deadline reminders -------------------------------------------
+// A CA firm's worst outcome is a missed statutory filing. This turns the
+// compliance board proactive: it nudges whoever files a client deadline as it
+// approaches (3 days out, the day before, the day itself) and once more when it
+// slips overdue — in-app + push always, and email for the urgent ones.
+
+const IST_OFFSET_MIN = 330; // Asia/Kolkata (no DST) — the firm's working calendar day.
+
+// Today's date (YYYY-MM-DD) in IST.
+function istToday() {
+  return new Date(Date.now() + IST_OFFSET_MIN * 60000).toISOString().slice(0, 10);
+}
+
+// Whole days from IST-today to a YYYY-MM-DD due date (negative = overdue).
+function daysUntilDue(due) {
+  const today = new Date(istToday() + 'T00:00:00Z').getTime();
+  const target = new Date(due + 'T00:00:00Z').getTime();
+  return Math.round((target - today) / 86400000);
+}
+
+// Which milestone (if any) a deadline that is `days` away should fire now.
+function dueKind(days) {
+  if (days === 3) return 'due_3d';
+  if (days === 1) return 'due_1d';
+  if (days === 0) return 'due_0d';
+  if (days === -1) return 'overdue'; // a single nudge the morning after
+  return null;
+}
+
+function fmtDue(due) {
+  const dt = new Date(due + 'T00:00:00Z');
+  return Number.isNaN(dt.getTime()) ? due
+    : dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+// Who to nudge: the person who files it, or — if nobody's assigned — the
+// workspace admins, so an unowned filing can't silently slip.
+function deadlineAudience(d) {
+  if (d.assignee_id) return [d.assignee_id];
+  return db.prepare(
+    `SELECT id FROM users WHERE workspace_id = ? AND role = 'admin' AND active = 1 AND approved = 1 AND deleted = 0`,
+  ).all(d.workspace_id).map((r) => r.id);
+}
+
+export function processDeadlineReminders(io) {
+  const rows = db.prepare(`
+    SELECT d.id, d.title, d.due_date, d.assignee_id, d.task_id, c.name AS client_name, c.workspace_id
+    FROM client_deadlines d JOIN clients c ON c.id = d.client_id
+    WHERE d.completed = 0 AND d.due_date IS NOT NULL AND d.due_date != ''
+  `).all();
+
+  const markSent = db.prepare('INSERT OR IGNORE INTO deadline_reminders_sent (deadline_id, due_date, kind) VALUES (?, ?, ?)');
+  let sent = 0;
+  for (const d of rows) {
+    const kind = dueKind(daysUntilDue(d.due_date));
+    if (!kind) continue;
+    // INSERT OR IGNORE + changes tells us atomically whether this is the first
+    // time — so a restart mid-hour can't double-send.
+    if (markSent.run(d.id, d.due_date, kind).changes === 0) continue;
+
+    const phrase = kind === 'due_3d' ? 'is due in 3 days'
+      : kind === 'due_1d' ? 'is due tomorrow'
+        : kind === 'due_0d' ? 'is due today' : 'is overdue';
+    const text = kind === 'overdue'
+      ? `⚠ Overdue: ${d.title} for ${d.client_name} (was due ${fmtDue(d.due_date)})`
+      : `⏳ ${d.title} for ${d.client_name} ${phrase} (${fmtDue(d.due_date)})`;
+    const urgent = kind === 'due_0d' || kind === 'overdue';
+
+    for (const uid of deadlineAudience(d)) {
+      // task_id (if the deadline has a linked task) makes the bell entry clickable.
+      createNotification(io, { user_id: uid, type: 'deadline_reminder', actor_id: null, task_id: d.task_id || null, text });
+      if (urgent && emailEnabled()) {
+        const u = db.prepare('SELECT email, name FROM users WHERE id = ?').get(uid);
+        if (u?.email && !String(u.email).endsWith('@teamhub.guest')) {
+          sendMail({
+            to: u.email,
+            subject: kind === 'overdue' ? `Overdue filing: ${d.title} — ${d.client_name}` : `Due today: ${d.title} — ${d.client_name}`,
+            html: layout('Compliance reminder', `<p>Hi ${u.name || 'there'},</p><p>${text}.</p><p>Open TeamHub → Clients → Compliance board to action it.</p>`),
+          });
+        }
+      }
+      sent += 1;
+    }
+  }
+  return sent;
+}
+
+export function startDeadlineReminderScheduler(io) {
+  // Day-granular milestones, so an hourly sweep is ample. Runs once on boot to
+  // catch anything due, then hourly.
+  processDeadlineReminders(io);
+  const timer = setInterval(() => processDeadlineReminders(io), 60 * 60 * 1000);
+  timer.unref?.();
   return timer;
 }
 
