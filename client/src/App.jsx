@@ -310,6 +310,26 @@ export default function App() {
   // to the dashboard → and only a press at the root backgrounds the app.
   const backStateRef = useRef({});
   backStateRef.current = { view, drawerOpen };
+
+  // In-app back stack so hardware back retraces where you actually were — e.g. a
+  // DM conversation returns to the DMs list, not straight home. We record the
+  // view being left whenever it changes (unless the change *is* a back-pop).
+  const viewKey = (v) => (v ? `${v.type}:${v.channel?.id ?? ''}` : '');
+  const viewHistoryRef = useRef([]);
+  const prevViewRef = useRef(view);
+  const poppingRef = useRef(false);
+  useEffect(() => {
+    const prev = prevViewRef.current;
+    if (poppingRef.current) {
+      poppingRef.current = false; // arrived here via back — don't re-record
+    } else if (prev && viewKey(prev) !== viewKey(view)) {
+      const hist = viewHistoryRef.current;
+      if (viewKey(hist[hist.length - 1]) !== viewKey(view)) hist.push(prev);
+      if (hist.length > 30) hist.shift(); // bound it
+    }
+    prevViewRef.current = view;
+  }, [view]);
+
   useEffect(() => {
     if (!window.Capacitor?.isNativePlatform?.()) return undefined;
     let remove;
@@ -323,10 +343,20 @@ export default function App() {
         if (overlays.length) { overlays[overlays.length - 1].click(); return; }
         // 2. Mobile sidebar drawer.
         if (backStateRef.current.drawerOpen) { setDrawerOpen(false); return; }
-        // 3. Any section other than the dashboard goes home first.
+        // 3. Retrace the in-app history one step (DM → DMs list, task → wherever
+        //    you opened it from, …).
+        const hist = viewHistoryRef.current;
+        if (hist.length) {
+          const prev = hist.pop();
+          poppingRef.current = true;
+          setDrawerOpen(false);
+          setView(prev);
+          return;
+        }
+        // 4. Nothing recorded but not at home → home.
         const v = backStateRef.current.view;
-        if (v && v.type !== 'dashboard') { setView({ type: 'dashboard' }); return; }
-        // 4. At the root: background the app, like a normal Android back press.
+        if (v && v.type !== 'dashboard') { poppingRef.current = true; setView({ type: 'dashboard' }); return; }
+        // 5. At the root: background the app, like a normal Android back press.
         if (CapApp.minimizeApp) CapApp.minimizeApp(); else CapApp.exitApp();
       });
       remove = () => h.remove();
