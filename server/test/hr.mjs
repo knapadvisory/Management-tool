@@ -1,11 +1,12 @@
 /**
  * KNAP-HRMS bridge: /api/hr config, SSO token minting (format must match the
- * HRMS SsoController), and admin-only gating. Boots the real server with the
- * HR env configured.
+ * HRMS SsoController), roster push, and admin-only gating. Boots the real
+ * server pointed at a tiny mock HR receiver.
  */
 import { spawn } from 'child_process';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
+import http from 'http';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
@@ -15,15 +16,34 @@ const PORT = process.env.HR_PORT || 3991;
 const BASE = `http://localhost:${PORT}`;
 const dataDir = mkdtempSync(path.join(tmpdir(), 'teamhub-hr-'));
 const SSO_SECRET = 'hr-sso-secret';
+const API_TOKEN = 'hr-api-token';
 
 let failures = 0;
 const check = (n, c) => { if (c) console.log(`  ✓ ${n}`); else { failures++; console.error(`  ✗ ${n}`); } };
 
+// Mock HR: records roster POSTs (auth-checked), 404s everything else so the
+// summary proxy still exercises its unreachable/error path.
+let lastRoster = null;
+const mockHr = http.createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/api/roster') {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      lastRoster = { auth: req.headers.authorization, body: JSON.parse(body || '{}') };
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ created: (JSON.parse(body || '{}').employees || []).length }));
+    });
+    return;
+  }
+  res.writeHead(404).end();
+});
+const mockPort = 3992;
+
 const server = spawn('node', [path.join(__dirname, '..', 'src', 'index.js')], {
   env: {
     ...process.env, PORT, DATA_DIR: dataDir, JWT_SECRET: 'hr-secret', WORKSPACE_SIGNUP_CODE: 'boot',
-    TEAMHUB_SSO_SECRET: SSO_SECRET, TEAMHUB_API_TOKEN: 'hr-api-token',
-    HR_URL: 'https://hr.example.test', HR_INTERNAL_URL: 'http://127.0.0.1:9', // unroutable → fast fail
+    TEAMHUB_SSO_SECRET: SSO_SECRET, TEAMHUB_API_TOKEN: API_TOKEN,
+    HR_URL: 'https://hr.example.test', HR_INTERNAL_URL: `http://127.0.0.1:${mockPort}`,
   },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
@@ -48,6 +68,7 @@ function verify(token, secret) {
 }
 
 async function main() {
+  await new Promise((r) => mockHr.listen(mockPort, r));
   await waitForServer();
   const owner = await req('POST', '/api/workspaces', { body: { workspace_name: 'HR Co', name: 'Alice', email: 'a@a.test', password: 'secret123', code: 'boot' } });
   const a = owner.data.token; const slug = owner.data.workspace.slug;
@@ -61,6 +82,7 @@ async function main() {
   const cfg = await req('GET', '/api/hr/config', { token: a });
   check('config reports HR enabled when secrets are set', cfg.status === 200 && cfg.data.enabled === true);
 
+  lastRoster = null;
   const sso = await req('GET', '/api/hr/sso', { token: a });
   check('admin gets an SSO url', sso.status === 200 && typeof sso.data.url === 'string' && sso.data.url.startsWith('https://hr.example.test/sso?token='));
 
@@ -71,15 +93,37 @@ async function main() {
   check('the token carries the workspace + role for HR tenant isolation', claims && claims.ws === slug && claims.wsname === 'HR Co' && claims.role === 'admin');
   check('a wrong secret rejects the token', verify(token, 'not-the-secret') === null);
 
+  // Opening HR fires a fire-and-forget roster push; wait briefly for it.
+  for (let i = 0; i < 25 && !lastRoster; i++) await new Promise((r) => setTimeout(r, 40));
+  check('opening HR pushes the workspace roster', lastRoster !== null);
+  check('the roster push authenticates with the shared API token', lastRoster && lastRoster.auth === `Bearer ${API_TOKEN}`);
+  check('the roster carries the workspace slug + name', lastRoster && lastRoster.body.ws === slug && lastRoster.body.wsname === 'HR Co');
+  // Alice (approved owner) + Bob (approved) are active members; both pushed.
+  const emails = lastRoster ? (lastRoster.body.employees || []).map((e) => e.email).sort() : [];
+  check('the roster lists every active member with id + name', lastRoster
+    && lastRoster.body.employees.length === 2
+    && emails.join(',') === 'a@a.test,b@b.test'
+    && lastRoster.body.employees.every((e) => e.teamhub_user_id && e.name && e.active === true));
+
+  // Deactivating a member re-pushes a roster without them.
+  lastRoster = null;
+  await req('POST', `/api/admin/users/${bobId}/deactivate`, { token: a });
+  for (let i = 0; i < 25 && !lastRoster; i++) await new Promise((r) => setTimeout(r, 40));
+  check('deactivating a member re-pushes the roster', lastRoster !== null);
+  check('the deactivated member drops off the active roster', lastRoster
+    && lastRoster.body.employees.length === 1
+    && lastRoster.body.employees[0].email === 'a@a.test');
+
   const memberSso = await req('GET', '/api/hr/sso', { token: b });
   check('non-admins cannot mint an SSO token (403)', memberSso.status === 403);
 
   const summary = await req('GET', '/api/hr/summary', { token: a });
-  check('summary proxy returns 502 when HR is unreachable', summary.status === 502);
+  check('summary proxy returns 502 when HR has no summary endpoint', summary.status === 502);
 
   server.kill();
+  mockHr.close();
   if (failures) { console.error(`\n${failures} HR check(s) FAILED`); process.exit(1); }
   console.log('\nAll HR bridge tests passed');
   process.exit(0);
 }
-main().catch((e) => { console.error(e); server.kill(); process.exit(1); });
+main().catch((e) => { console.error(e); server.kill(); mockHr.close(); process.exit(1); });

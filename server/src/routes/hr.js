@@ -24,6 +24,43 @@ const HR_INTERNAL_URL = (process.env.HR_INTERNAL_URL || 'http://teamhub-hr:8080'
 
 const ssoConfigured = () => !!(SSO_SECRET && HR_PUBLIC_URL);
 
+// Push a workspace's active roster to HR so every member exists as an HR
+// employee in that workspace's home company (and leavers get reconciled). Runs
+// server-to-server with the shared API token; safe to call fire-and-forget —
+// it never throws and returns a boolean so callers can log if they care.
+// Only ACTIVE, approved, non-guest members are sent; HR marks anyone missing
+// from the list as exited, so deactivating or removing a member syncs too.
+export async function pushRoster(workspaceId) {
+  if (!API_TOKEN) return false; // HR not wired up on this server
+  try {
+    const ws = db.prepare('SELECT slug, name FROM workspaces WHERE id = ?').get(workspaceId);
+    if (!ws) return false;
+    const members = db.prepare(
+      `SELECT id, name, email, created_at FROM users
+       WHERE workspace_id = ? AND role != 'guest' AND approved = 1 AND active = 1 AND deleted = 0`,
+    ).all(workspaceId);
+    const employees = members.map((m) => ({
+      teamhub_user_id: m.id,
+      name: m.name,
+      email: m.email,
+      joined_at: m.created_at,
+      active: true,
+    }));
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const r = await fetch(`${HR_INTERNAL_URL}/api/roster`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${API_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ ws: ws.slug || String(workspaceId), wsname: ws.name || '', employees }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+    return r.ok;
+  } catch {
+    return false; // HR down / not reachable — never block the caller
+  }
+}
+
 // Does the client have HR available? Drives whether the nav item + widget show.
 router.get('/config', (req, res) => {
   res.json({ enabled: ssoConfigured() });
@@ -44,6 +81,9 @@ router.get('/sso', (req, res) => {
   };
   const body = Buffer.from(JSON.stringify(claims)).toString('base64url');
   const sig = crypto.createHmac('sha256', SSO_SECRET).update(body).digest('base64url');
+  // Bring HR's roster up to date before the admin lands there (auto-provisions
+  // the workspace's members on first open, keeps it current afterwards).
+  pushRoster(req.user.workspace_id);
   res.json({ url: `${HR_PUBLIC_URL}/sso?token=${body}.${sig}` });
 });
 

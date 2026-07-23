@@ -9,6 +9,7 @@ import { createNotification } from '../notifications.js';
 import { createInviteCode, listInviteCodes, revokeInviteCode } from '../codes.js';
 import { emailEnabled, sendMail, layout, button } from '../email.js';
 import { serializeMessage } from '../messages.js';
+import { pushRoster } from './hr.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.join(process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data'), 'uploads');
@@ -73,6 +74,7 @@ router.post('/users/:id/approve', (req, res) => {
         `<p>Hi ${target.name}, your request to join <strong>${ws?.name || 'your team'}</strong> on TeamHub has been approved. You can now sign in.</p>${button(link, 'Sign in')}`),
     });
   }
+  pushRoster(req.workspaceId); // new member → provision them in HR
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(target.id)));
 });
 
@@ -141,6 +143,7 @@ router.post('/users/:id/deactivate', (req, res) => {
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
   // Boot any live sessions belonging to the deactivated user.
   req.app.get('io')?.to(`user:${target.id}`).emit('account:deactivated');
+  pushRoster(req.workspaceId); // dropped from the active roster → HR marks them exited
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(target.id)));
 });
 
@@ -150,6 +153,7 @@ router.post('/users/:id/reactivate', (req, res) => {
   if (target.deleted) return res.status(400).json({ error: 'A deleted account cannot be restored' });
   db.prepare('UPDATE users SET active = 1, deactivated_at = NULL WHERE id = ?').run(target.id);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
+  pushRoster(req.workspaceId); // back on the active roster → HR reactivates them
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(target.id)));
 });
 
@@ -181,6 +185,7 @@ router.post('/users/:id/delete', (req, res) => {
   purge();
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('directory:changed');
   req.app.get('io')?.to(`user:${target.id}`).emit('account:deactivated'); // boot any live session
+  pushRoster(req.workspaceId); // permanently gone → HR reconciles them as exited
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(target.id)));
 });
 
