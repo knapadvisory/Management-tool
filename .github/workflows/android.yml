@@ -1,0 +1,74 @@
+name: Build Android APK
+
+# Produces an installable debug APK for TeamHub. Run it from the Actions tab
+# (Run workflow), or it builds automatically when the mobile app changes.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ claude/internal-team-tool-fuc8yv, main ]
+    paths:
+      - 'client/**'
+      - '.github/workflows/android.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      # Enables FCM push in the built APK. Set repo secret GOOGLE_SERVICES_JSON
+      # to the base64 of your google-services.json (or commit the file instead).
+      - name: Add google-services.json (from secret, if provided)
+        env:
+          GS: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          # Prefer the GOOGLE_SERVICES_JSON secret if it decodes to a real file;
+          # otherwise fall back to a committed android/app/google-services.json.
+          # A malformed/empty secret must NOT fail the build.
+          if [ -n "$GS" ] && echo "$GS" | base64 -d > /tmp/gs.json 2>/dev/null && [ -s /tmp/gs.json ]; then
+            cp /tmp/gs.json android/app/google-services.json
+            echo "google-services.json written from secret — push enabled in this build"
+          elif [ -s android/app/google-services.json ]; then
+            echo "Using committed android/app/google-services.json"
+          else
+            echo "No google-services.json available — APK builds without push"
+          fi
+
+      - name: Build debug APK
+        working-directory: client/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: teamhub-debug-apk
+          path: client/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

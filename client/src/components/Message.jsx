@@ -1,40 +1,115 @@
-import React, { useState } from 'react';
-import { api, fileUrl } from '../api.js';
+import React, { useState, useRef } from 'react';
+import { api, fileUrl, downloadUrl } from '../api.js';
 import { renderMarkdown, formatBytes } from '../format.js';
+import { localeArg, dateOpts } from '../prefs.js';
 import Avatar from './Avatar.jsx';
-
-const QUICK_EMOJIS = ['👍', '❤️', '😄', '🎉', '✅', '👀', '🙏'];
+import ForwardModal from './ForwardModal.jsx';
+import TaskFromMessageModal from './TaskFromMessageModal.jsx';
+import FilePreviewModal from './FilePreviewModal.jsx';
+import EmojiPicker from './EmojiPicker.jsx';
 
 function formatTime(iso) {
   const d = new Date(iso.replace(' ', 'T') + 'Z');
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString(localeArg(), dateOpts({ hour: '2-digit', minute: '2-digit' }));
 }
 
-function AttachmentView({ att }) {
+// WhatsApp-style delivery ticks for your own messages:
+//   sent → single ✓, delivered → grey ✓✓, read → blue ✓✓.
+function MessageTicks({ status }) {
+  const s = status || 'sent';
+  const label = s === 'read' ? 'Seen' : s === 'delivered' ? 'Delivered' : 'Sent';
+  return (
+    <span className={`msg-ticks ${s === 'read' ? 'seen' : ''}`} title={label} aria-label={label}>
+      {s === 'sent' ? '✓' : '✓✓'}
+    </span>
+  );
+}
+
+export function AttachmentView({ att, onOpen }) {
   const url = fileUrl(att.id);
   if (att.mime_type?.startsWith('image/')) {
     return (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="attach-image-link">
+      <button type="button" className="attach-image-link" onClick={onOpen}>
         <img src={url} alt={att.original_name} className="attach-image" />
-      </a>
+      </button>
     );
   }
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="attach-file">
+    <button type="button" className="attach-file" onClick={onOpen}>
       <span className="attach-file-icon">📄</span>
       <span className="attach-file-meta">
         <span className="attach-file-name">{att.original_name}</span>
         <span className="muted">{formatBytes(att.size)}</span>
       </span>
-    </a>
+    </button>
   );
 }
 
-export default function Message({ message, currentUser, channelId, grouped, onOpenThread, inThread }) {
+export default function Message({ message, currentUser, channelId, grouped, onReply, onJumpTo, onOpenProfile, inThread }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const [showPicker, setShowPicker] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [previewAtt, setPreviewAtt] = useState(null);
+  const [pickerPos, setPickerPos] = useState({ top: 0, left: 0 });
+  const moreBtnRef = useRef(null);
+  const reactBtnRef = useRef(null);
   const isMine = message.user_id === currentUser.id;
+
+  function openPicker() {
+    const r = reactBtnRef.current?.getBoundingClientRect();
+    if (r) {
+      const W = 312, H = 380;
+      const left = Math.min(window.innerWidth - W - 8, Math.max(8, r.left));
+      const top = Math.min(window.innerHeight - H - 8, r.bottom + 4);
+      setPickerPos({ top: Math.max(8, top), left });
+    }
+    setShowPicker((s) => !s);
+  }
+  function pickReaction(emoji) {
+    const mine = (message.reactions.find((r) => r.emoji === emoji)?.user_ids || []).includes(currentUser.id);
+    toggleReaction(emoji, mine);
+    setShowPicker(false);
+  }
+  const hasFiles = (message.attachments || []).length > 0;
+
+  function openMenu() {
+    const r = moreBtnRef.current?.getBoundingClientRect();
+    if (r) {
+      const W = 190;
+      const left = Math.min(window.innerWidth - W - 8, Math.max(8, r.right - W));
+      const top = Math.min(window.innerHeight - 340, r.bottom + 4);
+      setMenuPos({ top, left });
+    }
+    setMenuOpen((o) => !o);
+  }
+
+  // Right-click anywhere on the message opens the same actions menu at the
+  // cursor (replacing the browser's default context menu).
+  function openMenuAtCursor(e) {
+    if (editing) return;
+    e.preventDefault();
+    const W = 190, H = 340;
+    const left = Math.min(window.innerWidth - W - 8, Math.max(8, e.clientX));
+    const top = Math.min(window.innerHeight - H - 8, Math.max(8, e.clientY));
+    setMenuPos({ top, left });
+    setMenuOpen(true);
+  }
+
+  function downloadFiles() {
+    for (const a of message.attachments) {
+      const link = document.createElement('a');
+      link.href = downloadUrl(a.id);
+      link.download = a.original_name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+    setMenuOpen(false);
+  }
   const base = `/channels/${channelId}/messages/${message.id}`;
 
   async function toggleReaction(emoji, mine) {
@@ -59,28 +134,46 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
 
   if (message.is_deleted) {
     return (
-      <div className={`message ${grouped ? 'grouped' : ''}`}>
-        {!grouped && <span className="msg-gutter" />}
-        <div className="message-body">
-          <div className="message-text deleted">This message was deleted</div>
+      <div className={`message deleted-row ${grouped ? 'grouped' : ''} ${isMine ? 'own' : ''}`}>
+        <div className="message-inner">
+          <span className="msg-gutter" />
+          <div className="message-body">
+            <div className="message-text deleted">This message was deleted</div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`message ${grouped ? 'grouped' : ''}`}>
-      {grouped ? <span className="msg-gutter" /> : (
-        <Avatar user={{ name: message.user_name, avatar_color: message.avatar_color }} size={34} />
+    <div id={`msg-${message.id}`} className={`message ${grouped ? 'grouped' : ''} ${isMine ? 'own' : ''}`} onContextMenu={openMenuAtCursor}>
+      <div className="message-inner">
+      {grouped ? (
+        <span className="msg-gutter"><span className="gutter-time">{formatTime(message.created_at)}</span></span>
+      ) : (
+        <button type="button" className="msg-avatar-btn" title={`View ${message.user_name}`}
+          onClick={() => onOpenProfile?.({ id: message.user_id, name: message.user_name, avatar_color: message.avatar_color })}>
+          <Avatar user={{ name: message.user_name, avatar_color: message.avatar_color }} size={36} />
+        </button>
       )}
       <div className="message-body">
         {!grouped && (
           <div className="message-meta">
-            <strong>{message.user_name}</strong>
+            <strong className={onOpenProfile ? 'msg-author' : ''}
+              onClick={onOpenProfile ? () => onOpenProfile({ id: message.user_id, name: message.user_name, avatar_color: message.avatar_color }) : undefined}>
+              {isMine ? 'You' : message.user_name}</strong>
+            {message.user_role === 'guest' && <span className="guest-badge">Guest</span>}
             <span className="message-time">{formatTime(message.created_at)}</span>
           </div>
         )}
 
+        <div className="message-bubble">
+        {message.reply_to && (
+          <button type="button" className="reply-quote" onClick={() => onJumpTo?.(message.reply_to.id)}>
+            <span className="reply-quote-name">{message.reply_to.user_name}</span>
+            <span className="reply-quote-text">{message.reply_to.is_deleted ? 'Deleted message' : (message.reply_to.content || '📎 Attachment')}</span>
+          </button>
+        )}
         {editing ? (
           <div className="edit-box">
             <textarea value={draft} rows={2} autoFocus onChange={(e) => setDraft(e.target.value)}
@@ -101,9 +194,10 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
 
         {message.attachments.length > 0 && (
           <div className="attachments">
-            {message.attachments.map((a) => <AttachmentView key={a.id} att={a} />)}
+            {message.attachments.map((a) => <AttachmentView key={a.id} att={a} onOpen={() => setPreviewAtt(a)} />)}
           </div>
         )}
+        </div>
 
         {message.reactions.length > 0 && (
           <div className="reactions">
@@ -122,32 +216,42 @@ export default function Message({ message, currentUser, channelId, grouped, onOp
           </div>
         )}
 
-        {!inThread && message.reply_count > 0 && (
-          <button className="thread-summary" onClick={() => onOpenThread(message)}>
-            💬 {message.reply_count} {message.reply_count === 1 ? 'reply' : 'replies'}
-          </button>
-        )}
+        {isMine && !inThread && <div className="msg-receipt"><MessageTicks status={message.status} /></div>}
       </div>
 
       {!editing && (
         <div className="msg-actions">
+          {!inThread && onReply && (
+            <button className="msg-action" title="Reply" onClick={() => onReply(message)}>↩</button>
+          )}
           <div className="react-wrap">
-            <button className="msg-action" title="Add reaction" onClick={() => setShowPicker((s) => !s)}>😊</button>
-            {showPicker && (
-              <div className="emoji-picker" onMouseLeave={() => setShowPicker(false)}>
-                {QUICK_EMOJIS.map((e) => (
-                  <button key={e} onClick={() => toggleReaction(e, (message.reactions.find((r) => r.emoji === e)?.user_ids || []).includes(currentUser.id))}>{e}</button>
-                ))}
-              </div>
+            <button ref={reactBtnRef} className="msg-action" title="Add reaction" onClick={openPicker}>😊</button>
+          </div>
+          <div className="menu-wrap">
+            <button ref={moreBtnRef} className="msg-action" title="More" onClick={openMenu}>⋯</button>
+            {menuOpen && (
+              <>
+                <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
+                <div className="msg-menu" style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}>
+                  {!inThread && onReply && <button onClick={() => { onReply(message); setMenuOpen(false); }}><span>↩</span> Reply</button>}
+                  <button onClick={() => { navigator.clipboard?.writeText(message.content || ''); setMenuOpen(false); }}><span>⧉</span> Copy</button>
+                  {isMine && <button onClick={() => { setDraft(message.content); setEditing(true); setMenuOpen(false); }}><span>✏️</span> Edit</button>}
+                  <button onClick={() => { setForwardOpen(true); setMenuOpen(false); }}><span>➦</span> Forward</button>
+                  <button onClick={() => { setTaskOpen(true); setMenuOpen(false); }}><span>☑</span> Create task</button>
+                  {hasFiles && <button onClick={downloadFiles}><span>⬇</span> Download</button>}
+                  {isMine && <button className="danger" onClick={() => { setMenuOpen(false); remove(); }}><span>🗑</span> Delete</button>}
+                </div>
+              </>
             )}
           </div>
-          {!inThread && (
-            <button className="msg-action" title="Reply in thread" onClick={() => onOpenThread(message)}>💬</button>
-          )}
-          {isMine && <button className="msg-action" title="Edit" onClick={() => { setDraft(message.content); setEditing(true); }}>✏️</button>}
-          {isMine && <button className="msg-action" title="Delete" onClick={remove}>🗑</button>}
         </div>
       )}
+      </div>
+
+      {forwardOpen && <ForwardModal message={message} onClose={() => setForwardOpen(false)} />}
+      {taskOpen && <TaskFromMessageModal message={message} onClose={() => setTaskOpen(false)} />}
+      {previewAtt && <FilePreviewModal file={previewAtt} onClose={() => setPreviewAtt(null)} />}
+      {showPicker && <EmojiPicker position={pickerPos} onPick={pickReaction} onClose={() => setShowPicker(false)} />}
     </div>
   );
 }

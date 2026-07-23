@@ -1,0 +1,25 @@
+{
+  "appId": "com.knapadvisory.teamhub",
+  "appName": "TeamHub",
+  "webDir": "dist",
+  "server": {
+    "url": "https://teamhub.knapadvisory.com",
+    "cleartext": false,
+    "androidScheme": "https",
+    "errorPath": "error.html"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 700,
+      "backgroundColor": "#1a1d29",
+      "showSpinner": false,
+      "androidSplashResourceName": "splash"
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
+}

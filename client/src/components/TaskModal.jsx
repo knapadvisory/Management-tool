@@ -3,8 +3,11 @@ import { api, uploadFiles, fileUrl } from '../api.js';
 import { formatBytes } from '../format.js';
 import Avatar from './Avatar.jsx';
 import TaskChat from './TaskChat.jsx';
+import RemindersEditor from './RemindersEditor.jsx';
+import StatusControl from './StatusControl.jsx';
+import AssigneePicker from './AssigneePicker.jsx';
 
-export default function TaskModal({ taskId, user, users, workflows = [], projects = [], onClose }) {
+export default function TaskModal({ taskId, user, users, workflows = [], projects = [], clients = [], onClose, inline = false }) {
   const [tab, setTab] = useState('chat');
   const [task, setTask] = useState(null);
   const [comments, setComments] = useState([]);
@@ -12,6 +15,7 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   const [checklist, setChecklist] = useState([]);
   const [watchers, setWatchers] = useState([]);
   const [attachments, setAttachments] = useState([]);
+  const [reminders, setReminders] = useState([]);
   const [comment, setComment] = useState('');
   const [description, setDescription] = useState('');
   const [newItem, setNewItem] = useState('');
@@ -20,15 +24,22 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   const fileRef = useRef(null);
 
   const load = useCallback(async () => {
-    const d = await api(`/tasks/${taskId}`);
+    let d;
+    try {
+      d = await api(`/tasks/${taskId}`);
+    } catch {
+      onClose(); // task was deleted, or we no longer have access
+      return;
+    }
     setTask(d.task);
     setComments(d.comments);
     setActivity(d.activity);
     setChecklist(d.checklist);
     setWatchers(d.watchers);
     setAttachments(d.attachments);
+    setReminders(d.reminders || []);
     setDescription(d.task.description || '');
-  }, [taskId]);
+  }, [taskId, onClose]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -91,21 +102,40 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
     setAttachments(await api(`/tasks/${taskId}/attachments/${att.id}`, { method: 'DELETE' }));
   }
 
+  async function addReminder(iso) {
+    setReminders(await api(`/tasks/${taskId}/reminders`, { method: 'POST', body: { remind_at: iso } }));
+  }
+  async function removeReminder(rem) {
+    setReminders(await api(`/tasks/${taskId}/reminders/${rem.id}`, { method: 'DELETE' }));
+  }
+
   async function remove() {
     if (!confirm('Delete this task?')) return;
     await api(`/tasks/${taskId}`, { method: 'DELETE' });
     onClose();
   }
 
+  async function archive() {
+    await api(`/tasks/${taskId}/archive`, { method: 'POST' });
+    onClose();
+  }
+  async function unarchive() {
+    await api(`/tasks/${taskId}/unarchive`, { method: 'POST' });
+    onClose();
+  }
+
   if (!task) return null;
   const workflow = workflows.find((w) => w.id === task.workflow_id) || workflows[0];
   const watching = watchers.some((w) => w.id === user.id);
+  const canArchive = user.role === 'admin' || task.creator?.id === user.id || (task.assignees || []).some((a) => a.id === user.id);
+  // Only an assignee moves the task's progress (or its creator if unassigned).
+  const isAssignee = (task.assignees || []).some((a) => a.id === user.id);
+  const canChangeStatus = isAssignee || ((task.assignees || []).length === 0 && task.creator?.id === user.id);
   const doneCount = checklist.filter((i) => i.is_done).length;
   const progress = checklist.length ? Math.round((doneCount / checklist.length) * 100) : 0;
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal task-modal" onClick={(e) => e.stopPropagation()}>
+  const inner = (
+    <div className={inline ? 'task-modal inline' : 'modal task-modal'} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <input
             className="task-title-input"
@@ -118,17 +148,17 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
 
+        <StatusControl task={task} onUpdate={update} canEdit={canChangeStatus} />
+
         <div className="task-fields">
           <label>Stage
             <select value={task.stage_id} onChange={(e) => update({ stage_id: Number(e.target.value) })}>
               {(workflow?.stages || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
-          <label>Assignee
-            <select value={task.assignee?.id ?? ''} onChange={(e) => update({ assignee_id: e.target.value ? Number(e.target.value) : null })}>
-              <option value="">Unassigned</option>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+          <label>Assignees
+            <AssigneePicker users={users} value={(task.assignees || []).map((a) => a.id)}
+              onChange={(ids) => update({ assignee_ids: ids })} />
           </label>
           <label>Project
             <select value={task.project?.id ?? ''} onChange={(e) => update({ project_id: e.target.value ? Number(e.target.value) : null })}>
@@ -136,6 +166,14 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
+          {clients.length > 0 && (
+            <label>Client
+              <select value={task.client?.id ?? ''} onChange={(e) => update({ client_id: e.target.value ? Number(e.target.value) : null })}>
+                <option value="">No client</option>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+          )}
           <label>Priority
             <select value={task.priority} onChange={(e) => update({ priority: e.target.value })}>
               <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
@@ -143,6 +181,15 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
           </label>
           <label>Due date
             <input type="date" value={task.due_date || ''} onChange={(e) => update({ due_date: e.target.value || null })} />
+          </label>
+          <label>Repeat
+            <select value={task.recurrence || 'none'} onChange={(e) => update({ recurrence: e.target.value })}>
+              <option value="none">Does not repeat</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
           </label>
         </div>
 
@@ -199,6 +246,14 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
           {attachments.length === 0 && <div className="empty-hint">No files attached.</div>}
         </div>
 
+        <div className="reminders-section">
+          <div className="checklist-head">
+            <h4>Reminders</h4>
+            {task.recurrence && task.recurrence !== 'none' && <span className="repeat-badge">🔁 repeats {task.recurrence}</span>}
+          </div>
+          <RemindersEditor items={reminders} dueDate={task.due_date} onAdd={addReminder} onRemove={removeReminder} />
+        </div>
+
         <div className="watchers-row">
           <span className="muted">Watchers:</span>
           {watchers.map((w) => <Avatar key={w.id} user={w} size={24} />)}
@@ -243,9 +298,17 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
 
         <div className="modal-footer">
           <span className="muted">Created by {task.creator?.name}</span>
-          <button className="btn btn-danger" onClick={remove}>Delete task</button>
+          <div className="footer-actions">
+            {canArchive && (task.archived_at
+              ? <button className="btn btn-sm" onClick={unarchive}>♻ Restore</button>
+              : !!task.completed_at && <button className="btn btn-sm" onClick={archive} title="Move this completed task to the archive">🗄 Archive</button>)}
+            {user.role === 'admin'
+              ? <button className="btn btn-danger" onClick={remove}>Delete task</button>
+              : <span className="muted">Only an admin can delete a task</span>}
+          </div>
         </div>
-      </div>
     </div>
   );
+
+  return inline ? inner : <div className="modal-overlay" onClick={onClose}>{inner}</div>;
 }

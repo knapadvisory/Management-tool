@@ -1,11 +1,23 @@
 import React, { useState } from 'react';
 import { api } from '../api.js';
 import Avatar from './Avatar.jsx';
-import NotificationBell from './NotificationBell.jsx';
+import { t } from '../i18n.js';
+import homeIco from '../assets/icons/Home.png';
+import dmsIco from '../assets/icons/DMs.png';
+import peopleIco from '../assets/icons/People.png';
+import activityIco from '../assets/icons/Activity.png';
+import filesIco from '../assets/icons/Files.png';
+import taskIco from '../assets/icons/Task.png';
+import clientIco from '../assets/icons/Client.png';
+import workflowIco from '../assets/icons/Workflow.png';
+import toolsIco from '../assets/icons/Tools.png';
+import adminIco from '../assets/icons/admin.png';
+import analyticsIco from '../assets/icons/Analytics.png';
+import timesheetIco from '../assets/icons/Timesheet.png';
 
 export default function Sidebar({
-  user, channels, joinable, users, onlineIds, view,
-  onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onOpenSearch,
+  user, workspace, channels, joinable, users, onlineIds, view, hrEnabled = false, onOpenHr,
+  onSelectChannel, onSelectView, onOpenDm, onJoinChannel, onChannelCreated, onLogout, onOpenSettings, darkMode, onToggleTheme, onOpenSearch,
   notifications = [], unreadCount = 0, onSelectNotification, onMarkAllRead,
 }) {
   const [showCreate, setShowCreate] = useState(false);
@@ -16,6 +28,16 @@ export default function Sidebar({
   const dms = channels.filter((c) => c.is_dm);
   const isOnline = (id) => onlineIds.includes(id);
   const activeChannelId = view?.type === 'channel' ? view.channel.id : null;
+
+  // Unread reflection: derive per-section badges from the notification inbox so
+  // Messages and Tasks show what's waiting, not just the Activity feed.
+  const unread = notifications.filter((n) => !n.is_read);
+  const unreadByChannel = {};
+  for (const n of unread) if (n.channel_id) unreadByChannel[n.channel_id] = (unreadByChannel[n.channel_id] || 0) + 1;
+  const dmChannelIds = new Set(dms.map((c) => c.id));
+  const dmUnread = unread.filter((n) => n.type === 'dm' || (n.channel_id && dmChannelIds.has(n.channel_id))).length;
+  const tasksUnread = unread.filter((n) => (n.type || '').startsWith('task')).length;
+  const badge = (n) => (n > 0 ? <span className="nav-badge">{n > 9 ? '9+' : n}</span> : null);
 
   async function createChannel(e) {
     e.preventDefault();
@@ -33,42 +55,111 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <span className="logo">TeamHub</span>
+        <span className="logo" title={workspace ? `${workspace.name} · TeamHub` : 'TeamHub'}>{workspace?.name || 'TeamHub'}</span>
         <div className="header-actions">
-          <button className="icon-btn" title="Search messages" onClick={onOpenSearch}>🔍</button>
-          <NotificationBell
-            notifications={notifications}
-            unreadCount={unreadCount}
-            onSelect={onSelectNotification}
-            onMarkAllRead={onMarkAllRead}
-          />
-          <button className="icon-btn" title="Sign out" onClick={onLogout}>⏻</button>
+          <button className="icon-btn" title={t('action.search')} onClick={onOpenSearch}>🔍</button>
+          <button className="icon-btn" title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={onToggleTheme}>{darkMode ? '☀️' : '🌙'}</button>
+          <button className="icon-btn" title={t('action.settings')} onClick={() => onOpenSettings('appearance')}>⚙️</button>
+          <button className="icon-btn" title={t('action.signout')} onClick={onLogout}>⏻</button>
         </div>
       </div>
 
-      <div className="sidebar-me">
+      <button className="sidebar-me" onClick={() => onOpenSettings('profile')} title="Your profile & settings">
         <Avatar user={user} size={28} online />
         <span className="me-name">{user.name}</span>
-      </div>
+        <span className="me-edit">⚙</span>
+      </button>
+
+      <button className={`nav-item ${view?.type === 'timesheet' ? 'active' : ''}`} onClick={() => onSelectView('timesheet')}>
+        <img className="nav-ico" src={timesheetIco} alt="" /> {t('nav.timesheet')}
+      </button>
 
       <nav className="sidebar-nav">
+        <button
+          className={`nav-item ${view?.type === 'dashboard' ? 'active' : ''}`}
+          onClick={() => onSelectView('dashboard')}
+        >
+          <img className="nav-ico" src={homeIco} alt="" /> {t('nav.home')}
+        </button>
+        <button
+          className={`nav-item ${view?.type === 'messenger' ? 'active' : ''}`}
+          onClick={() => onSelectView('messenger')}
+        >
+          <img className="nav-ico" src={dmsIco} alt="" /> {t('nav.dms')}
+          {badge(dmUnread)}
+        </button>
+        <button
+          className={`nav-item ${(view?.type === 'team' || view?.type === 'collabs') ? 'active' : ''}`}
+          onClick={() => onSelectView('team')}
+        >
+          <img className="nav-ico" src={peopleIco} alt="" /> {t('nav.people')}
+        </button>
+        <button
+          className={`nav-item ${view?.type === 'activity' ? 'active' : ''}`}
+          onClick={() => onSelectView('activity')}
+        >
+          <img className="nav-ico" src={activityIco} alt="" /> {t('nav.activity')}
+          {unreadCount > 0 && <span className="nav-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+        </button>
+        <button
+          className={`nav-item ${view?.type === 'files' ? 'active' : ''}`}
+          onClick={() => onSelectView('files')}
+        >
+          <img className="nav-ico" src={filesIco} alt="" /> {t('nav.files')}
+        </button>
         <button
           className={`nav-item ${view?.type === 'tasks' ? 'active' : ''}`}
           onClick={() => onSelectView('tasks')}
         >
-          ☑ Tasks
+          <img className="nav-ico" src={taskIco} alt="" /> {t('nav.tasks')}
+          {badge(tasksUnread)}
+        </button>
+        <button
+          className={`nav-item ${view?.type === 'clients' ? 'active' : ''}`}
+          onClick={() => onSelectView('clients')}
+        >
+          <img className="nav-ico" src={clientIco} alt="" /> {t('nav.clients')}
         </button>
         <button
           className={`nav-item ${view?.type === 'workflows' ? 'active' : ''}`}
           onClick={() => onSelectView('workflows')}
         >
-          ⚙ Workflows
+          <img className="nav-ico" src={workflowIco} alt="" /> {t('nav.workflows')}
         </button>
+        {user.role !== 'guest' && (
+          <button
+            className={`nav-item ${view?.type === 'analytics' ? 'active' : ''}`}
+            onClick={() => onSelectView('analytics')}
+          >
+            <img className="nav-ico" src={analyticsIco} alt="" /> Analytics
+          </button>
+        )}
+        {user.role !== 'guest' && (
+          <button
+            className={`nav-item ${view?.type === 'tools' ? 'active' : ''}`}
+            onClick={() => onSelectView('tools')}
+          >
+            <img className="nav-ico" src={toolsIco} alt="" /> KNAP Tools
+          </button>
+        )}
+        {user.role !== 'guest' && hrEnabled && (
+          <button className="nav-item" onClick={onOpenHr} title={user.role === 'admin' ? 'Open HR & Payroll (opens in a new tab)' : 'Open My HR — payslips, leave & profile (opens in a new tab)'}>
+            <span className="nav-logo">👥</span> {user.role === 'admin' ? 'HR & Payroll' : 'My HR'} <span className="nav-ext">↗</span>
+          </button>
+        )}
+        {user.role === 'admin' && (
+          <button
+            className={`nav-item ${view?.type === 'admin' ? 'active' : ''}`}
+            onClick={() => onSelectView('admin')}
+          >
+            <img className="nav-ico" src={adminIco} alt="" /> {t('nav.admin')}
+          </button>
+        )}
       </nav>
 
       <div className="sidebar-section">
         <div className="section-title">
-          <span>Channels</span>
+          <span>{t('sidebar.channels')}</span>
           <button className="icon-btn" title="Create channel" onClick={() => setShowCreate((s) => !s)}>＋</button>
         </div>
         {showCreate && (
@@ -85,10 +176,11 @@ export default function Sidebar({
         {regularChannels.map((c) => (
           <button
             key={c.id}
-            className={`nav-item ${activeChannelId === c.id ? 'active' : ''}`}
+            className={`nav-item ${activeChannelId === c.id ? 'active' : ''} ${unreadByChannel[c.id] ? 'has-unread' : ''}`}
             onClick={() => onSelectChannel(c)}
           >
             <span className="hash">#</span> {c.name}
+            {badge(unreadByChannel[c.id] || 0)}
           </button>
         ))}
         {joinable.map((c) => (
@@ -96,31 +188,6 @@ export default function Sidebar({
             <span className="hash">#</span> {c.name} <span className="join-tag">join</span>
           </button>
         ))}
-      </div>
-
-      <div className="sidebar-section">
-        <div className="section-title"><span>Direct messages</span></div>
-        {dms.map((c) => (
-          <button
-            key={c.id}
-            className={`nav-item ${activeChannelId === c.id ? 'active' : ''}`}
-            onClick={() => onSelectChannel(c)}
-          >
-            <Avatar user={c.dm_user} size={20} online={c.dm_user ? isOnline(c.dm_user.id) : false} />
-            <span className="dm-name">{c.display_name}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="sidebar-section">
-        <div className="section-title"><span>Team</span></div>
-        {users.filter((u) => u.id !== user.id).map((u) => (
-          <button key={u.id} className="nav-item" onClick={() => onOpenDm(u)} title={`Message ${u.name}`}>
-            <Avatar user={u} size={20} online={isOnline(u.id)} />
-            <span className="dm-name">{u.name}</span>
-          </button>
-        ))}
-        {users.length <= 1 && <div className="empty-hint">Invite teammates by sharing this app's URL — they can register themselves.</div>}
       </div>
     </aside>
   );

@@ -2,34 +2,57 @@ import { Router } from 'express';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
 import { createNotification } from '../notifications.js';
+import { nextDueDate } from '../reminders.js';
+import { completeDeadlinesForTask } from '../compliance.js';
+import { timeForTask } from './time.js';
 
 const router = Router();
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+const RECURRENCES = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
+const STATUSES = ['in_progress', 'completed', 'hold', 'cancelled'];
+const STATUS_LABEL = { in_progress: 'In Progress', completed: 'Completed', hold: 'On Hold', cancelled: 'Cancelled' };
+const NEEDS_REASON = (s) => s === 'hold' || s === 'cancelled';
 
 const getUser = (id) => (id ? db.prepare('SELECT * FROM users WHERE id = ?').get(id) : null);
+// A user who exists AND belongs to the given workspace (for assignee validation).
+const wsUser = (id, ws) => (id ? db.prepare('SELECT * FROM users WHERE id = ? AND workspace_id = ?').get(id, ws) : null);
+
+// Accept an ISO datetime (the client sends UTC) and store it as a SQLite
+// "YYYY-MM-DD HH:MM:SS" UTC string, comparable to datetime('now'). null if unparseable.
+function normalizeRemindAt(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+}
 
 function taskWithMeta(task) {
   const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ?').get(task.stage_id);
   const workflow = db.prepare('SELECT id, name FROM workflows WHERE id = ?').get(task.workflow_id);
   const project = task.project_id ? db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) : null;
+  const client = task.client_id ? db.prepare('SELECT id, name FROM clients WHERE id = ?').get(task.client_id) : null;
   const commentCount = db.prepare('SELECT COUNT(*) AS n FROM task_comments WHERE task_id = ?').get(task.id).n;
   const tags = db.prepare('SELECT tag FROM task_tags WHERE task_id = ? ORDER BY tag').all(task.id).map((r) => r.tag);
   const cl = db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(is_done), 0) AS done FROM task_checklist WHERE task_id = ?').get(task.id);
   const watcherIds = db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task.id).map((r) => r.user_id);
   const attachmentCount = db.prepare('SELECT COUNT(*) AS n FROM attachments WHERE task_id = ?').get(task.id).n;
+  const reminderCount = db.prepare('SELECT COUNT(*) AS n FROM task_reminders WHERE task_id = ? AND sent = 0').get(task.id).n;
   return {
     ...task,
     assignee: publicUser(getUser(task.assignee_id)),
+    assignees: assigneesFor(task),
     creator: publicUser(getUser(task.creator_id)),
     stage,
     workflow,
     project,
+    client,
     comment_count: commentCount,
     tags,
     checklist_total: cl.total,
     checklist_done: cl.done,
     watcher_ids: watcherIds,
     attachment_count: attachmentCount,
+    reminder_count: reminderCount,
   };
 }
 
@@ -39,6 +62,42 @@ function logActivity(taskId, userId, action) {
 
 function addWatcher(taskId, userId) {
   if (userId) db.prepare('INSERT OR IGNORE INTO task_watchers (task_id, user_id) VALUES (?, ?)').run(taskId, userId);
+}
+
+// --- Multiple assignees ---------------------------------------------------
+// tasks.assignee_id stays as the "primary" (first) assignee for backward
+// compatibility; task_assignees holds the full set. Every assignee is a watcher.
+
+const assigneeIdsFor = (taskId) => db.prepare('SELECT user_id FROM task_assignees WHERE task_id = ?').all(taskId).map((r) => r.user_id);
+
+// The assignee objects for a task, falling back to the primary assignee_id if
+// the junction was somehow not populated (keeps `assignees` and `assignee`
+// consistent no matter which code path created the task).
+function assigneesFor(task) {
+  const rows = db.prepare('SELECT u.* FROM task_assignees ta JOIN users u ON u.id = ta.user_id WHERE ta.task_id = ? ORDER BY u.name').all(task.id).map(publicUser);
+  if (rows.length) return rows;
+  const primary = task.assignee_id ? publicUser(getUser(task.assignee_id)) : null;
+  return primary ? [primary] : [];
+}
+
+// Replace a task's assignee set: rewrite the junction, keep assignee_id = the
+// first assignee, and make every assignee a watcher.
+function setAssignees(taskId, ids) {
+  const clean = [...new Set((ids || []).map(Number).filter(Boolean))];
+  db.prepare('DELETE FROM task_assignees WHERE task_id = ?').run(taskId);
+  const ins = db.prepare('INSERT OR IGNORE INTO task_assignees (task_id, user_id) VALUES (?, ?)');
+  for (const id of clean) { ins.run(taskId, id); addWatcher(taskId, id); }
+  db.prepare('UPDATE tasks SET assignee_id = ? WHERE id = ?').run(clean[0] ?? null, taskId);
+  return clean;
+}
+
+// Normalise the assignee list from a request body. Accepts `assignee_ids`
+// (array, the new shape) or legacy `assignee_id` (single/null). Returns
+// undefined when neither is present (i.e. "no change").
+function incomingAssignees(body) {
+  if (Array.isArray(body.assignee_ids)) return [...new Set(body.assignee_ids.map(Number).filter(Boolean))];
+  if (body.assignee_id !== undefined) return body.assignee_id ? [Number(body.assignee_id)] : [];
+  return undefined;
 }
 
 // Notify everyone watching a task (except whoever triggered the change):
@@ -58,52 +117,227 @@ function notifyWatchers(req, task, text, type = 'task_update') {
   }
 }
 
+// Super admins supervise every task; everyone else sees only tasks they
+// created, are assigned to, or watch.
+function canSeeTask(user, task) {
+  if (user.role === 'admin') return true;
+  if (task.creator_id === user.id || task.assignee_id === user.id) return true;
+  if (db.prepare('SELECT 1 FROM task_assignees WHERE task_id = ? AND user_id = ?').get(task.id, user.id)) return true;
+  return !!db.prepare('SELECT 1 FROM task_watchers WHERE task_id = ? AND user_id = ?').get(task.id, user.id);
+}
+
+// Anyone involved in a task may archive/unarchive it; admins may archive any.
+function canArchiveTask(user, task) {
+  if (user.role === 'admin' || task.creator_id === user.id || task.assignee_id === user.id) return true;
+  return !!db.prepare('SELECT 1 FROM task_assignees WHERE task_id = ? AND user_id = ?').get(task.id, user.id);
+}
+
+// Who should receive live updates about a task: the people involved in it
+// plus every active admin (so admins' boards stay in sync for supervision).
+function recipientsForTask(task) {
+  const ids = new Set(db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task.id).map((r) => r.user_id));
+  if (task.creator_id) ids.add(task.creator_id);
+  for (const id of assigneeIdsFor(task.id)) ids.add(id);
+  if (task.assignee_id) ids.add(task.assignee_id);
+  // Admins of the task's OWN workspace stay in sync (never other workspaces').
+  for (const { id } of db.prepare(`SELECT id FROM users WHERE role = 'admin' AND active = 1 AND workspace_id = ?`).all(task.workspace_id)) ids.add(id);
+  return [...ids];
+}
+
 function emitChanged(req, taskId) {
   const task = taskWithMeta(db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId));
-  req.app.get('io')?.emit('task:changed', { task });
+  const io = req.app.get('io');
+  if (io) for (const uid of recipientsForTask(task)) io.to(`user:${uid}`).emit('task:changed', { task });
   return task;
 }
 
+// When a recurring task is completed, clone it into the first stage with the
+// due date advanced by its repeat rule. Tags, checklist (reset) and reminders
+// (shifted by the same interval) carry over. Returns the new task or null.
+function spawnNextOccurrence(req, task) {
+  const newDue = nextDueDate(task.due_date, task.recurrence);
+  if (!newDue) return null;
+  const firstStage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(task.workflow_id);
+  if (!firstStage) return null;
+
+  const info = db.prepare(`
+    INSERT INTO tasks (title, description, workflow_id, project_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(task.title, task.description, task.workflow_id, task.project_id, firstStage.id,
+    task.assignee_id, task.creator_id, task.priority, newDue, task.recurrence, task.workspace_id);
+  const newId = info.lastInsertRowid;
+
+  for (const { tag } of db.prepare('SELECT tag FROM task_tags WHERE task_id = ?').all(task.id)) {
+    db.prepare('INSERT OR IGNORE INTO task_tags (task_id, tag) VALUES (?, ?)').run(newId, tag);
+  }
+  const steps = db.prepare('SELECT text, position FROM task_checklist WHERE task_id = ? ORDER BY position, id').all(task.id);
+  const insStep = db.prepare('INSERT INTO task_checklist (task_id, text, position, is_done) VALUES (?, ?, ?, 0)');
+  steps.forEach((s) => insStep.run(newId, s.text, s.position));
+  setAssignees(newId, assigneeIdsFor(task.id));
+  for (const uid of db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task.id).map((r) => r.user_id)) {
+    addWatcher(newId, uid);
+  }
+  // Shift each future reminder forward by the same number of days as the due date moved.
+  const shiftDays = Math.round((new Date(newDue + 'T00:00:00Z') - new Date(task.due_date + 'T00:00:00Z')) / 86400000);
+  for (const rem of db.prepare('SELECT remind_at FROM task_reminders WHERE task_id = ?').all(task.id)) {
+    const at = new Date(rem.remind_at.replace(' ', 'T') + 'Z');
+    if (Number.isNaN(at.getTime())) continue;
+    at.setUTCDate(at.getUTCDate() + shiftDays);
+    db.prepare('INSERT INTO task_reminders (task_id, remind_at, created_by) VALUES (?, ?, ?)')
+      .run(newId, at.toISOString().slice(0, 19).replace('T', ' '), req.user.id);
+  }
+  logActivity(newId, req.user.id, `created automatically (repeats ${task.recurrence}) — due ${newDue}`);
+  emitChanged(req, newId);
+  notifyWatchers(req, db.prepare('SELECT * FROM tasks WHERE id = ?').get(newId), `is up next (repeats ${task.recurrence}, due ${newDue})`, 'task_recurred');
+  return newId;
+}
+
 function loadTask(req, res) {
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!task) { res.status(404).json({ error: 'Task not found' }); return null; }
+  if (!canSeeTask(req.user, task)) { res.status(403).json({ error: 'You do not have access to this task' }); return null; }
   return task;
 }
 
 // --- Tasks list & CRUD ---
 
+// Start the rating flow when a task is completed. If it was assigned by
+// someone else, that assigner rates it; if it was self-assigned, the doer
+// rates themselves and then names a reporting manager who rates it too.
+function openTaskRating(io, task, completerId) {
+  if (!task) return;
+  // Only one open flow per task at a time.
+  if (db.prepare("SELECT 1 FROM task_ratings WHERE task_id = ? AND status = 'pending'").get(task.id)) return;
+  const selfAssigned = !task.creator_id || task.creator_id === completerId;
+  const raterId = selfAssigned ? completerId : task.creator_id;
+  if (selfAssigned) {
+    db.prepare("INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role) VALUES (?, ?, ?, ?, 'self')")
+      .run(task.id, task.workspace_id, completerId, completerId);
+    createNotification(io, { user_id: completerId, type: 'rating_self', actor_id: completerId, task_id: task.id,
+      text: `Rate your completed task "${task.title}" and choose a reporting manager` });
+  } else {
+    db.prepare("INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role) VALUES (?, ?, ?, ?, 'assigner')")
+      .run(task.id, task.workspace_id, completerId, task.creator_id);
+    createNotification(io, { user_id: task.creator_id, type: 'rating_request', actor_id: completerId, task_id: task.id,
+      text: `Rate the completed task "${task.title}"` });
+  }
+  io?.to(`user:${raterId}`).emit('rating:update'); // refresh "For Your Review" live
+}
+
+// Tasks awaiting MY rating (assigner / manager / my own self-rating).
+router.get('/ratings/pending', (req, res) => {
+  const rows = db.prepare(`
+    SELECT r.id, r.task_id, r.role, r.ratee_id, t.title AS task_title,
+           u.name AS ratee_name, u.avatar_color AS ratee_color
+    FROM task_ratings r
+    JOIN tasks t ON t.id = r.task_id
+    JOIN users u ON u.id = r.ratee_id
+    WHERE r.rater_id = ? AND r.status = 'pending' AND r.workspace_id = ?
+    ORDER BY r.created_at DESC
+  `).all(req.user.id, req.workspaceId);
+  res.json({ ratings: rows });
+});
+
+// Submit a rating: 1-5 stars + required comment. A self-rating also names the
+// reporting manager, which spawns that manager's pending rating.
+router.post('/ratings/:id', (req, res) => {
+  const r = db.prepare("SELECT * FROM task_ratings WHERE id = ? AND rater_id = ? AND status = 'pending'").get(req.params.id, req.user.id);
+  if (!r) return res.status(404).json({ error: 'Rating not found' });
+  const stars = Math.max(0, Math.min(5, parseInt(req.body.stars, 10) || 0));
+  const comment = (req.body.comment || '').trim();
+  if (!stars) return res.status(400).json({ error: 'Please give a star rating.' });
+  if (!comment) return res.status(400).json({ error: 'A short comment is required.' });
+
+  let managerId = null;
+  if (r.role === 'self') {
+    const raw = req.body.manager_id;
+    if (raw) {
+      managerId = Number(raw);
+      if (!wsUser(managerId, req.workspaceId) || managerId === req.user.id) {
+        return res.status(400).json({ error: 'Choose a valid reporting manager (not yourself).' });
+      }
+    } else if (req.user.role !== 'admin') {
+      // Non-admins must name a reviewer; an admin is the senior, so their
+      // self-rating is final and no manager is required.
+      return res.status(400).json({ error: 'Choose a reporting manager.' });
+    }
+  }
+
+  const io = req.app.get('io');
+  db.prepare("UPDATE task_ratings SET stars = ?, comment = ?, status = 'done', rated_at = datetime('now') WHERE id = ?")
+    .run(stars, comment, r.id);
+  const task = db.prepare('SELECT title FROM tasks WHERE id = ?').get(r.task_id);
+
+  if (r.role === 'self' && managerId) {
+    db.prepare("INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role) VALUES (?, ?, ?, ?, 'manager')")
+      .run(r.task_id, r.workspace_id, r.ratee_id, managerId);
+    createNotification(io, { user_id: managerId, type: 'rating_request', actor_id: req.user.id, task_id: r.task_id,
+      text: `${req.user.name} asked you to rate their completed task "${task?.title || ''}"` });
+    io?.to(`user:${managerId}`).emit('rating:update'); // show it in the manager's list live
+  } else if (r.role !== 'self') {
+    createNotification(io, { user_id: r.ratee_id, type: 'rating_received', actor_id: req.user.id, task_id: r.task_id,
+      text: `${req.user.name} rated your task "${task?.title || ''}" ${stars}★` });
+  }
+  // (admin self-rating with no manager: nothing further — it's final)
+  res.json({ ok: true });
+});
+
 router.get('/', (req, res) => {
-  const { workflow_id, project_id, assignee_id, tag, overdue, watching } = req.query;
+  const { workflow_id, project_id, client_id, assignee_id, creator_id, tag, overdue, watching } = req.query;
   let sql = 'SELECT DISTINCT t.* FROM tasks t';
-  const where = ['1=1'];
-  const params = [];
+  // Everything is scoped to the caller's workspace, first and always.
+  const where = ['t.workspace_id = ?'];
+  const params = [req.workspaceId];
+  // Archived tasks are hidden from the active board/list unless asked for.
+  where.push(req.query.archived ? 't.archived_at IS NOT NULL' : 't.archived_at IS NULL');
   if (tag) { sql += ' JOIN task_tags tt ON tt.task_id = t.id'; where.push('tt.tag = ?'); params.push(tag); }
-  if (watching) { sql += ' JOIN task_watchers tw ON tw.task_id = t.id AND tw.user_id = ?'; params.push(req.user.id); }
+  if (watching) { where.push('EXISTS (SELECT 1 FROM task_watchers tw WHERE tw.task_id = t.id AND tw.user_id = ?)'); params.push(req.user.id); }
   if (workflow_id) { where.push('t.workflow_id = ?'); params.push(workflow_id); }
   if (project_id) { where.push('t.project_id = ?'); params.push(project_id); }
-  if (assignee_id) { where.push('t.assignee_id = ?'); params.push(assignee_id); }
+  if (client_id) { where.push('t.client_id = ?'); params.push(client_id); }
+  // Filter by assignee (anyone assigned, not just the primary) or by assigner.
+  if (assignee_id) { where.push('EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?)'); params.push(assignee_id); }
+  if (creator_id) { where.push('t.creator_id = ?'); params.push(creator_id); }
   if (overdue) { where.push(`t.due_date IS NOT NULL AND t.due_date < date('now')`); }
+  // Non-admins see only tasks they created, are assigned to, or watch.
+  if (req.user.role !== 'admin') {
+    where.push(`(t.creator_id = ? OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?) OR EXISTS (SELECT 1 FROM task_watchers w WHERE w.task_id = t.id AND w.user_id = ?))`);
+    params.push(req.user.id, req.user.id, req.user.id);
+  }
   sql += ' WHERE ' + where.join(' AND ') + ' ORDER BY t.updated_at DESC';
   res.json({ tasks: db.prepare(sql).all(...params).map(taskWithMeta) });
 });
 
 router.post('/', (req, res) => {
-  const { title, description = '', workflow_id, project_id = null, assignee_id = null,
-    priority = 'medium', due_date = null, tags = [], checklist = [] } = req.body;
+  const { title, description = '', workflow_id, project_id = null, client_id = null,
+    priority = 'medium', due_date = null, tags = [], checklist = [], recurrence = 'none', reminders = [] } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Task title is required' });
   if (!PRIORITIES.includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
-  const wf = db.prepare('SELECT * FROM workflows WHERE id = ?').get(workflow_id);
+  if (!RECURRENCES.includes(recurrence)) return res.status(400).json({ error: 'Invalid recurrence' });
+  const wf = db.prepare('SELECT * FROM workflows WHERE id = ? AND workspace_id = ?').get(workflow_id, req.workspaceId);
   if (!wf) return res.status(400).json({ error: 'Workflow not found' });
-  if (assignee_id && !getUser(assignee_id)) return res.status(400).json({ error: 'Assignee not found' });
-  if (project_id && !db.prepare('SELECT id FROM projects WHERE id = ?').get(project_id)) {
+  const assigneeList = incomingAssignees(req.body) || [];
+  for (const id of assigneeList) if (!wsUser(id, req.workspaceId)) return res.status(400).json({ error: 'Assignee not found' });
+  const assignee_id = assigneeList[0] ?? null;
+  if (project_id && !db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)) {
     return res.status(400).json({ error: 'Project not found' });
   }
+  if (client_id && !db.prepare('SELECT id FROM clients WHERE id = ? AND workspace_id = ?').get(client_id, req.workspaceId)) {
+    return res.status(400).json({ error: 'Client not found' });
+  }
   const firstStage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
+  if (!firstStage) return res.status(400).json({ error: 'This board has no stages yet — add a stage before creating tasks.' });
   const info = db.prepare(`
-    INSERT INTO tasks (title, description, workflow_id, project_id, stage_id, assignee_id, creator_id, priority, due_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(title.trim(), description, wf.id, project_id, firstStage.id, assignee_id, req.user.id, priority, due_date);
+    INSERT INTO tasks (title, description, workflow_id, project_id, client_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(title.trim(), description, wf.id, project_id, client_id, firstStage.id, assignee_id, req.user.id, priority, due_date, recurrence, req.workspaceId);
   const taskId = info.lastInsertRowid;
+
+  const insReminder = db.prepare('INSERT INTO task_reminders (task_id, remind_at, created_by) VALUES (?, ?, ?)');
+  (Array.isArray(reminders) ? reminders : []).forEach((r) => {
+    const at = normalizeRemindAt(r);
+    if (at) insReminder.run(taskId, at, req.user.id);
+  });
 
   for (const tag of tags) {
     const clean = String(tag).trim().toLowerCase();
@@ -117,16 +351,18 @@ router.post('/', (req, res) => {
   });
   logActivity(taskId, req.user.id, 'created this task');
   addWatcher(taskId, req.user.id);
-  if (assignee_id) {
-    logActivity(taskId, req.user.id, `assigned it to ${getUser(assignee_id).name}`);
-    addWatcher(taskId, assignee_id);
+  if (assigneeList.length) {
+    setAssignees(taskId, assigneeList);
+    const names = assigneeList.map((id) => getUser(id).name).join(', ');
+    logActivity(taskId, req.user.id, `assigned it to ${names}`);
   }
 
   const task = emitChanged(req, taskId);
-  if (assignee_id && assignee_id !== req.user.id) {
-    const io = req.app.get('io');
-    io?.to(`user:${assignee_id}`).emit('task:assigned', { task, by: publicUser(req.user) });
-    createNotification(io, { user_id: assignee_id, type: 'task_assigned', actor_id: req.user.id, task_id: taskId, text: `${req.user.name} assigned you "${task.title}"` });
+  const io = req.app.get('io');
+  for (const id of assigneeList) {
+    if (id === req.user.id) continue;
+    io?.to(`user:${id}`).emit('task:assigned', { task, by: publicUser(req.user) });
+    createNotification(io, { user_id: id, type: 'task_assigned', actor_id: req.user.id, task_id: taskId, text: `${req.user.name} assigned you "${task.title}"` });
   }
   res.status(201).json(task);
 });
@@ -147,31 +383,108 @@ router.get('/:id', (req, res) => {
     SELECT u.* FROM task_watchers tw JOIN users u ON u.id = tw.user_id WHERE tw.task_id = ?
   `).all(task.id).map(publicUser);
   const attachments = db.prepare('SELECT id, original_name, mime_type, size FROM attachments WHERE task_id = ? ORDER BY id').all(task.id);
-  res.json({ task: taskWithMeta(task), comments, activity, checklist, watchers, attachments });
+  const reminders = db.prepare('SELECT id, remind_at, sent FROM task_reminders WHERE task_id = ? ORDER BY remind_at').all(task.id);
+  res.json({ task: taskWithMeta(task), comments, activity, checklist, watchers, attachments, reminders, time: timeForTask(task.id) });
 });
 
 router.patch('/:id', (req, res) => {
   const task = loadTask(req, res);
   if (!task) return;
-  const { title, description, stage_id, assignee_id, priority, due_date, project_id } = req.body;
+  const { title, description, stage_id, priority, due_date, project_id, client_id, recurrence, status, status_reason } = req.body;
+  const newAssignees = incomingAssignees(req.body); // undefined = no change
+  const oldAssignees = assigneeIdsFor(task.id);
+
+  // Progress is the doer's to report: only an assignee may change the status.
+  // Assigners, admins and watchers rate the work afterwards — they don't move
+  // it. (If a task has no assignee, its creator may set the status so it isn't
+  // stuck.)
+  if (status !== undefined && status !== task.status) {
+    const isAssignee = oldAssignees.includes(req.user.id);
+    const creatorFallback = oldAssignees.length === 0 && task.creator_id === req.user.id;
+    if (!isAssignee && !creatorFallback) {
+      return res.status(403).json({ error: 'Only the assignee can change the task status.' });
+    }
+  }
 
   if (priority !== undefined && !PRIORITIES.includes(priority)) {
     return res.status(400).json({ error: 'Invalid priority' });
   }
+  if (recurrence !== undefined && !RECURRENCES.includes(recurrence)) {
+    return res.status(400).json({ error: 'Invalid recurrence' });
+  }
+  if (status !== undefined && !STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+  // Putting a task on hold or cancelling it requires a reason.
+  const statusChanged = status !== undefined && status !== task.status;
+  if (statusChanged && NEEDS_REASON(status) && !(status_reason || '').trim()) {
+    return res.status(400).json({ error: `A reason is required to mark a task as ${STATUS_LABEL[status]}` });
+  }
+
+  let movedToDone = false;
   if (stage_id !== undefined && stage_id !== task.stage_id) {
     const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ? AND workflow_id = ?').get(stage_id, task.workflow_id);
     if (!stage) return res.status(400).json({ error: 'Stage does not belong to this workflow' });
+    const oldStage = db.prepare('SELECT * FROM workflow_stages WHERE id = ?').get(task.stage_id);
+    // Moving into (or out of) a "done" stage completes/reopens the task, which
+    // is a progress change — same rule as the status field: only the assignee
+    // (or the creator when there's no assignee) may do it.
+    const crossesDone = (!!stage.is_done) !== (!!oldStage?.is_done);
+    if (crossesDone) {
+      const isAssignee = oldAssignees.includes(req.user.id);
+      const creatorFallback = oldAssignees.length === 0 && task.creator_id === req.user.id;
+      if (!isAssignee && !creatorFallback) {
+        return res.status(403).json({ error: 'Only the assignee can move a task into or out of a done stage.' });
+      }
+    }
     logActivity(task.id, req.user.id, `moved it to "${stage.name}"`);
     notifyWatchers(req, task, `moved to "${stage.name}"`, 'task_moved');
+    movedToDone = !!stage.is_done && !oldStage?.is_done;
   }
-  if (assignee_id !== undefined && assignee_id !== task.assignee_id) {
-    if (assignee_id !== null && !getUser(assignee_id)) return res.status(400).json({ error: 'Assignee not found' });
-    const name = assignee_id ? getUser(assignee_id).name : null;
-    logActivity(task.id, req.user.id, name ? `assigned it to ${name}` : 'removed the assignee');
-    if (assignee_id) addWatcher(task.id, assignee_id);
+  if (newAssignees !== undefined) {
+    for (const id of newAssignees) if (!wsUser(id, req.workspaceId)) return res.status(400).json({ error: 'Assignee not found' });
+    const changed = newAssignees.slice().sort().join(',') !== oldAssignees.slice().sort().join(',');
+    if (changed) {
+      const names = newAssignees.length ? newAssignees.map((id) => getUser(id).name).join(', ') : null;
+      logActivity(task.id, req.user.id, names ? `assigned it to ${names}` : 'removed the assignee');
+    }
   }
-  if (project_id !== undefined && project_id !== null && !db.prepare('SELECT id FROM projects WHERE id = ?').get(project_id)) {
+  if (project_id !== undefined && project_id !== null && !db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?').get(project_id, req.workspaceId)) {
     return res.status(400).json({ error: 'Project not found' });
+  }
+  if (client_id !== undefined && client_id !== null && !db.prepare('SELECT id FROM clients WHERE id = ? AND workspace_id = ?').get(client_id, req.workspaceId)) {
+    return res.status(400).json({ error: 'Client not found' });
+  }
+
+  // Notify watchers of other meaningful edits (title, priority, due date, repeat).
+  if (title !== undefined && title.trim() && title.trim() !== task.title) {
+    logActivity(task.id, req.user.id, `renamed it to "${title.trim()}"`);
+    notifyWatchers(req, task, 'renamed the task', 'task_update');
+  }
+  if (priority !== undefined && priority !== task.priority) {
+    logActivity(task.id, req.user.id, `changed priority to ${priority}`);
+    notifyWatchers(req, task, `changed priority to ${priority}`, 'task_update');
+  }
+  if (due_date !== undefined && (due_date || null) !== (task.due_date || null)) {
+    logActivity(task.id, req.user.id, due_date ? `set the due date to ${due_date}` : 'cleared the due date');
+    notifyWatchers(req, task, due_date ? `set the due date to ${due_date}` : 'cleared the due date', 'task_update');
+  }
+  if (recurrence !== undefined && recurrence !== task.recurrence) {
+    logActivity(task.id, req.user.id, recurrence === 'none' ? 'turned off repeat' : `set it to repeat ${recurrence}`);
+  }
+
+  // Status lifecycle change (with reason for hold/cancelled).
+  let completedNow = false;
+  let reasonWrite = 0;
+  let reasonValue = null;
+  if (statusChanged) {
+    const reason = NEEDS_REASON(status) ? (status_reason || '').trim() : '';
+    reasonWrite = 1;
+    reasonValue = reason;
+    const suffix = reason ? ` — ${reason}` : '';
+    logActivity(task.id, req.user.id, `set status to ${STATUS_LABEL[status]}${suffix}`);
+    notifyWatchers(req, task, `marked it ${STATUS_LABEL[status]}${suffix}`, 'task_status');
+    completedNow = status === 'completed';
   }
 
   db.prepare(`
@@ -179,36 +492,152 @@ router.patch('/:id', (req, res) => {
       title = COALESCE(?, title),
       description = COALESCE(?, description),
       stage_id = COALESCE(?, stage_id),
-      assignee_id = CASE WHEN ? THEN ? ELSE assignee_id END,
       priority = COALESCE(?, priority),
       due_date = CASE WHEN ? THEN ? ELSE due_date END,
       project_id = CASE WHEN ? THEN ? ELSE project_id END,
+      client_id = CASE WHEN ? THEN ? ELSE client_id END,
+      recurrence = COALESCE(?, recurrence),
+      status = COALESCE(?, status),
+      status_reason = CASE WHEN ? THEN ? ELSE status_reason END,
       updated_at = datetime('now')
     WHERE id = ?
   `).run(
     title?.trim() || null, description ?? null, stage_id ?? null,
-    assignee_id !== undefined ? 1 : 0, assignee_id ?? null,
     priority ?? null,
     due_date !== undefined ? 1 : 0, due_date ?? null,
     project_id !== undefined ? 1 : 0, project_id ?? null,
+    client_id !== undefined ? 1 : 0, client_id ?? null,
+    recurrence ?? null,
+    status ?? null,
+    reasonWrite, reasonValue,
     task.id
   );
 
-  const updated = emitChanged(req, task.id);
-  if (assignee_id && assignee_id !== task.assignee_id && assignee_id !== req.user.id) {
-    const io = req.app.get('io');
-    io?.to(`user:${assignee_id}`).emit('task:assigned', { task: updated, by: publicUser(req.user) });
-    createNotification(io, { user_id: assignee_id, type: 'task_assigned', actor_id: req.user.id, task_id: task.id, text: `${req.user.name} assigned you "${updated.title}"` });
+  // Apply the new assignee set (rewrites junction, keeps primary assignee_id).
+  if (newAssignees !== undefined) setAssignees(task.id, newAssignees);
+
+  // Auto-sync the lifecycle status with the board column when the stage changed
+  // and the caller didn't set status explicitly: dragging a task into a "done"
+  // column marks it Completed; dragging it back out reopens it to In Progress.
+  // Keys on the stage's is_done flag, so this works for the default board AND any
+  // custom workflow whose final column is flagged done — no per-board config.
+  const stageChanged = stage_id !== undefined && stage_id !== task.stage_id;
+  if (stageChanged && status === undefined) {
+    const st = db.prepare('SELECT t.status, s.is_done FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id WHERE t.id = ?').get(task.id);
+    if (st.is_done && st.status !== 'completed') {
+      db.prepare("UPDATE tasks SET status = 'completed', status_reason = '' WHERE id = ?").run(task.id);
+      logActivity(task.id, req.user.id, 'marked it Completed');
+      notifyWatchers(req, task, 'marked it Completed', 'task_status');
+    } else if (!st.is_done && st.status === 'completed') {
+      db.prepare("UPDATE tasks SET status = 'in_progress' WHERE id = ?").run(task.id);
+      logActivity(task.id, req.user.id, 'reopened it (In Progress)');
+      notifyWatchers(req, task, 'reopened it (In Progress)', 'task_status');
+    }
   }
+
+  // Keep completed_at accurate: stamp it when the task becomes "done"
+  // (completed status or a done stage); clear it (and any archive) if reopened.
+  const now = db.prepare('SELECT t.status, t.completed_at, s.is_done FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id WHERE t.id = ?').get(task.id);
+  const isDoneNow = now.status === 'completed' || !!now.is_done;
+  if (isDoneNow && !now.completed_at) {
+    db.prepare(`UPDATE tasks SET completed_at = datetime('now') WHERE id = ?`).run(task.id);
+    // If this task was generated from a compliance deadline, tick the deadline
+    // off (and roll a recurring one to its next period).
+    completeDeadlinesForTask(task.id, req.user.id);
+    // Kick off the rating flow (assigner rates, or self → pick a manager).
+    openTaskRating(req.app.get('io'), task, req.user.id);
+  } else if (!isDoneNow && now.completed_at) {
+    db.prepare('UPDATE tasks SET completed_at = NULL, archived_at = NULL WHERE id = ?').run(task.id);
+    // Reopened before it was rated — drop any pending rating so it stops
+    // showing in "For Your Review". Ratings already given stay as history.
+    const io = req.app.get('io');
+    const stale = db.prepare("SELECT DISTINCT rater_id FROM task_ratings WHERE task_id = ? AND status = 'pending'").all(task.id);
+    db.prepare("DELETE FROM task_ratings WHERE task_id = ? AND status = 'pending'").run(task.id);
+    for (const { rater_id } of stale) io?.to(`user:${rater_id}`).emit('rating:update'); // clear it live
+  }
+
+  const updated = emitChanged(req, task.id);
+  if (newAssignees !== undefined) {
+    const added = newAssignees.filter((id) => !oldAssignees.includes(id) && id !== req.user.id);
+    const io = req.app.get('io');
+    for (const id of added) {
+      io?.to(`user:${id}`).emit('task:assigned', { task: updated, by: publicUser(req.user) });
+      createNotification(io, { user_id: id, type: 'task_assigned', actor_id: req.user.id, task_id: task.id, text: `${req.user.name} assigned you "${updated.title}"` });
+    }
+  }
+  // Completing a recurring task — via a done stage or the Completed status —
+  // generates its next occurrence automatically (only once per request).
+  if (movedToDone || completedNow) spawnNextOccurrence(req, db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id));
   res.json(updated);
 });
 
 router.delete('/:id', (req, res) => {
+  // Only super admins may delete a task; everyone else changes its status.
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only an admin can delete a task. Change its status instead.' });
+  }
   const task = loadTask(req, res);
   if (!task) return;
+  // Tell watchers before the row (and its watcher rows) disappear.
+  notifyWatchers(req, task, 'deleted this task', 'task_deleted');
+  const recipients = recipientsForTask(task);
   db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
-  req.app.get('io')?.emit('task:deleted', { task_id: task.id, workflow_id: task.workflow_id });
+  const io = req.app.get('io');
+  if (io) for (const uid of recipients) io.to(`user:${uid}`).emit('task:deleted', { task_id: task.id, workflow_id: task.workflow_id });
   res.json({ ok: true });
+});
+
+// --- Archive ---
+
+// Move a single done task out of the active board into the archive.
+router.post('/:id/archive', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  if (!canArchiveTask(req.user, task)) {
+    return res.status(403).json({ error: 'Only the task creator, assignee, or an admin can archive this task.' });
+  }
+  if (!task.completed_at) {
+    return res.status(400).json({ error: 'Only completed tasks can be archived.' });
+  }
+  if (task.archived_at) return res.json(taskWithMeta(db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id)));
+  db.prepare(`UPDATE tasks SET archived_at = datetime('now') WHERE id = ?`).run(task.id);
+  logActivity(task.id, req.user.id, 'archived this task');
+  res.json(emitChanged(req, task.id));
+});
+
+// Restore an archived task back to the active board.
+router.post('/:id/unarchive', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  if (!canArchiveTask(req.user, task)) {
+    return res.status(403).json({ error: 'Only the task creator, assignee, or an admin can restore this task.' });
+  }
+  if (!task.archived_at) return res.json(taskWithMeta(db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id)));
+  db.prepare('UPDATE tasks SET archived_at = NULL WHERE id = ?').run(task.id);
+  logActivity(task.id, req.user.id, 'restored this task from the archive');
+  res.json(emitChanged(req, task.id));
+});
+
+// Bulk-archive every done task the caller is allowed to archive. Admins clear
+// the whole workspace's done column; others clear only their own done tasks.
+router.post('/archive/done', (req, res) => {
+  let sql = `SELECT * FROM tasks WHERE workspace_id = ? AND archived_at IS NULL AND completed_at IS NOT NULL`;
+  const params = [req.workspaceId];
+  if (req.user.role !== 'admin') {
+    sql += ' AND (creator_id = ? OR assignee_id = ?)';
+    params.push(req.user.id, req.user.id);
+  }
+  const tasks = db.prepare(sql).all(...params);
+  const stamp = db.prepare(`UPDATE tasks SET archived_at = datetime('now') WHERE id = ?`);
+  const archive = db.transaction((rows) => {
+    for (const t of rows) {
+      stamp.run(t.id);
+      logActivity(t.id, req.user.id, 'archived this task');
+    }
+  });
+  archive(tasks);
+  for (const t of tasks) emitChanged(req, t.id);
+  res.json({ archived: tasks.length });
 });
 
 // --- Comments ---
@@ -239,7 +668,29 @@ router.get('/:id/chat', (req, res) => {
     SELECT tm.*, u.name AS user_name, u.avatar_color FROM task_messages tm
     JOIN users u ON u.id = tm.user_id WHERE tm.task_id = ? ORDER BY tm.id
   `).all(task.id);
+  const attFor = db.prepare(`SELECT id, original_name, mime_type, size FROM attachments WHERE task_message_id = ? AND archived_at IS NULL ORDER BY id`);
+  for (const m of messages) m.attachments = attFor.all(m.id);
   res.json({ messages });
+});
+
+// --- Reminders ---
+
+router.post('/:id/reminders', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  const at = normalizeRemindAt(req.body.remind_at);
+  if (!at) return res.status(400).json({ error: 'A valid reminder time is required' });
+  db.prepare('INSERT INTO task_reminders (task_id, remind_at, created_by) VALUES (?, ?, ?)').run(task.id, at, req.user.id);
+  addWatcher(task.id, req.user.id);
+  emitChanged(req, task.id);
+  res.status(201).json(db.prepare('SELECT id, remind_at, sent FROM task_reminders WHERE task_id = ? ORDER BY remind_at').all(task.id));
+});
+
+router.delete('/:id/reminders/:reminderId', (req, res) => {
+  if (!loadTask(req, res)) return;
+  db.prepare('DELETE FROM task_reminders WHERE id = ? AND task_id = ?').run(req.params.reminderId, req.params.id);
+  emitChanged(req, req.params.id);
+  res.json(db.prepare('SELECT id, remind_at, sent FROM task_reminders WHERE task_id = ? ORDER BY remind_at').all(req.params.id));
 });
 
 // --- Checklist ---
@@ -256,6 +707,7 @@ router.post('/:id/checklist', (req, res) => {
 });
 
 router.patch('/:id/checklist/:itemId', (req, res) => {
+  if (!loadTask(req, res)) return;
   const item = db.prepare('SELECT * FROM task_checklist WHERE id = ? AND task_id = ?').get(req.params.itemId, req.params.id);
   if (!item) return res.status(404).json({ error: 'Checklist item not found' });
   const { is_done, text } = req.body;
@@ -266,6 +718,7 @@ router.patch('/:id/checklist/:itemId', (req, res) => {
 });
 
 router.delete('/:id/checklist/:itemId', (req, res) => {
+  if (!loadTask(req, res)) return;
   db.prepare('DELETE FROM task_checklist WHERE id = ? AND task_id = ?').run(req.params.itemId, req.params.id);
   emitChanged(req, req.params.id);
   res.json(db.prepare('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id').all(req.params.id));
@@ -283,6 +736,7 @@ router.post('/:id/tags', (req, res) => {
 });
 
 router.delete('/:id/tags/:tag', (req, res) => {
+  if (!loadTask(req, res)) return;
   db.prepare('DELETE FROM task_tags WHERE task_id = ? AND tag = ?').run(req.params.id, decodeURIComponent(req.params.tag));
   res.json(emitChanged(req, req.params.id));
 });
@@ -297,6 +751,7 @@ router.post('/:id/watch', (req, res) => {
 });
 
 router.delete('/:id/watch', (req, res) => {
+  if (!loadTask(req, res)) return;
   db.prepare('DELETE FROM task_watchers WHERE task_id = ? AND user_id = ?').run(req.params.id, req.user.id);
   res.json(emitChanged(req, req.params.id));
 });
@@ -314,14 +769,18 @@ router.post('/:id/attachments', (req, res) => {
 });
 
 router.delete('/:id/attachments/:attId', (req, res) => {
+  if (!loadTask(req, res)) return;
   db.prepare('DELETE FROM attachments WHERE id = ? AND task_id = ?').run(req.params.attId, req.params.id);
   emitChanged(req, req.params.id);
   res.json(db.prepare('SELECT id, original_name, mime_type, size FROM attachments WHERE task_id = ? ORDER BY id').all(req.params.id));
 });
 
-// Distinct tags across all tasks, for filter menus.
+// Distinct tags across this workspace's tasks, for filter menus.
 router.get('/meta/tags', (req, res) => {
-  res.json({ tags: db.prepare('SELECT DISTINCT tag FROM task_tags ORDER BY tag').all().map((r) => r.tag) });
+  res.json({ tags: db.prepare(`
+    SELECT DISTINCT tt.tag FROM task_tags tt JOIN tasks t ON t.id = tt.task_id
+    WHERE t.workspace_id = ? ORDER BY tt.tag
+  `).all(req.workspaceId).map((r) => r.tag) });
 });
 
 export default router;

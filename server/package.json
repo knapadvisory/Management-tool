@@ -7,18 +7,21 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "node test/migration.mjs && node test/signup-gate.mjs && node test/smoke.mjs"
+    "test": "node test/migration.mjs && node test/reminders.mjs && node test/signup-gate.mjs && node test/multitenant.mjs && node test/backup.mjs && node test/delete-workspace.mjs && node test/email.mjs && node test/callrooms.mjs && node test/clients.mjs && node test/time.mjs && node test/analytics.mjs && node test/hr.mjs && node test/smoke.mjs"
   },
   "devDependencies": {
     "socket.io-client": "^4.8.1"
   },
   "dependencies": {
+    "archiver": "^7.0.1",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.11.1",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.2.0",
-    "socket.io": "^4.8.1"
+    "nodemailer": "^9.0.3",
+    "socket.io": "^4.8.1",
+    "web-push": "^3.6.7"
   }
 }

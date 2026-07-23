@@ -83,6 +83,53 @@ the domain step easy.
 To ship a new version later: `git pull && sudo bash deploy/vps-setup.sh`.
 Your data lives in the `teamhub-data` Docker volume and survives redeploys.
 
+## Email (optional but recommended)
+
+Turn on email so TeamHub can send **password-reset links**, **join-request
+notifications** to admins, **approval** emails, and let you **email invite
+codes** straight to new hires. Without it the app works fine — those steps just
+stay manual (admins reset passwords, you copy/paste invite links).
+
+Add your mail provider's SMTP settings to `/root/teamhub.env`, then re-run
+`sudo bash deploy/vps-setup.sh`:
+
+```bash
+SMTP_HOST="smtp.hostinger.com"   # or smtp.gmail.com, smtp.sendgrid.net, …
+SMTP_PORT="587"                   # 465 if your provider uses SSL
+SMTP_USER="no-reply@yourdomain.com"
+SMTP_PASS="your-smtp-password"
+SMTP_FROM="TeamHub <no-reply@yourdomain.com>"
+# SMTP_SECURE="true"             # only for port 465
+```
+
+Since your domain is on Hostinger, the easiest option is to create an email
+account in hPanel (e.g. `no-reply@knapadvisory.com`) and use Hostinger's SMTP
+host with that account's credentials. The password-reset link and all email
+links use `APP_URL` (set automatically to `https://<your-domain>`).
+
+## Backups & restore
+
+TeamHub backs itself up **automatically every day** — a consistent snapshot of
+the database plus all uploaded files, kept in the `teamhub-data` volume at
+`/data/backups` (the last 14 are retained). No setup is needed; the first
+backup runs shortly after the server starts.
+
+- **See status / run one now / download the database:** sign in as the
+  platform owner (the KNAP workspace admin) → **Admin → 💾 Backups**.
+- **Off-site copy (important):** the automatic backups live on the same server,
+  which protects against accidental deletes, bad updates and corruption — but
+  **not** against losing the server itself. Periodically click **Download
+  latest database** and keep the file somewhere off the server.
+- **Restore** from a backup (replaces the current data):
+  ```bash
+  cd ~/Management-tool
+  bash deploy/restore-backup.sh              # list available backups
+  bash deploy/restore-backup.sh teamhub-YYYYMMDD-HHMMSS
+  ```
+
+Optional environment variables (defaults are fine): `BACKUP_INTERVAL_HOURS`
+(default 24), `BACKUP_KEEP` (default 14), `BACKUP_DIR`, `BACKUP_DISABLED=1`.
+
 ## Free alternative: Cloudflare named tunnel
 
 If your domain's DNS is on Cloudflare **and** you have a machine that can

@@ -1,7 +1,7 @@
 /**
- * Signup-gate test: boots the server WITH a SIGNUP_CODE and verifies that
- * registration requires the correct code, while /api/config advertises it.
- * Also confirms the default (no code set) leaves registration open.
+ * Signup-gate test for the multi-tenant model:
+ *  - Workspace CREATION can be gated by a global WORKSPACE_SIGNUP_CODE.
+ *  - Joining a workspace is gated by that workspace's allowed email domains.
  */
 import { spawn } from 'child_process';
 import { mkdtempSync, rmSync } from 'fs';
@@ -27,35 +27,61 @@ async function waitUp(base) {
   }
   return false;
 }
-async function register(base, body) {
-  const res = await fetch(base + '/api/auth/register', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+async function jpost(base, url, body, token) {
+  const res = await fetch(base + url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
   });
-  return res.status;
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
+async function jpatch(base, url, body, token) {
+  const res = await fetch(base + url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})) };
 }
 
 async function main() {
-  // --- Gated instance ---
-  const gated = boot(4620, { SIGNUP_CODE: 'letmein' });
+  // --- Company creation always needs a code (env bootstrap or a DB code) ---
+  const srv = boot(4620, { WORKSPACE_SIGNUP_CODE: 'letmein' });
   const gBase = 'http://localhost:4620';
-  check('gated server starts', await waitUp(gBase));
+  check('server starts', await waitUp(gBase));
   const cfg = await (await fetch(gBase + '/api/config')).json();
-  check('config advertises code required', cfg.signup_code_required === true);
-  check('register without code is rejected', await register(gBase, { name: 'A', email: 'a@g.co', password: 'secret123' }) === 403);
-  check('register with wrong code is rejected', await register(gBase, { name: 'A', email: 'a@g.co', password: 'secret123', code: 'nope' }) === 403);
-  check('register with correct code succeeds', await register(gBase, { name: 'A', email: 'a@g.co', password: 'secret123', code: 'letmein' }) === 201);
-  gated.proc.kill();
-  rmSync(gated.dir, { recursive: true, force: true });
+  check('config says a company code is required', cfg.company_code_required === true);
+  check('create company without code is rejected',
+    (await jpost(gBase, '/api/workspaces', { workspace_name: 'X', name: 'A', email: 'a@x.co', password: 'secret123' })).status === 403);
+  check('create company with wrong code is rejected',
+    (await jpost(gBase, '/api/workspaces', { workspace_name: 'X', name: 'A', email: 'a@x.co', password: 'secret123', code: 'nope' })).status === 403);
+  check('create company with the bootstrap code succeeds',
+    (await jpost(gBase, '/api/workspaces', { workspace_name: 'KNAP', name: 'A', email: 'a@x.co', password: 'secret123', code: 'letmein' })).status === 201);
 
-  // --- Open instance (no code) ---
-  const open = boot(4621, {});
-  const oBase = 'http://localhost:4621';
-  check('open server starts', await waitUp(oBase));
-  const cfg2 = await (await fetch(oBase + '/api/config')).json();
-  check('config advertises no code required', cfg2.signup_code_required === false);
-  check('register works without a code when open', await register(oBase, { name: 'B', email: 'b@o.co', password: 'secret123' }) === 201);
-  open.proc.kill();
-  rmSync(open.dir, { recursive: true, force: true });
+  // --- Per-workspace domain sorting (never blocks) ---
+  const oBase = gBase;
+  const ws = await jpost(oBase, '/api/workspaces', { workspace_name: 'Acme', name: 'Admin', email: 'admin@acme.com', password: 'secret123', code: 'letmein' });
+  check('company creation succeeds', ws.status === 201);
+  const slug = ws.data.workspace.slug;
+  const adminToken = ws.data.token;
+
+  // Anyone may register (work OR personal) — it always lands as pending.
+  check('join with a personal email succeeds (pending)',
+    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Open', email: 'open@gmail.com', password: 'secret123' })).data.pending === true);
+
+  // With work domains set, requests are sorted work vs personal (never blocked).
+  await jpatch(oBase, '/api/admin/settings', { allowed_signup_domains: 'acme.com' }, adminToken);
+  check('off-domain email still allowed (not blocked)',
+    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Perso', email: 'perso@gmail.com', password: 'secret123' })).status === 201);
+  check('work-domain email allowed',
+    (await jpost(oBase, `/api/workspaces/${slug}/register`, { name: 'Worky', email: 'worky@acme.com', password: 'secret123' })).status === 201);
+  const pend = await (await fetch(oBase + '/api/admin/users/pending', { headers: { Authorization: 'Bearer ' + adminToken } })).json();
+  check('pending list is categorized', pend.categorized === true);
+  check('work-domain request flagged work_email', pend.users.find((u) => u.email === 'worky@acme.com')?.work_email === true);
+  check('personal request flagged not-work', pend.users.find((u) => u.email === 'perso@gmail.com')?.work_email === false);
+
+  srv.proc.kill();
+  rmSync(srv.dir, { recursive: true, force: true });
 }
 
 main()

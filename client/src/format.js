@@ -1,5 +1,6 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { localeArg, dateOpts } from './prefs.js';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -28,6 +29,15 @@ export function renderMarkdown(content, mentions = []) {
     clean = clean.split(token).join(`<span class="mention">${token}</span>`);
   }
   return clean;
+}
+
+// Render a reminder timestamp for display. The server stores reminders as
+// UTC "YYYY-MM-DD HH:MM:SS"; ISO strings are handled too.
+export function formatDateTime(value) {
+  if (!value) return '';
+  const d = new Date(/[TZ]/.test(value) ? value : value.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString(localeArg(), dateOpts({ day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }));
 }
 
 export function formatBytes(bytes) {

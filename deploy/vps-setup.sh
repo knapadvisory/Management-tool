@@ -18,17 +18,70 @@
 set -euo pipefail
 
 CONFIG=/root/teamhub.env
+# Let values passed on the command line (e.g. `HR_URL=... bash deploy/vps-setup.sh`)
+# win over what's saved in the config, which we source next — otherwise the saved
+# (possibly empty) value would clobber the override.
+_cli_HR_URL="${HR_URL:-}"
 [ -f "$CONFIG" ] && source "$CONFIG"
+[ -n "${_cli_HR_URL}" ] && HR_URL="${_cli_HR_URL}"
 
 if [ -z "${DOMAIN:-}" ]; then read -rp "Your domain (e.g. teamhub.knapadvisory.com): " DOMAIN; fi
 if [ -z "${SIGNUP_CODE:-}" ]; then read -rp "Sign-up access code for your team: " SIGNUP_CODE; fi
 if [ -z "${JWT_SECRET:-}" ]; then JWT_SECRET="$(openssl rand -hex 32)"; fi
 
+# Shared secrets for the optional KNAP-HRMS integration. Generated once and
+# persisted; the HR deploy (deploy/hr-setup.sh in the KNAP-HRMS repo) must be
+# given these SAME values. HR_URL enables the HR nav item + SSO once HR is up.
+if [ -z "${TEAMHUB_SSO_SECRET:-}" ]; then TEAMHUB_SSO_SECRET="$(openssl rand -hex 32)"; fi
+if [ -z "${TEAMHUB_API_TOKEN:-}" ]; then TEAMHUB_API_TOKEN="$(openssl rand -hex 32)"; fi
+HR_URL="${HR_URL:-}"   # e.g. https://hr.$DOMAIN — leave blank until HR is deployed
+
+# Workspace creation can be gated by a code (defaults to your sign-up code so
+# behaviour is preserved: a code is needed to start a new workspace). Optional
+# TURN settings make audio/video calls work across restrictive networks.
+WORKSPACE_SIGNUP_CODE="${WORKSPACE_SIGNUP_CODE:-$SIGNUP_CODE}"
+
+# Public URL used in email links (defaults to your domain over HTTPS).
+APP_URL="${APP_URL:-https://$DOMAIN}"
+
 umask 077
 cat > "$CONFIG" <<EOF
 DOMAIN="$DOMAIN"
 SIGNUP_CODE="$SIGNUP_CODE"
+WORKSPACE_SIGNUP_CODE="$WORKSPACE_SIGNUP_CODE"
 JWT_SECRET="$JWT_SECRET"
+APP_URL="$APP_URL"
+# TURN relay for calls across strict networks. Run deploy/turn-setup.sh to stand
+# up coturn on this VPS; it prints these three values to paste in here.
+TURN_URL="${TURN_URL:-}"
+TURN_USERNAME="${TURN_USERNAME:-}"
+TURN_CREDENTIAL="${TURN_CREDENTIAL:-}"
+# Optional email (fill these in to enable password-reset + notification emails):
+SMTP_HOST="${SMTP_HOST:-}"
+SMTP_PORT="${SMTP_PORT:-587}"
+SMTP_USER="${SMTP_USER:-}"
+SMTP_PASS="${SMTP_PASS:-}"
+SMTP_FROM="${SMTP_FROM:-}"
+SMTP_SECURE="${SMTP_SECURE:-}"
+# Optional mobile push (from your Firebase service-account JSON; enables FCM):
+FCM_PROJECT_ID="${FCM_PROJECT_ID:-}"
+FCM_CLIENT_EMAIL="${FCM_CLIENT_EMAIL:-}"
+FCM_PRIVATE_KEY="${FCM_PRIVATE_KEY:-}"
+# Easiest & most reliable: the whole Firebase service-account JSON as one base64
+# blob (avoids private-key newline-escaping issues). If set, it takes precedence.
+FCM_SERVICE_ACCOUNT="${FCM_SERVICE_ACCOUNT:-}"
+# Browser Web Push (Chrome/Edge/Firefox). Optional — if left blank the server
+# generates a VAPID key pair on first boot and persists it, so browser push
+# works with no setup. Set these only to pin your own keys.
+WEB_PUSH_PUBLIC_KEY="${WEB_PUSH_PUBLIC_KEY:-}"
+WEB_PUSH_PRIVATE_KEY="${WEB_PUSH_PRIVATE_KEY:-}"
+WEB_PUSH_SUBJECT="${WEB_PUSH_SUBJECT:-}"
+# KNAP-HRMS integration (optional). Secrets are shared with the HR container;
+# set HR_URL to https://hr.$DOMAIN after running the HR deploy to light up the
+# HR nav item + dashboard widget in TeamHub.
+TEAMHUB_SSO_SECRET="$TEAMHUB_SSO_SECRET"
+TEAMHUB_API_TOKEN="$TEAMHUB_API_TOKEN"
+HR_URL="$HR_URL"
 EOF
 
 # Clean up a broken Caddy apt source from earlier script versions, if present.
@@ -57,16 +110,43 @@ docker run -d --name teamhub --restart unless-stopped \
   --network teamhub-net \
   -e JWT_SECRET="$JWT_SECRET" \
   -e SIGNUP_CODE="$SIGNUP_CODE" \
+  -e WORKSPACE_SIGNUP_CODE="$WORKSPACE_SIGNUP_CODE" \
   -e DATA_DIR=/data \
+  -e APP_URL="$APP_URL" \
+  ${TURN_URL:+-e TURN_URL="$TURN_URL"} \
+  ${TURN_USERNAME:+-e TURN_USERNAME="$TURN_USERNAME"} \
+  ${TURN_CREDENTIAL:+-e TURN_CREDENTIAL="$TURN_CREDENTIAL"} \
+  ${SMTP_HOST:+-e SMTP_HOST="$SMTP_HOST"} \
+  ${SMTP_PORT:+-e SMTP_PORT="$SMTP_PORT"} \
+  ${SMTP_USER:+-e SMTP_USER="$SMTP_USER"} \
+  ${SMTP_PASS:+-e SMTP_PASS="$SMTP_PASS"} \
+  ${SMTP_FROM:+-e SMTP_FROM="$SMTP_FROM"} \
+  ${SMTP_SECURE:+-e SMTP_SECURE="$SMTP_SECURE"} \
+  ${FCM_PROJECT_ID:+-e FCM_PROJECT_ID="$FCM_PROJECT_ID"} \
+  ${FCM_CLIENT_EMAIL:+-e FCM_CLIENT_EMAIL="$FCM_CLIENT_EMAIL"} \
+  ${FCM_PRIVATE_KEY:+-e FCM_PRIVATE_KEY="$FCM_PRIVATE_KEY"} \
+  ${FCM_SERVICE_ACCOUNT:+-e FCM_SERVICE_ACCOUNT="$FCM_SERVICE_ACCOUNT"} \
+  ${WEB_PUSH_PUBLIC_KEY:+-e WEB_PUSH_PUBLIC_KEY="$WEB_PUSH_PUBLIC_KEY"} \
+  ${WEB_PUSH_PRIVATE_KEY:+-e WEB_PUSH_PRIVATE_KEY="$WEB_PUSH_PRIVATE_KEY"} \
+  ${WEB_PUSH_SUBJECT:+-e WEB_PUSH_SUBJECT="$WEB_PUSH_SUBJECT"} \
+  ${TEAMHUB_SSO_SECRET:+-e TEAMHUB_SSO_SECRET="$TEAMHUB_SSO_SECRET"} \
+  ${TEAMHUB_API_TOKEN:+-e TEAMHUB_API_TOKEN="$TEAMHUB_API_TOKEN"} \
+  ${HR_URL:+-e HR_URL="$HR_URL"} \
   -v teamhub-data:/data \
   teamhub:latest
 
 echo "==> Configuring HTTPS (Caddy) for $DOMAIN..."
 mkdir -p /etc/teamhub
+# Sibling tools (e.g. KNAP-HRMS at hr.$DOMAIN) drop their own site block into
+# conf.d; the import keeps those routes across TeamHub redeploys that rewrite
+# this Caddyfile. Safe when conf.d is empty.
+mkdir -p /etc/teamhub/conf.d
 cat > /etc/teamhub/Caddyfile <<EOF
 $DOMAIN {
     reverse_proxy teamhub:3001
 }
+
+import /etc/caddy/conf.d/*.caddy
 EOF
 
 docker rm -f caddy 2>/dev/null || true
@@ -74,6 +154,7 @@ docker run -d --name caddy --restart unless-stopped \
   --network teamhub-net \
   -p 80:80 -p 443:443 \
   -v /etc/teamhub/Caddyfile:/etc/caddy/Caddyfile:ro \
+  -v /etc/teamhub/conf.d:/etc/caddy/conf.d:ro \
   -v caddy-data:/data \
   -v caddy-config:/config \
   caddy:latest

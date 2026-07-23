@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: teamhub-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -34,3 +38,28 @@ jobs:
       - name: Run smoke tests
         run: npm test
         working-directory: server
+
+  # On a merge to main, if tests pass, redeploy TeamHub on the VPS over SSH.
+  deploy:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: teamhub-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Redeploy TeamHub on the VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          command_timeout: 20m
+          script: |
+            set -e
+            cd ~/Management-tool
+            git checkout main
+            git pull --ff-only
+            bash deploy/vps-setup.sh

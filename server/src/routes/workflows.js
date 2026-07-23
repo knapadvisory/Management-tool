@@ -10,7 +10,7 @@ function workflowWithStages(wf) {
 }
 
 router.get('/', (req, res) => {
-  const workflows = db.prepare('SELECT * FROM workflows ORDER BY id').all();
+  const workflows = db.prepare('SELECT * FROM workflows WHERE workspace_id = ? ORDER BY id').all(req.workspaceId);
   res.json({ workflows: workflows.map(workflowWithStages) });
 });
 
@@ -21,8 +21,8 @@ router.post('/', (req, res) => {
   if (stageNames.length < 2) return res.status(400).json({ error: 'A workflow needs at least 2 stages' });
 
   const create = db.transaction(() => {
-    const info = db.prepare('INSERT INTO workflows (name, description, created_by) VALUES (?, ?, ?)')
-      .run(name.trim(), description, req.user.id);
+    const info = db.prepare('INSERT INTO workflows (name, description, created_by, workspace_id) VALUES (?, ?, ?, ?)')
+      .run(name.trim(), description, req.user.id, req.workspaceId);
     const insertStage = db.prepare('INSERT INTO workflow_stages (workflow_id, name, position, is_done) VALUES (?, ?, ?, ?)');
     stageNames.forEach((s, i) => insertStage.run(info.lastInsertRowid, s, i, i === stageNames.length - 1 ? 1 : 0));
     return db.prepare('SELECT * FROM workflows WHERE id = ?').get(info.lastInsertRowid);
@@ -31,7 +31,7 @@ router.post('/', (req, res) => {
 });
 
 router.patch('/:id', (req, res) => {
-  const wf = db.prepare('SELECT * FROM workflows WHERE id = ?').get(req.params.id);
+  const wf = db.prepare('SELECT * FROM workflows WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!wf) return res.status(404).json({ error: 'Workflow not found' });
   const { name, description } = req.body;
   db.prepare('UPDATE workflows SET name = COALESCE(?, name), description = COALESCE(?, description) WHERE id = ?')
@@ -41,7 +41,7 @@ router.patch('/:id', (req, res) => {
 
 // Add a stage before the terminal "done" stage by default.
 router.post('/:id/stages', (req, res) => {
-  const wf = db.prepare('SELECT * FROM workflows WHERE id = ?').get(req.params.id);
+  const wf = db.prepare('SELECT * FROM workflows WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!wf) return res.status(404).json({ error: 'Workflow not found' });
   const { name } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Stage name is required' });
@@ -52,6 +52,9 @@ router.post('/:id/stages', (req, res) => {
 });
 
 router.delete('/:id/stages/:stageId', (req, res) => {
+  if (!db.prepare('SELECT 1 FROM workflows WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)) {
+    return res.status(404).json({ error: 'Workflow not found' });
+  }
   const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ? AND workflow_id = ?')
     .get(req.params.stageId, req.params.id);
   if (!stage) return res.status(404).json({ error: 'Stage not found' });
@@ -64,9 +67,9 @@ router.delete('/:id/stages/:stageId', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const wf = db.prepare('SELECT * FROM workflows WHERE id = ?').get(req.params.id);
+  const wf = db.prepare('SELECT * FROM workflows WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!wf) return res.status(404).json({ error: 'Workflow not found' });
-  const count = db.prepare('SELECT COUNT(*) AS n FROM workflows').get().n;
+  const count = db.prepare('SELECT COUNT(*) AS n FROM workflows WHERE workspace_id = ?').get(req.workspaceId).n;
   if (count <= 1) return res.status(400).json({ error: 'At least one workflow must remain' });
   const hasTasks = db.prepare('SELECT COUNT(*) AS n FROM tasks WHERE workflow_id = ?').get(wf.id).n;
   if (hasTasks) return res.status(400).json({ error: 'Delete or move its tasks before deleting this workflow' });

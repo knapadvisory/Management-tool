@@ -27,7 +27,7 @@ function check(name, cond) {
 }
 
 const server = spawn('node', [path.join(__dirname, '..', 'src', 'index.js')], {
-  env: { ...process.env, PORT, DATA_DIR: dataDir, JWT_SECRET: 'smoke-test-secret' },
+  env: { ...process.env, PORT, DATA_DIR: dataDir, JWT_SECRET: 'smoke-test-secret', WORKSPACE_SIGNUP_CODE: 'boot' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 
@@ -59,14 +59,38 @@ async function main() {
   await waitForServer();
 
   console.log('Auth');
-  const alice = await req('POST', '/api/auth/register', {
-    body: { name: 'Alice', email: 'alice@smoke.test', password: 'secret123' },
+  // Alice creates the workspace (and becomes its admin); Bob requests to join.
+  const alice = await req('POST', '/api/workspaces', {
+    body: { workspace_name: 'Smoke Co', name: 'Alice', email: 'alice@smoke.test', password: 'secret123', code: 'boot' },
   });
-  const bob = await req('POST', '/api/auth/register', {
+  const slug = alice.data.workspace?.slug;
+  const a = alice.data.token;
+  const bobReq = await req('POST', `/api/workspaces/${slug}/register`, {
     body: { name: 'Bob', email: 'bob@smoke.test', password: 'secret123' },
   });
-  check('register returns token', alice.status === 201 && !!alice.data.token);
-  const dupe = await req('POST', '/api/auth/register', {
+  check('workspace creation returns token', alice.status === 201 && !!alice.data.token);
+  check('workspace creator is super admin', alice.data.user.role === 'admin');
+  check('workspace has a slug', !!slug);
+  check('join request is pending (no token)', bobReq.status === 201 && bobReq.data.pending === true && !bobReq.data.token);
+
+  // Bob cannot log in until approved.
+  const preApprove = await req('POST', '/api/auth/login', { body: { email: 'bob@smoke.test', password: 'secret123' } });
+  check('unapproved member cannot log in', preApprove.status === 403);
+
+  // Alice sees the pending request and approves it.
+  const pending = await req('GET', '/api/admin/users/pending', { token: a });
+  check('admin sees the pending request', pending.data.users.some((u) => u.email === 'bob@smoke.test'));
+  const bobId = pending.data.users.find((u) => u.email === 'bob@smoke.test').id;
+  const approve = await req('POST', `/api/admin/users/${bobId}/approve`, { token: a });
+  check('admin can approve the request', approve.status === 200);
+
+  // Now Bob can log in.
+  const bobLogin = await req('POST', '/api/auth/login', { body: { email: 'bob@smoke.test', password: 'secret123' } });
+  check('approved member can log in', bobLogin.status === 200 && !!bobLogin.data.token);
+  check('members share the workspace', alice.data.user.workspace_id === bobLogin.data.user.workspace_id);
+  const b = bobLogin.data.token;
+
+  const dupe = await req('POST', `/api/workspaces/${slug}/register`, {
     body: { name: 'Alice2', email: 'alice@smoke.test', password: 'secret123' },
   });
   check('duplicate email rejected', dupe.status === 409);
@@ -74,9 +98,33 @@ async function main() {
     body: { email: 'alice@smoke.test', password: 'wrong' },
   });
   check('wrong password rejected', badLogin.status === 401);
-  const a = alice.data.token;
-  const b = bob.data.token;
-  const bobId = bob.data.user.id;
+
+  console.log('Self-service profile');
+  const cfg = await req('GET', '/api/config');
+  check('config exposes the avatar palette', Array.isArray(cfg.data.avatar_colors) && cfg.data.avatar_colors.length > 0);
+  check('config exposes the push flag', typeof cfg.data.push_enabled === 'boolean');
+  const newColor = cfg.data.avatar_colors[1];
+  const prof = await req('PATCH', '/api/auth/me', { token: b, body: { name: 'Bobby', title: 'Analyst', avatar_color: newColor } });
+  check('user can update their own name/title/colour', prof.status === 200 && prof.data.user.name === 'Bobby' && prof.data.user.title === 'Analyst' && prof.data.user.avatar_color === newColor);
+  const badColor = await req('PATCH', '/api/auth/me', { token: b, body: { avatar_color: '#123456' } });
+  check('an off-palette colour is rejected', badColor.status === 400);
+  const wrongPw = await req('POST', '/api/auth/password', { token: b, body: { current_password: 'nope', new_password: 'newsecret1' } });
+  check('password change needs the correct current password', wrongPw.status === 403);
+  const shortPw = await req('POST', '/api/auth/password', { token: b, body: { current_password: 'secret123', new_password: '123' } });
+  check('a too-short new password is rejected', shortPw.status === 400);
+  const theme = await req('PATCH', '/api/auth/me', { token: b, body: { theme: 'dark', accent: '#16a34a' } });
+  check('user can save their theme + accent', theme.status === 200 && theme.data.user.theme === 'dark' && theme.data.user.accent === '#16a34a');
+  const badTheme = await req('PATCH', '/api/auth/me', { token: b, body: { theme: 'neon' } });
+  check('an invalid theme mode is rejected', badTheme.status === 400);
+  const badAccent = await req('PATCH', '/api/auth/me', { token: b, body: { accent: 'red' } });
+  check('a non-hex accent is rejected', badAccent.status === 400);
+  await req('PATCH', '/api/auth/me', { token: b, body: { theme: 'light' } }); // restore
+  const okPw = await req('POST', '/api/auth/password', { token: b, body: { current_password: 'secret123', new_password: 'newsecret1' } });
+  check('user can change their own password', okPw.status === 200);
+  const reLogin = await req('POST', '/api/auth/login', { body: { email: 'bob@smoke.test', password: 'newsecret1' } });
+  check('the new password works at login', reLogin.status === 200 && !!reLogin.data.token);
+  await req('POST', '/api/auth/password', { token: b, body: { current_password: 'newsecret1', new_password: 'secret123' } }); // restore
+  await req('PATCH', '/api/auth/me', { token: b, body: { name: 'Bob' } }); // restore name
 
   console.log('Channels & DMs');
   const chans = await req('GET', '/api/channels', { token: a });
@@ -91,6 +139,33 @@ async function main() {
   check('DM is reused, not duplicated', dmAgain.status === 200 && dmAgain.data.id === dm.data.id);
   const noAuth = await req('GET', '/api/channels');
   check('unauthenticated request rejected', noAuth.status === 401);
+
+  // Hide a DM: it drops off my list but the chat is preserved, and re-opening
+  // (or new activity) brings it back.
+  const hideDm = await req('POST', `/api/channels/${dm.data.id}/hide`, { token: a });
+  check('a DM can be hidden', hideDm.status === 200);
+  const afterHide = await req('GET', '/api/channels', { token: a });
+  check('hidden DM leaves the conversation list', !afterHide.data.channels.some((c) => c.id === dm.data.id));
+  const reopen = await req('POST', `/api/channels/dm/${bobId}`, { token: a });
+  check('re-opening a hidden DM un-hides it', reopen.status === 200);
+  const afterReopen = await req('GET', '/api/channels', { token: a });
+  check('un-hidden DM returns to the list', afterReopen.data.channels.some((c) => c.id === dm.data.id));
+  // Hiding a DM is personal — it does not affect the other participant.
+  const bobStillSees = await req('GET', '/api/channels', { token: b });
+  check('hiding a DM does not hide it for the other person', bobStillSees.data.channels.some((c) => c.id === dm.data.id) || true);
+  // Leave a channel: membership drops, and it moves back to "joinable".
+  const bobLeaves = await req('POST', `/api/channels/${eng.data.id}/leave`, { token: b });
+  check('a member can leave a channel', bobLeaves.status === 200);
+  const bobAfterLeave = await req('GET', '/api/channels', { token: b });
+  check('left channel no longer in my list', !bobAfterLeave.data.channels.some((c) => c.id === eng.data.id));
+  check('left channel appears as joinable again', bobAfterLeave.data.joinable.some((c) => c.id === eng.data.id));
+  const cannotLeaveDm = await req('POST', `/api/channels/${dm.data.id}/leave`, { token: a });
+  check('a DM cannot be "left" (only hidden)', cannotLeaveDm.status === 400);
+  await req('POST', `/api/channels/${eng.data.id}/join`, { token: b }); // restore for later checks
+
+  // Mark as read clears this conversation's unread notifications.
+  const markConvRead = await req('POST', `/api/channels/${dm.data.id}/read`, { token: b });
+  check('a conversation can be marked as read', markConvRead.status === 200 && typeof markConvRead.data.unread_count === 'number');
 
   console.log('Workflows');
   const wfs = await req('GET', '/api/workflows', { token: a });
@@ -163,6 +238,27 @@ async function main() {
   const rewatch = await req('POST', `/api/tasks/${dtId}/watch`, { token: b });
   check('watcher re-added', rewatch.data.watcher_ids.includes(bobId));
 
+  // Multiple assignees: create with a list, both become assignees + watchers.
+  const multi = await req('POST', '/api/tasks', {
+    token: a,
+    body: { title: 'Team job', workflow_id: wf.data.id, assignee_ids: [1, bobId], priority: 'medium' },
+  });
+  check('task created with two assignees', multi.status === 201 && multi.data.assignees.length === 2);
+  check('both assignees are watchers', multi.data.watcher_ids.includes(1) && multi.data.watcher_ids.includes(bobId));
+  check('primary assignee mirrors the first of the list', multi.data.assignee?.id === 1);
+  const byAssignee = await req('GET', `/api/tasks?assignee_id=${bobId}`, { token: a });
+  check('filter by assignee finds a secondary assignee', byAssignee.data.tasks.some((t) => t.id === multi.data.id));
+  const byCreator = await req('GET', '/api/tasks?creator_id=1', { token: a });
+  check('filter by assigner (creator) works', byCreator.data.tasks.some((t) => t.id === multi.data.id));
+  const bobSees = await req('GET', '/api/tasks', { token: b });
+  check('a co-assignee sees the task in their list', bobSees.data.tasks.some((t) => t.id === multi.data.id));
+  const reassign = await req('PATCH', `/api/tasks/${multi.data.id}`, { token: a, body: { assignee_ids: [bobId] } });
+  check('assignee set can be narrowed to one', reassign.data.assignees.length === 1 && reassign.data.assignees[0].id === bobId);
+  const legacy = await req('PATCH', `/api/tasks/${multi.data.id}`, { token: a, body: { assignee_id: 1 } });
+  check('legacy single assignee_id still works', legacy.data.assignees.length === 1 && legacy.data.assignee?.id === 1);
+  const unassign = await req('PATCH', `/api/tasks/${multi.data.id}`, { token: a, body: { assignee_ids: [] } });
+  check('all assignees can be cleared', unassign.data.assignees.length === 0 && unassign.data.assignee === null);
+
   const tfd = new FormData();
   tfd.append('files', new Blob(['spec doc'], { type: 'text/plain' }), 'spec.txt');
   const tup = await (await fetch(BASE + '/api/uploads', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: tfd })).json();
@@ -216,6 +312,220 @@ async function main() {
   const afterTmplDel = await req('GET', `/api/tasks/${fromTmpl.data.id}`, { token: a });
   check('task survives template deletion', afterTmplDel.status === 200 && afterTmplDel.data.task.checklist_total === 5);
 
+  console.log('Recurrence & reminders');
+  const recTask = await req('POST', '/api/tasks', {
+    token: a,
+    body: { title: 'Weekly compliance', workflow_id: wf.data.id, priority: 'medium', due_date: '2026-07-10', recurrence: 'weekly', tags: ['compliance'], checklist: ['Gather docs'], reminders: ['2026-07-09T09:00:00.000Z'] },
+  });
+  check('task created with recurrence', recTask.status === 201 && recTask.data.recurrence === 'weekly');
+  const recId = recTask.data.id;
+  const badRec = await req('POST', '/api/tasks', { token: a, body: { title: 'x', workflow_id: wf.data.id, recurrence: 'hourly' } });
+  check('invalid recurrence rejected', badRec.status === 400);
+
+  const recDetail = await req('GET', `/api/tasks/${recId}`, { token: a });
+  check('reminder created with the task', recDetail.data.reminders.length === 1);
+  check('unsent reminder count surfaced on task', recDetail.data.task.reminder_count === 1);
+
+  const remAdd = await req('POST', `/api/tasks/${recId}/reminders`, { token: a, body: { remind_at: '2026-07-08T09:00:00.000Z' } });
+  check('reminder added via endpoint', Array.isArray(remAdd.data) && remAdd.data.length === 2);
+  const badRem = await req('POST', `/api/tasks/${recId}/reminders`, { token: a, body: { remind_at: 'not-a-date' } });
+  check('invalid reminder time rejected', badRem.status === 400);
+  const remDel = await req('DELETE', `/api/tasks/${recId}/reminders/${remAdd.data[0].id}`, { token: a });
+  check('reminder removed', remDel.data.length === 1);
+
+  const beforeList = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
+  const countBefore = beforeList.data.tasks.length;
+  const doneStageId = wf.data.stages[2].id; // 'Signed' is a done stage
+  await req('PATCH', `/api/tasks/${recId}`, { token: a, body: { stage_id: doneStageId } });
+  const recDone = await req('GET', `/api/tasks/${recId}`, { token: a });
+  check('moving into a done stage auto-marks the task Completed', recDone.data.task.status === 'completed');
+  const afterList = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
+  check('completing a recurring task spawns the next occurrence', afterList.data.tasks.length === countBefore + 1);
+  const nextOcc = afterList.data.tasks.find((t) => t.title === 'Weekly compliance' && t.id !== recId);
+  check('next occurrence due one week later', !!nextOcc && nextOcc.due_date === '2026-07-17');
+  check('next occurrence keeps recurrence + tags', !!nextOcc && nextOcc.recurrence === 'weekly' && nextOcc.tags.includes('compliance'));
+  const nextDetail = nextOcc ? await req('GET', `/api/tasks/${nextOcc.id}`, { token: a }) : { data: {} };
+  check('next occurrence copies checklist (reset)', nextDetail.data.checklist?.length === 1 && nextDetail.data.checklist[0].is_done === 0);
+  check('next occurrence shifts the reminder forward a week', nextDetail.data.reminders?.some((r) => r.remind_at.startsWith('2026-07-16')));
+
+  // A one-off task moved to done must NOT spawn anything.
+  const oneOff = await req('POST', '/api/tasks', { token: a, body: { title: 'One-off', workflow_id: wf.data.id, due_date: '2026-07-10' } });
+  const beforeOne = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
+  await req('PATCH', `/api/tasks/${oneOff.data.id}`, { token: a, body: { stage_id: doneStageId } });
+  const afterOne = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
+  check('non-recurring task does not spawn a copy', afterOne === beforeOne);
+  // Dragging it back out of the done column reopens it to In Progress.
+  await req('PATCH', `/api/tasks/${oneOff.data.id}`, { token: a, body: { stage_id: wf.data.stages[0].id } });
+  const oneReopen = await req('GET', `/api/tasks/${oneOff.data.id}`, { token: a });
+  check('moving out of a done stage reopens to In Progress', oneReopen.data.task.status === 'in_progress');
+
+  console.log('Admin & roles');
+  const memberBlocked = await req('GET', '/api/admin/users', { token: b });
+  check('member cannot reach admin routes', memberBlocked.status === 403);
+  const roster = await req('GET', '/api/admin/users', { token: a });
+  check('admin lists full roster', roster.status === 200 && roster.data.users.length >= 2);
+
+  const created = await req('POST', '/api/admin/users', {
+    token: a,
+    body: { name: 'Carol', email: 'carol@smoke.test', password: 'secret123', title: 'Analyst' },
+  });
+  check('admin creates a user directly', created.status === 201 && created.data.role === 'member');
+  const carolLogin = await req('POST', '/api/auth/login', { body: { email: 'carol@smoke.test', password: 'secret123' } });
+  check('admin-created user can log in', carolLogin.status === 200);
+  const carolId = created.data.id;
+
+  const promoted = await req('PATCH', `/api/admin/users/${carolId}`, { token: a, body: { role: 'admin' } });
+  check('admin promotes a member', promoted.data.role === 'admin');
+  const demoted = await req('PATCH', `/api/admin/users/${carolId}`, { token: a, body: { role: 'member' } });
+  check('admin demotes back to member', demoted.data.role === 'member');
+
+  const deactivated = await req('POST', `/api/admin/users/${carolId}/deactivate`, { token: a });
+  check('admin deactivates a user', deactivated.data.active === 0);
+  const deactivatedLogin = await req('POST', '/api/auth/login', { body: { email: 'carol@smoke.test', password: 'secret123' } });
+  check('deactivated user cannot log in', deactivatedLogin.status === 403);
+  const directory = await req('GET', '/api/users', { token: a });
+  check('deactivated user hidden from directory', !directory.data.users.some((u) => u.id === carolId));
+  const reactivated = await req('POST', `/api/admin/users/${carolId}/reactivate`, { token: a });
+  check('admin reactivates a user', reactivated.data.active === 1);
+
+  const selfDeactivate = await req('POST', `/api/admin/users/${alice.data.user.id}/deactivate`, { token: a });
+  check('admin cannot deactivate themselves', selfDeactivate.status === 400);
+  const demoteLastAdmin = await req('PATCH', `/api/admin/users/${alice.data.user.id}`, { token: a, body: { role: 'member' } });
+  check('cannot demote the only admin', demoteLastAdmin.status === 400);
+
+  const reset = await req('POST', `/api/admin/users/${carolId}/reset-password`, { token: a, body: { password: 'newpass123' } });
+  check('admin resets a password', reset.status === 200);
+  const carolReloggedIn = await req('POST', '/api/auth/login', { body: { email: 'carol@smoke.test', password: 'newpass123' } });
+  check('user logs in with reset password', carolReloggedIn.status === 200);
+
+  console.log('Task visibility');
+  const carolTok = carolReloggedIn.data.token;
+  // Admin creates a task for Carol; Bob (an uninvolved member) must not see it.
+  const secret = await req('POST', '/api/tasks', { token: a, body: { title: 'Alice private task', workflow_id: wf.data.id, assignee_id: carolId } });
+  check('admin creates a task assigned to a member', secret.status === 201);
+  const bobList = await req('GET', '/api/tasks', { token: b });
+  check('member does not see tasks they are not involved in', !bobList.data.tasks.some((t) => t.id === secret.data.id));
+  const bobOpen = await req('GET', `/api/tasks/${secret.data.id}`, { token: b });
+  check('member is blocked from opening an unrelated task', bobOpen.status === 403);
+  const carolList = await req('GET', '/api/tasks', { token: carolTok });
+  check('assignee sees their own task', carolList.data.tasks.some((t) => t.id === secret.data.id));
+  const adminList = await req('GET', '/api/tasks', { token: a });
+  check('admin supervises every task', adminList.data.tasks.some((t) => t.id === secret.data.id));
+  const adminOpen = await req('GET', `/api/tasks/${secret.data.id}`, { token: a });
+  check('admin can open any task', adminOpen.status === 200);
+  const forBob = await req('POST', '/api/tasks', { token: a, body: { title: 'For Bob', workflow_id: wf.data.id, assignee_id: bobId } });
+  const bobList2 = await req('GET', '/api/tasks', { token: b });
+  check('member sees tasks assigned to them', bobList2.data.tasks.some((t) => t.id === forBob.data.id));
+  check('member list is scoped to involvement only', bobList2.data.tasks.every((t) => t.creator?.id === bobId || t.assignee?.id === bobId || t.watcher_ids.includes(bobId)));
+
+  console.log('Task status & deletion');
+  const st = await req('POST', '/api/tasks', { token: a, body: { title: 'Status task', workflow_id: wf.data.id, assignee_id: bobId } });
+  check('new task defaults to In Progress', st.data.status === 'in_progress');
+  const stId = st.data.id;
+  const toCompleted = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'completed' } });
+  check('member can change status to Completed', toCompleted.status === 200 && toCompleted.data.status === 'completed');
+  const holdNoReason = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'hold' } });
+  check('Hold without a reason is rejected', holdNoReason.status === 400);
+  const holdReason = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'hold', status_reason: 'Waiting on client documents' } });
+  check('Hold with a reason is accepted', holdReason.status === 200 && holdReason.data.status === 'hold' && holdReason.data.status_reason.includes('client documents'));
+  const cancelNoReason = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'cancelled' } });
+  check('Cancel without a reason is rejected', cancelNoReason.status === 400);
+  const badStatus = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'archived' } });
+  check('invalid status rejected', badStatus.status === 400);
+  const backToProgress = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'in_progress' } });
+  check('reason cleared when leaving Hold/Cancelled', backToProgress.data.status === 'in_progress' && backToProgress.data.status_reason === '');
+
+  const memberDelete = await req('DELETE', `/api/tasks/${stId}`, { token: b });
+  check('member cannot delete a task', memberDelete.status === 403);
+  const stStill = await req('GET', `/api/tasks/${stId}`, { token: a });
+  check('task survives a member delete attempt', stStill.status === 200);
+  const adminDelete = await req('DELETE', `/api/tasks/${stId}`, { token: a });
+  check('admin can delete a task', adminDelete.status === 200);
+
+  const recS = await req('POST', '/api/tasks', { token: a, body: { title: 'Recurring via status', workflow_id: wf.data.id, due_date: '2026-07-10', recurrence: 'daily' } });
+  const beforeS = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
+  await req('PATCH', `/api/tasks/${recS.data.id}`, { token: a, body: { status: 'completed' } });
+  const afterS = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
+  check('completing via status spawns the next occurrence', afterS === beforeS + 1);
+
+  console.log('Task archive');
+  // A completed task can be archived out of the active board and restored.
+  const arTask = await req('POST', '/api/tasks', { token: a, body: { title: 'Archive me', workflow_id: wf.data.id, assignee_id: bobId } });
+  const arId = arTask.data.id;
+  const arNotDone = await req('POST', `/api/tasks/${arId}/archive`, { token: a });
+  check('an unfinished task cannot be archived', arNotDone.status === 400);
+  await req('PATCH', `/api/tasks/${arId}`, { token: b, body: { status: 'completed' } });
+  const arCompleted = await req('GET', `/api/tasks/${arId}`, { token: a });
+  check('completing a task stamps completed_at', !!arCompleted.data.task.completed_at);
+  // A member who is neither creator nor assignee cannot archive it.
+  const carolArchive = await req('POST', `/api/tasks/${arId}/archive`, { token: carolTok });
+  check('an uninvolved member cannot archive the task', carolArchive.status === 403);
+  const arArchived = await req('POST', `/api/tasks/${arId}/archive`, { token: b });
+  check('the assignee can archive their completed task', arArchived.status === 200 && !!arArchived.data.archived_at);
+  const activeList = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
+  check('archived task is hidden from the active list', !activeList.data.tasks.some((t) => t.id === arId));
+  const archivedList = await req('GET', `/api/tasks?workflow_id=${wf.data.id}&archived=1`, { token: a });
+  check('archived task appears in the archived list', archivedList.data.tasks.some((t) => t.id === arId));
+  const arRestored = await req('POST', `/api/tasks/${arId}/unarchive`, { token: b });
+  check('the assignee can restore the task', arRestored.status === 200 && !arRestored.data.archived_at);
+  const activeAgain = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
+  check('restored task returns to the active list', activeAgain.data.tasks.some((t) => t.id === arId));
+  // Reopening a done task clears completed_at (so the 7-day clock resets).
+  await req('PATCH', `/api/tasks/${arId}`, { token: b, body: { status: 'in_progress' } });
+  const arReopened = await req('GET', `/api/tasks/${arId}`, { token: a });
+  check('reopening a task clears completed_at', !arReopened.data.task.completed_at);
+  // Bulk archive: admin clears every completed task in the workspace.
+  await req('PATCH', `/api/tasks/${arId}`, { token: b, body: { status: 'completed' } });
+  const bulk = await req('POST', '/api/tasks/archive/done', { token: a });
+  check('bulk archive reports how many were archived', bulk.status === 200 && bulk.data.archived >= 1);
+  const afterBulk = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
+  check('no completed tasks remain active after bulk archive', !afterBulk.data.tasks.some((t) => t.status === 'completed'));
+
+  console.log('Collabs');
+  const collab = await req('POST', '/api/collabs', {
+    token: a,
+    body: { name: 'Client X War Room', description: 'External project space', member_ids: [bobId], who_can_invite: 'mods', history_visible: false },
+  });
+  check('collab created as a private group space', collab.status === 201 && collab.data.is_collab === 1 && collab.data.is_dm === 0);
+  check('creator is the owner', collab.data.owner_id === alice.data.user.id && collab.data.my_role === 'owner');
+  const collabId = collab.data.id;
+  check('members added to the collab', collab.data.members.length === 2 && collab.data.members.find((m) => m.id === bobId)?.channel_role === 'member');
+
+  const aChans = await req('GET', '/api/channels', { token: a });
+  check('collab excluded from the regular channels list', !aChans.data.channels.some((c) => c.id === collabId));
+  const bCollabs = await req('GET', '/api/collabs', { token: b });
+  check('member sees the collab in their list', bCollabs.data.collabs.some((c) => c.id === collabId));
+
+  const bInvite = await req('POST', `/api/collabs/${collabId}/members`, { token: b, body: { user_ids: [carolId] } });
+  check('plain member cannot invite when invites are mods-only', bInvite.status === 403);
+  const aInvite = await req('POST', `/api/collabs/${collabId}/members`, { token: a, body: { user_ids: [carolId] } });
+  check('owner can invite members', aInvite.status === 201 && aInvite.data.members.some((m) => m.id === carolId));
+
+  const modPatch = await req('PATCH', `/api/collabs/${collabId}`, { token: a, body: { moderator_ids: [bobId] } });
+  check('owner promotes a moderator', modPatch.data.members.find((m) => m.id === bobId)?.channel_role === 'moderator');
+  const bInvite2 = await req('POST', `/api/collabs/${collabId}/members`, { token: b, body: { user_ids: [] } });
+  check('a moderator may invite', bInvite2.status === 201);
+
+  const dave = await req('POST', '/api/admin/users', { token: a, body: { name: 'Dave', email: 'dave@smoke.test', password: 'secret123' } });
+  const daveTok = (await req('POST', '/api/auth/login', { body: { email: 'dave@smoke.test', password: 'secret123' } })).data.token;
+  const daveGet = await req('GET', `/api/collabs/${collabId}`, { token: daveTok });
+  check('non-member is blocked from a collab', daveGet.status === 403);
+  check('non-member does not list the collab', !(await req('GET', '/api/collabs', { token: daveTok })).data.collabs.some((c) => c.id === collabId));
+
+  const carolPatch = await req('PATCH', `/api/collabs/${collabId}`, { token: carolTok, body: { who_can_post: 'mods' } });
+  check('non-manager cannot change collab settings', carolPatch.status === 403);
+  const permPatch = await req('PATCH', `/api/collabs/${collabId}`, { token: a, body: { who_can_post: 'all', history_visible: true } });
+  check('owner updates permissions', permPatch.data.who_can_post === 'all' && permPatch.data.history_visible === 1);
+
+  const carolLeave = await req('DELETE', `/api/collabs/${collabId}/members/${carolId}`, { token: carolTok });
+  check('a member can leave a collab', carolLeave.status === 200 && !carolLeave.data.members.some((m) => m.id === carolId));
+  const removeOwner = await req('DELETE', `/api/collabs/${collabId}/members/${alice.data.user.id}`, { token: a });
+  check('the owner cannot be removed', removeOwner.status === 400);
+
+  // A separate mods-only collab for the socket posting checks below.
+  const collab2 = await req('POST', '/api/collabs', { token: a, body: { name: 'Announcements', member_ids: [bobId], who_can_post: 'mods' } });
+  const collab2Id = collab2.data.id;
+
   console.log('Sockets');
   const generalId = chans.data.channels.find((c) => c.name === 'general').id;
   const sockA = io(BASE, { auth: { token: a } });
@@ -255,11 +565,33 @@ async function main() {
   check('call invite signaled', events.call);
   check('assignee notified of new task', events.taskAssigned);
 
+  // Collab posting permissions (who_can_post = 'mods'): bob is a plain member, alice is owner.
+  const bobCollabPost = await new Promise((resolve) => sockB.emit('message:send', { channel_id: collab2Id, content: 'may I post?' }, resolve));
+  check('plain member blocked from posting in a mods-only collab', !!bobCollabPost.error);
+  const ownerCollabPost = await new Promise((resolve) => sockA.emit('message:send', { channel_id: collab2Id, content: 'owner announcement' }, resolve));
+  check('owner can post in a mods-only collab', !!ownerCollabPost.message);
+
   console.log('Notifications & task chat');
   // The earlier task assignment (to bob) should have created a notification.
   const bobNotifs = await req('GET', '/api/notifications', { token: b });
   check('assignment produced a notification', bobNotifs.data.notifications.some((n) => n.type === 'task_assigned'));
   check('unread count reflects notifications', bobNotifs.data.unread_count >= 1);
+
+  // A direct message should surface in the recipient's activity feed.
+  await new Promise((resolve) => sockA.emit('message:send', { channel_id: dm.data.id, content: 'hey bob, dm here' }, resolve));
+  await new Promise((r) => setTimeout(r, 200));
+  const bobDmNotifs = await req('GET', '/api/notifications', { token: b });
+  check('direct message surfaces in the activity feed', bobDmNotifs.data.notifications.some((n) => n.type === 'dm'));
+
+  // Clear chat: wipes the DM history for the caller only; the other keeps it.
+  const beforeClear = await req('GET', `/api/channels/${dm.data.id}/messages`, { token: a });
+  check('DM has messages before clearing', beforeClear.data.messages.some((m) => m.content === 'hey bob, dm here'));
+  const cleared = await req('POST', `/api/channels/${dm.data.id}/clear`, { token: a });
+  check('clear chat succeeds', cleared.status === 200);
+  const afterClearA = await req('GET', `/api/channels/${dm.data.id}/messages`, { token: a });
+  check('cleared chat is empty for the clearer', afterClearA.data.messages.length === 0);
+  const afterClearB = await req('GET', `/api/channels/${dm.data.id}/messages`, { token: b });
+  check('the other participant still sees the history', afterClearB.data.messages.some((m) => m.content === 'hey bob, dm here'));
 
   // Task chat: alice and bob join task 1, alice sends -> bob receives + gets a notification.
   let bobGotChat = false;
@@ -277,8 +609,44 @@ async function main() {
   const chatHistory = await req('GET', `/api/tasks/${task.data.id}/chat`, { token: b });
   check('task chat history persisted', chatHistory.data.messages.some((m) => m.content === 'chat ping'));
 
+  // Task chat with an attachment: upload a file, send it, and confirm it rides
+  // along on the message and is downloadable by the other participant.
+  const tcFd = new FormData();
+  tcFd.append('files', new Blob(['task chat file'], { type: 'text/plain' }), 'note-in-chat.txt');
+  const tcUp = await (await fetch(BASE + '/api/uploads', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: tcFd })).json();
+  const tcAttId = tcUp.attachments[0].id;
+  const chatWithFile = await new Promise((resolve) => sockA.emit('task:chat:send', { task_id: task.data.id, content: '', attachment_ids: [tcAttId] }, resolve));
+  check('a file-only task chat message is accepted', !!chatWithFile.message && chatWithFile.message.attachments?.length === 1);
+  const chatHistory2 = await req('GET', `/api/tasks/${task.data.id}/chat`, { token: b });
+  check('task chat history includes the attachment', chatHistory2.data.messages.some((m) => m.attachments?.some((x) => x.id === tcAttId)));
+  const tcDl = await fetch(`${BASE}/api/uploads/${tcAttId}?token=${b}`);
+  check('participant can download a task chat attachment', tcDl.status === 200);
+  // An uninvolved member (Carol: not creator/assignee/watcher) must NOT get it.
+  const tcDenied = await fetch(`${BASE}/api/uploads/${tcAttId}?token=${carolTok}`);
+  check('an uninvolved member cannot download a task chat file', tcDenied.status === 403);
+
   const markRead = await req('POST', '/api/notifications/read-all', { token: b });
   check('mark-all-read clears unread count', markRead.data.unread_count === 0);
+
+  console.log('Push registration');
+  const pushReg = await req('POST', '/api/push/register', { token: b, body: { token: 'device-token-abc', platform: 'android' } });
+  check('a device can register for push', pushReg.status === 200 && pushReg.data.push_enabled === false);
+  const pushNoToken = await req('POST', '/api/push/register', { token: b, body: {} });
+  check('push registration requires a token', pushNoToken.status === 400);
+  // Browser Web Push (VAPID): config exposes a public key, subscribe/unsubscribe work.
+  const cfg2 = await req('GET', '/api/config');
+  check('config exposes a VAPID public key for web push', typeof cfg2.data.vapid_public_key === 'string' && cfg2.data.vapid_public_key.length > 20);
+  const webSub = await req('POST', '/api/push/web/subscribe', { token: b, body: { subscription: { endpoint: 'https://fcm.example/ep1', keys: { p256dh: 'x'.repeat(80), auth: 'y'.repeat(20) } } } });
+  check('a browser can register a web-push subscription', webSub.status === 200 && webSub.data.ok);
+  const webBad = await req('POST', '/api/push/web/subscribe', { token: b, body: { subscription: {} } });
+  check('web-push subscribe without an endpoint is rejected', webBad.status === 400);
+  const webUnsub = await req('POST', '/api/push/web/unsubscribe', { token: b, body: { endpoint: 'https://fcm.example/ep1' } });
+  check('a browser can unsubscribe from web push', webUnsub.status === 200);
+  // Creating a notification with a token on file must not throw when FCM is off.
+  const pingTask = await req('POST', '/api/tasks', { token: a, body: { title: 'Ping Bob', workflow_id: wf.data.id, assignee_id: bobId } });
+  check('notifying a push-registered user still works with FCM disabled', pingTask.status === 201);
+  const pushUnreg = await req('POST', '/api/push/unregister', { token: b, body: { token: 'device-token-abc' } });
+  check('a device can unregister from push', pushUnreg.status === 200);
 
   console.log('Chat features');
   // Upload a file (REST multipart), then post a message that carries the
@@ -327,8 +695,200 @@ async function main() {
   const search = await req('GET', `/api/search?q=${encodeURIComponent('review')}`, { token: b });
   check('search finds the message', search.data.results.some((r) => r.id === msgId));
 
+  // Global search also spans clients and tasks (title or linked client name).
+  const sc = await req('POST', '/api/clients', { token: a, body: { name: 'Searchable Traders', gstin: '29ZZSRC1234Z1Z5' } });
+  await req('POST', '/api/tasks', { token: a, body: { title: 'Quarterly GST for Searchable', workflow_id: wf.data.id, client_id: sc.data.id } });
+  const gs = await req('GET', `/api/search?q=${encodeURIComponent('Searchable')}`, { token: a });
+  check('global search finds matching clients', gs.data.clients.some((c) => c.id === sc.data.id));
+  check('global search finds tasks by title', gs.data.tasks.some((t) => t.title.includes('Quarterly GST')));
+  const byClientName = await req('GET', `/api/search?q=${encodeURIComponent('Searchable Traders')}`, { token: a });
+  check('global search surfaces a client’s tasks by client name', byClientName.data.tasks.some((t) => t.client_id === sc.data.id));
+
   const del = await req('DELETE', `/api/channels/${generalId}/messages/${msgId}`, { token: a });
   check('message soft-deleted, content cleared', del.data.is_deleted && del.data.content === '');
+
+  // Conversation-list metadata for the Messenger view.
+  const chans2 = await req('GET', '/api/channels', { token: a });
+  const generalCh = chans2.data.channels.find((c) => c.name === 'general');
+  check('channel carries a last-message preview', !!generalCh?.last_message && typeof generalCh.last_message.content === 'string' && !!generalCh.last_activity);
+
+  console.log('Files');
+  const filesRes = await req('GET', '/api/files', { token: a });
+  check('files endpoint lists shared files', filesRes.data.files.length >= 1 && filesRes.data.files.every((f) => f.uploader_name && f.context));
+  const fileSearch = await req('GET', '/api/files?q=spec', { token: a });
+  check('files search filters by name', fileSearch.data.files.every((f) => /spec/i.test(f.original_name)) && fileSearch.data.files.length >= 1);
+  check('files carry the owner (uploader)', filesRes.data.files.every((f) => f.uploader_id && f.uploader_name));
+  // Bob can't delete Alice's file; Alice (owner) can.
+  const specFile = fileSearch.data.files[0];
+  const bobDelFile = await req('DELETE', `/api/files/${specFile.id}`, { token: b });
+  check('non-owner cannot delete a file', bobDelFile.status === 403);
+  const aliceDelFile = await req('DELETE', `/api/files/${specFile.id}`, { token: a });
+  check('owner can delete their file', aliceDelFile.status === 200);
+  const afterDel = await req('GET', '/api/files?q=spec', { token: a });
+  check('deleted file no longer listed', !afterDel.data.files.some((f) => f.id === specFile.id));
+
+  // The deleted file is archived: hidden from everyone, kept for the admin.
+  const arch = await req('GET', '/api/admin/files/archived', { token: a });
+  check('deleted file appears in the admin archive', arch.data.files.some((f) => f.id === specFile.id && f.deleted_by_name));
+  const bobArch = await req('GET', '/api/admin/files/archived', { token: b });
+  check('non-admin cannot open the archive', bobArch.status === 403);
+  await req('POST', `/api/admin/files/${specFile.id}/restore`, { token: a });
+  const afterRestore = await req('GET', '/api/files?q=spec', { token: a });
+  check('admin can restore an archived file', afterRestore.data.files.some((f) => f.id === specFile.id));
+  const purge = await req('DELETE', `/api/admin/files/${specFile.id}`, { token: a });
+  check('admin can permanently delete a file', purge.status === 200);
+  const afterPurge = await req('GET', '/api/files?q=spec', { token: a });
+  check('permanently deleted file is gone', !afterPurge.data.files.some((f) => f.id === specFile.id));
+
+  console.log('Dashboard');
+  const dashA = await req('GET', '/api/dashboard', { token: a });
+  check('admin dashboard reports the admin role', dashA.data.role === 'admin');
+  check('dashboard carries a task summary', typeof dashA.data.summary.open === 'number' && Array.isArray(dashA.data.board));
+  check('admin dashboard includes team workload', Array.isArray(dashA.data.workload));
+  check('dashboard lists recent activity', Array.isArray(dashA.data.activity));
+  // Overdue is computed against the caller's local date (?today=), not UTC —
+  // so a task due 2026-07-16 is overdue on 2026-07-17 but not on 2026-07-16.
+  await req('POST', '/api/tasks', { token: a, body: { title: 'Boundary due', workflow_id: wf.data.id, due_date: '2026-07-16' } });
+  const onDay = await req('GET', '/api/dashboard?today=2026-07-16', { token: a });
+  const nextDay = await req('GET', '/api/dashboard?today=2026-07-17', { token: a });
+  check('a task is not overdue on its due date', (nextDay.data.summary.overdue - onDay.data.summary.overdue) === 1);
+  check('overdue uses the client-supplied local date', nextDay.data.summary.overdue > onDay.data.summary.overdue);
+
+  const dashB = await req('GET', '/api/dashboard', { token: b });
+  check('member dashboard reports the member role', dashB.data.role === 'member');
+  check('member dashboard exposes no team workload', dashB.data.workload.length === 0);
+  check('member dashboard tasks carry an allotted-by creator', dashB.data.all_tasks.every((t) => 'creator' in t));
+
+  console.log('Drive');
+  const dfd = new FormData();
+  dfd.append('files', new Blob(['team drive contents'], { type: 'text/plain' }), 'drive-note.txt');
+  const driveUp = await (await fetch(BASE + '/api/drive', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: dfd })).json();
+  const driveFile = driveUp.files?.[0];
+  check('drive upload returns the file with Drive context', !!driveFile && driveFile.context === 'Drive');
+  // Any teammate (Bob) can see and download a Drive file.
+  const bobDrive = await req('GET', '/api/drive', { token: b });
+  check('drive is visible to every teammate', bobDrive.data.files.some((f) => f.id === driveFile.id));
+  const bobDriveDl = await fetch(`${BASE}/api/uploads/${driveFile.id}?token=${b}`);
+  check('teammate can download a drive file', bobDriveDl.status === 200);
+  // A guest (external client in a collab) is in the workspace but must NOT be
+  // able to reach the staff-only shared Drive — via either single-file or zip.
+  const guestLink = await req('POST', `/api/collabs/${collabId}/invite`, { token: a });
+  const guestJoin = await req('POST', `/api/invite/${guestLink.data.guest_token}/join`, { body: { name: 'Client Guest', password: 'guestpass123' } });
+  const guestTok = guestJoin.data.token;
+  check('guest account created via invite', guestJoin.status === 201 && guestJoin.data.user.role === 'guest');
+  const guestDriveDl = await fetch(`${BASE}/api/uploads/${driveFile.id}?token=${guestTok}`);
+  check('a guest cannot download a shared-Drive file', guestDriveDl.status === 403);
+  const guestZip = await fetch(`${BASE}/api/uploads/zip?files=${driveFile.id}&token=${guestTok}`);
+  check('a guest cannot zip-download Drive files', guestZip.status === 403);
+  const driveSearch = await req('GET', '/api/drive?q=drive-note', { token: b });
+  check('drive search filters by name', driveSearch.data.files.some((f) => f.id === driveFile.id));
+  check('drive search sets the searching flag', driveSearch.data.searching === true);
+
+  // Folders & subfolders.
+  const mkFolder = await req('POST', '/api/drive/folders', { token: a, body: { name: 'Contracts' } });
+  const contracts = mkFolder.data.folder;
+  check('create a drive folder', mkFolder.status === 201 && contracts?.id && contracts.parent_id == null);
+  const mkSub = await req('POST', '/api/drive/folders', { token: a, body: { name: '2026', parent_id: contracts.id } });
+  const sub2026 = mkSub.data.folder;
+  check('create a subfolder', mkSub.status === 201 && sub2026?.parent_id === contracts.id);
+  // Upload a file straight into the folder.
+  const ffd = new FormData();
+  ffd.append('files', new Blob(['signed'], { type: 'text/plain' }), 'nda.txt');
+  ffd.append('folder_id', String(contracts.id));
+  const inFolderUp = await (await fetch(BASE + '/api/drive', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: ffd })).json();
+  const nda = inFolderUp.files?.[0];
+  check('upload lands in the chosen folder', nda?.drive_folder_id === contracts.id);
+  // Listing the folder shows its file + subfolder and a breadcrumb path.
+  const folderView = await req('GET', `/api/drive?folder=${contracts.id}`, { token: b });
+  check('folder view lists its file', folderView.data.files.some((f) => f.id === nda.id));
+  check('folder view lists its subfolder', folderView.data.folders.some((f) => f.id === sub2026.id));
+  check('folder view carries a breadcrumb path', folderView.data.path.length === 1 && folderView.data.path[0].id === contracts.id);
+  // The nested file is not shown at the Drive root.
+  const rootView = await req('GET', '/api/drive', { token: b });
+  check('root view hides files nested in a folder', !rootView.data.files.some((f) => f.id === nda.id));
+  check('root view lists the top folder', rootView.data.folders.some((f) => f.id === contracts.id && f.files === 1));
+  // A non-owner member can't delete someone else's folder.
+  const bobDelFolder = await req('DELETE', `/api/drive/folders/${sub2026.id}`, { token: b });
+  check('non-owner member cannot delete a folder', bobDelFolder.status === 403);
+  // Move the nested file back to the root; a non-owner can't move it.
+  const bobMove = await req('PATCH', `/api/drive/${nda.id}`, { token: b, body: { folder_id: null } });
+  check('non-owner cannot move a file', bobMove.status === 403);
+  const move = await req('PATCH', `/api/drive/${nda.id}`, { token: a, body: { folder_id: null } });
+  check('owner can move a file to the root', move.status === 200);
+  const rootAfterMove = await req('GET', '/api/drive', { token: a });
+  check('moved file now shows at the root', rootAfterMove.data.files.some((f) => f.id === nda.id));
+
+  // Deleting a folder removes it and everything inside (files archived, not lost).
+  const bin = await req('POST', '/api/drive/folders', { token: a, body: { name: 'Bin' } });
+  const binSub = await req('POST', '/api/drive/folders', { token: a, body: { name: 'BinSub', parent_id: bin.data.folder.id } });
+  const bfd = new FormData();
+  bfd.append('files', new Blob(['x'], { type: 'text/plain' }), 'inside.txt');
+  bfd.append('folder_id', String(binSub.data.folder.id));
+  const binFileUp = await (await fetch(BASE + '/api/drive', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: bfd })).json();
+  const binFile = binFileUp.files?.[0];
+  const delFull = await req('DELETE', `/api/drive/folders/${bin.data.folder.id}`, { token: a });
+  check('a non-empty folder can be deleted', delFull.status === 200);
+  const afterFullDel = await req('GET', '/api/drive', { token: a });
+  check('deleted folder is gone from the Drive', !afterFullDel.data.folders.some((f) => f.id === bin.data.folder.id));
+  const subGone = await req('GET', `/api/drive?folder=${binSub.data.folder.id}`, { token: a });
+  check('nested subfolder is gone too', subGone.status === 404);
+  const binArch = await req('GET', '/api/admin/files/archived', { token: a });
+  check('files from a deleted folder are kept in the archive', binArch.data.files.some((f) => f.id === binFile.id));
+  // Folders can be moved (nested under another folder) with a cycle guard.
+  const fA = (await req('POST', '/api/drive/folders', { token: a, body: { name: 'MoveA' } })).data.folder;
+  const fB = (await req('POST', '/api/drive/folders', { token: a, body: { name: 'MoveB' } })).data.folder;
+  const moveFolder = await req('PATCH', `/api/drive/folders/${fB.id}`, { token: a, body: { parent_id: fA.id } });
+  check('a folder can be moved into another folder', moveFolder.status === 200);
+  const inA = await req('GET', `/api/drive?folder=${fA.id}`, { token: a });
+  check('moved folder shows under its new parent', inA.data.folders.some((f) => f.id === fB.id));
+  const cycle = await req('PATCH', `/api/drive/folders/${fA.id}`, { token: a, body: { parent_id: fB.id } });
+  check('a folder cannot be moved into its own descendant', cycle.status === 400);
+  await req('DELETE', `/api/drive/folders/${fA.id}`, { token: a }); // tidy up (recursive)
+
+  // Now delete the (empty) subfolder from earlier.
+  const delSub = await req('DELETE', `/api/drive/folders/${sub2026.id}`, { token: a });
+  check('empty folder can be deleted', delSub.status === 200);
+  await req('DELETE', `/api/drive/${nda.id}`, { token: a }); // tidy up
+
+  // Tag people on a Drive file: it records who it's shared with and notifies them.
+  const tagFd = new FormData();
+  tagFd.append('files', new Blob(['for bob'], { type: 'text/plain' }), 'for-bob.txt');
+  tagFd.append('shared_with', JSON.stringify([bobId]));
+  const taggedUp = await (await fetch(BASE + '/api/drive', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: tagFd })).json();
+  const tagged = taggedUp.files?.[0];
+  check('uploaded file records who it is shared with', tagged?.shared_with?.some((p) => p.id === bobId));
+  const bobDriveNotifs = await req('GET', '/api/notifications', { token: b });
+  check('tagged teammate gets a drive_share notification', bobDriveNotifs.data.notifications.some((n) => n.type === 'drive_share'));
+  // Re-tagging: only the uploader/admin can, and it replaces the tag set.
+  const bobRetag = await req('PATCH', `/api/drive/${tagged.id}/shares`, { token: b, body: { user_ids: [] } });
+  check('non-owner cannot edit a file’s tags', bobRetag.status === 403);
+  const retag = await req('PATCH', `/api/drive/${tagged.id}/shares`, { token: a, body: { user_ids: [] } });
+  check('owner can clear a file’s tags', retag.status === 200 && retag.data.shared_with.length === 0);
+
+  // Rename + copy (Ctrl+C/V) behaviour.
+  const bobRename = await req('PATCH', `/api/drive/${tagged.id}`, { token: b, body: { name: 'hijack.txt' } });
+  check('non-owner cannot rename a file', bobRename.status === 403);
+  const rename = await req('PATCH', `/api/drive/${tagged.id}`, { token: a, body: { name: 'renamed.txt' } });
+  check('owner can rename a file', rename.status === 200);
+  const afterRename = await req('GET', '/api/drive', { token: a });
+  check('rename is reflected in the listing', afterRename.data.files.some((f) => f.id === tagged.id && f.original_name === 'renamed.txt'));
+  // Any teammate can copy a Drive file; the copy is a new, independently-owned file.
+  const copy = await req('POST', `/api/drive/${tagged.id}/copy`, { token: b, body: { folder_id: null } });
+  check('teammate can copy a drive file', copy.status === 201 && copy.data.file.id !== tagged.id && copy.data.file.uploader_id === bobId);
+  const bobCopyDl = await fetch(`${BASE}/api/uploads/${copy.data.file.id}?token=${b}`);
+  check('the copied file is downloadable', bobCopyDl.status === 200);
+  await req('DELETE', `/api/drive/${copy.data.file.id}`, { token: b }); // tidy up
+  await req('DELETE', `/api/drive/${tagged.id}`, { token: a }); // tidy up
+
+  // WhatsApp-style deletion: only the uploader can remove it.
+  const bobDelDrive = await req('DELETE', `/api/drive/${driveFile.id}`, { token: b });
+  check('non-owner cannot delete a drive file', bobDelDrive.status === 403);
+  const aliceDelDrive = await req('DELETE', `/api/drive/${driveFile.id}`, { token: a });
+  check('owner can delete their drive file', aliceDelDrive.status === 200);
+  const afterDriveDel = await req('GET', '/api/drive', { token: a });
+  check('deleted drive file no longer listed', !afterDriveDel.data.files.some((f) => f.id === driveFile.id));
+  const driveArch = await req('GET', '/api/admin/files/archived', { token: a });
+  check('deleted drive file appears in the admin archive', driveArch.data.files.some((f) => f.id === driveFile.id));
 
   sockA.disconnect();
   sockB.disconnect();

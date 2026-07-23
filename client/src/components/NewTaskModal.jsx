@@ -1,22 +1,58 @@
-import React, { useState } from 'react';
-import { api } from '../api.js';
+import React, { useState, useRef } from 'react';
+import { api, uploadFiles } from '../api.js';
 import StepsEditor from './StepsEditor.jsx';
+import RemindersEditor from './RemindersEditor.jsx';
+import AssigneePicker from './AssigneePicker.jsx';
+import ClientPicker from './ClientPicker.jsx';
+import { parseQuickAdd } from '../quickparse.js';
 
-export default function NewTaskModal({ workflows, projects, users, templates, defaultWorkflowId, onClose, onCreated }) {
+export default function NewTaskModal({ workflows, projects, clients = [], users, templates, defaultWorkflowId, onClose, onCreated }) {
+  const [clientList, setClientList] = useState(clients);
   const [form, setForm] = useState({
     title: '',
     workflow_id: defaultWorkflowId || workflows[0]?.id || '',
     project_id: '',
-    assignee_id: '',
+    client_id: '',
     priority: 'medium',
     due_date: '',
+    recurrence: 'none',
   });
+  const [assigneeIds, setAssigneeIds] = useState([]);
   const [tags, setTags] = useState([]);
   const [steps, setSteps] = useState([]);
+  const [reminders, setReminders] = useState([]); // array of ISO strings
   const [tagInput, setTagInput] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [attachments, setAttachments] = useState([]); // uploaded, linked after create
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
+
+  async function onFiles(e) {
+    const files = Array.from(e.target.files);
+    e.target.value = '';
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = await uploadFiles(files);
+      setAttachments((a) => [...a, ...uploaded]);
+    } catch (err) { setError(err.message); }
+    setUploading(false);
+  }
+
+  // Pull !priority, #tags and a due date out of the title into the form.
+  function applyQuickParse() {
+    const p = parseQuickAdd(form.title);
+    if (p.title === form.title.trim() && !p.priority && !p.tags.length && !p.due_date) return;
+    setForm((f) => ({
+      ...f,
+      title: p.title,
+      priority: p.priority || f.priority,
+      due_date: f.due_date || p.due_date || '',
+    }));
+    if (p.tags.length) setTags((t) => [...new Set([...t, ...p.tags])]);
+  }
 
   // Applying a template pre-fills the form; everything stays editable.
   // Deselecting (back to blank) clears what the template added.
@@ -46,20 +82,29 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
     if (!form.title.trim()) return;
     setBusy(true);
     setError(null);
+    // Re-parse on submit so quick-add tokens are honored even without a blur.
+    const p = parseQuickAdd(form.title);
     try {
-      await api('/tasks', {
+      const created = await api('/tasks', {
         method: 'POST',
         body: {
-          title: form.title,
+          title: p.title || form.title,
           workflow_id: Number(form.workflow_id),
           project_id: form.project_id ? Number(form.project_id) : null,
-          assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
-          priority: form.priority,
-          due_date: form.due_date || null,
-          tags,
+          client_id: form.client_id ? Number(form.client_id) : null,
+          assignee_ids: assigneeIds,
+          priority: p.priority || form.priority,
+          due_date: form.due_date || p.due_date || null,
+          recurrence: form.recurrence,
+          tags: [...new Set([...tags, ...p.tags])],
           checklist: steps,
+          reminders,
         },
       });
+      // Attach any uploaded files to the freshly-created task.
+      if (attachments.length && created?.id) {
+        await api(`/tasks/${created.id}/attachments`, { method: 'POST', body: { attachment_ids: attachments.map((a) => a.id) } });
+      }
       onCreated();
     } catch (err) {
       setError(err.message);
@@ -88,7 +133,9 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
           )}
 
           <label className="field">Title
-            <input autoFocus value={form.title} onChange={set('title')} placeholder="e.g. Company Registration – Acme Ltd" required />
+            <input autoFocus value={form.title} onChange={set('title')} onBlur={applyQuickParse}
+              placeholder="e.g. File GST return tomorrow !high #compliance" required />
+            <span className="quick-hint">Quick add: type <code>tomorrow</code> / <code>next mon</code> / <code>jul 20</code> for a date, <code>!high</code> for priority, <code>#tag</code> for tags.</span>
           </label>
 
           <div className="field-row">
@@ -103,15 +150,18 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
+            <label className="field">Client
+              <ClientPicker clients={clientList} value={form.client_id}
+                onChange={(id) => setForm((f) => ({ ...f, client_id: id }))}
+                onClientAdded={(c) => setClientList((list) => [...list, c])} />
+            </label>
           </div>
 
+          <label className="field">Assignees
+            <AssigneePicker users={users} value={assigneeIds} onChange={setAssigneeIds} />
+          </label>
+
           <div className="field-row">
-            <label className="field">Assignee
-              <select value={form.assignee_id} onChange={set('assignee_id')}>
-                <option value="">Unassigned</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </label>
             <label className="field">Priority
               <select value={form.priority} onChange={set('priority')}>
                 <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
@@ -120,6 +170,25 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
             <label className="field">Due date
               <input type="date" value={form.due_date} onChange={set('due_date')} />
             </label>
+            <label className="field">Repeat
+              <select value={form.recurrence} onChange={set('recurrence')}>
+                <option value="none">Does not repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="field">
+            <span>Reminders</span>
+            <RemindersEditor
+              items={reminders.map((iso) => ({ remind_at: iso }))}
+              dueDate={form.due_date}
+              onAdd={(iso) => setReminders((r) => (r.includes(iso) ? r : [...r, iso]))}
+              onRemove={(item) => setReminders((r) => r.filter((iso) => iso !== item.remind_at))}
+            />
           </div>
 
           <div className="field">
@@ -137,6 +206,25 @@ export default function NewTaskModal({ workflows, projects, users, templates, de
           <div className="field">
             <span>Steps / checklist{steps.length > 0 && <span className="muted"> — {steps.length} step{steps.length === 1 ? '' : 's'}</span>}</span>
             <StepsEditor steps={steps} onChange={setSteps} placeholder="+ add a step" />
+          </div>
+
+          <div className="field">
+            <div className="tags-row" style={{ justifyContent: 'space-between' }}>
+              <span>Attachments</span>
+              <button type="button" className="btn btn-sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                {uploading ? 'Uploading…' : '📎 Attach'}
+              </button>
+              <input ref={fileRef} type="file" multiple hidden onChange={onFiles} />
+            </div>
+            {attachments.length > 0 && (
+              <div className="tags-row">
+                {attachments.map((a) => (
+                  <span key={a.id} className="task-tag removable">📎 {a.original_name}
+                    <button type="button" onClick={() => setAttachments((x) => x.filter((f) => f.id !== a.id))}>✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {error && <div className="form-error">{error}</div>}

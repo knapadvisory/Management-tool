@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { api } from '../api.js';
+import { api, uploadFiles } from '../api.js';
 import { getSocket } from '../socket.js';
 import Avatar from './Avatar.jsx';
+import { AttachmentView } from './Message.jsx';
+import FilePreviewModal from './FilePreviewModal.jsx';
 
 function formatTime(iso) {
   const d = new Date(iso.replace(' ', 'T') + 'Z');
@@ -11,7 +13,11 @@ function formatTime(iso) {
 export default function TaskChat({ taskId, user }) {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
+  const [pending, setPending] = useState([]); // uploaded-but-unsent attachments
+  const [uploading, setUploading] = useState(false);
+  const [previewAtt, setPreviewAtt] = useState(null);
   const bottomRef = useRef(null);
+  const fileRef = useRef(null);
 
   useEffect(() => {
     api(`/tasks/${taskId}/chat`).then((d) => setMessages(d.messages));
@@ -30,12 +36,25 @@ export default function TaskChat({ taskId, user }) {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
+  async function onFiles(e) {
+    const files = Array.from(e.target.files);
+    e.target.value = '';
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = await uploadFiles(files);
+      setPending((p) => [...p, ...uploaded]);
+    } catch (err) { alert(err.message); }
+    setUploading(false);
+  }
+
   function send(e) {
     e.preventDefault();
     const content = draft.trim();
-    if (!content) return;
-    getSocket()?.emit('task:chat:send', { task_id: taskId, content });
+    if (!content && pending.length === 0) return;
+    getSocket()?.emit('task:chat:send', { task_id: taskId, content, attachment_ids: pending.map((a) => a.id) });
     setDraft('');
+    setPending([]);
   }
 
   return (
@@ -51,17 +70,40 @@ export default function TaskChat({ taskId, user }) {
                 {!grouped && (
                   <div className="tc-meta"><strong>{m.user_name}</strong><span className="tc-time">{formatTime(m.created_at)}</span></div>
                 )}
-                <div className="tc-text">{m.content}</div>
+                {m.content && <div className="tc-text">{m.content}</div>}
+                {m.attachments?.length > 0 && (
+                  <div className="attachments">
+                    {m.attachments.map((a) => <AttachmentView key={a.id} att={a} onOpen={() => setPreviewAtt(a)} />)}
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
         <div ref={bottomRef} />
       </div>
+
+      {pending.length > 0 && (
+        <div className="tc-pending">
+          {pending.map((a) => (
+            <span key={a.id} className="tc-pending-chip">
+              📎 {a.original_name}
+              <button type="button" onClick={() => setPending((p) => p.filter((x) => x.id !== a.id))}>✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+
       <form className="tc-composer" onSubmit={send}>
+        <button type="button" className="tc-attach" title="Attach a file" disabled={uploading} onClick={() => fileRef.current?.click()}>
+          {uploading ? '⏳' : '📎'}
+        </button>
+        <input ref={fileRef} type="file" multiple hidden onChange={onFiles} />
         <input value={draft} placeholder="Message about this task…" onChange={(e) => setDraft(e.target.value)} />
-        <button className="btn btn-primary" disabled={!draft.trim()}>Send</button>
+        <button className="btn btn-primary" disabled={!draft.trim() && pending.length === 0}>Send</button>
       </form>
+
+      {previewAtt && <FilePreviewModal file={previewAtt} onClose={() => setPreviewAtt(null)} />}
     </div>
   );
 }
