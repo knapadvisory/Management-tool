@@ -148,6 +148,99 @@ export function startDeadlineReminderScheduler(io) {
   return timer;
 }
 
+// --- Weekly "due this week" digest -------------------------------------------
+// A Monday-morning summary so everyone starts the week knowing their compliance
+// load: each person gets their own filings due Mon–Sun; admins get a firm-wide
+// view. Complements the day-by-day reminders above with a planning overview.
+
+const DIGEST_HOUR_IST = 9; // send from 9am IST on Monday
+
+// A Date whose UTC fields read as the IST wall clock (so getUTCDay/Hours = IST).
+function istNow() { return new Date(Date.now() + IST_OFFSET_MIN * 60000); }
+
+// Monday (YYYY-MM-DD) of the current IST week.
+function istWeekStart(now = istNow()) {
+  const dow = now.getUTCDay();            // 0=Sun … 6=Sat
+  const back = dow === 0 ? 6 : dow - 1;   // days since Monday
+  return new Date(now.getTime() - back * 86400000).toISOString().slice(0, 10);
+}
+
+const addDays = (ymd, n) => new Date(new Date(ymd + 'T00:00:00Z').getTime() + n * 86400000).toISOString().slice(0, 10);
+
+// Send one person their digest (in-app + push, and email when configured).
+function digestTo(io, userId, list, headline, firmWide = false) {
+  const first = list[0];
+  const text = `📅 ${headline} — first up: ${first.title} for ${first.client_name} (${fmtDue(first.due_date)})`;
+  createNotification(io, { user_id: userId, type: 'deadline_digest', actor_id: null, text });
+  if (emailEnabled()) {
+    const u = db.prepare('SELECT email, name FROM users WHERE id = ?').get(userId);
+    if (u?.email && !String(u.email).endsWith('@teamhub.guest')) {
+      const items = list.map((r) => `<li><strong>${fmtDue(r.due_date)}</strong> — ${r.title} · ${r.client_name}${firmWide && !r.assignee_id ? ' <em>(unassigned)</em>' : ''}</li>`).join('');
+      sendMail({
+        to: u.email,
+        subject: firmWide ? `This week: ${list.length} filing${list.length === 1 ? '' : 's'} due across the firm` : `Your week: ${list.length} filing${list.length === 1 ? '' : 's'} due`,
+        html: layout('Filings due this week', `<p>Hi ${u.name || 'there'},</p><p>${headline}:</p><ul>${items}</ul><p>Open TeamHub → Clients → Compliance board to plan the week.</p>`),
+      });
+    }
+  }
+  return 1;
+}
+
+// Build + send digests for one week. Idempotent per (workspace, week) via
+// weekly_digest_sent, so repeated ticks are safe.
+export function sendWeeklyDigest(io, weekStart, weekEnd) {
+  const mark = db.prepare('INSERT OR IGNORE INTO weekly_digest_sent (workspace_id, week_start) VALUES (?, ?)');
+  let sent = 0;
+  for (const w of db.prepare('SELECT id FROM workspaces').all()) {
+    if (mark.run(w.id, weekStart).changes === 0) continue; // already done this week
+
+    const rows = db.prepare(`
+      SELECT d.title, d.due_date, d.assignee_id, c.name AS client_name
+      FROM client_deadlines d JOIN clients c ON c.id = d.client_id
+      WHERE c.workspace_id = ? AND d.completed = 0 AND d.due_date >= ? AND d.due_date <= ?
+      ORDER BY d.due_date
+    `).all(w.id, weekStart, weekEnd);
+    if (rows.length === 0) continue;
+
+    const admins = db.prepare(
+      `SELECT id FROM users WHERE workspace_id = ? AND role = 'admin' AND active = 1 AND approved = 1 AND deleted = 0`,
+    ).all(w.id);
+    const adminIds = new Set(admins.map((a) => a.id));
+
+    // Personal digests for the people who actually file them (skip admins —
+    // they get the firm-wide one, which already covers their items).
+    const byAssignee = new Map();
+    for (const r of rows) {
+      if (!r.assignee_id || adminIds.has(r.assignee_id)) continue;
+      if (!byAssignee.has(r.assignee_id)) byAssignee.set(r.assignee_id, []);
+      byAssignee.get(r.assignee_id).push(r);
+    }
+    for (const [uid, list] of byAssignee) {
+      sent += digestTo(io, uid, list, `You have ${list.length} filing${list.length === 1 ? '' : 's'} due this week`);
+    }
+    for (const a of admins) {
+      sent += digestTo(io, a.id, rows, `${rows.length} filing${rows.length === 1 ? '' : 's'} due across the firm this week`, true);
+    }
+  }
+  return sent;
+}
+
+export function processWeeklyDigest(io) {
+  const weekStart = istWeekStart();
+  // Hold until Monday 9am IST (the shifted clock lets us compare directly).
+  const threshold = new Date(`${weekStart}T${String(DIGEST_HOUR_IST).padStart(2, '0')}:00:00Z`).getTime();
+  if (istNow().getTime() < threshold) return 0;
+  return sendWeeklyDigest(io, weekStart, addDays(weekStart, 6));
+}
+
+export function startWeeklyDigestScheduler(io) {
+  // Hourly is fine — the once-per-week guard makes repeated ticks no-ops.
+  processWeeklyDigest(io);
+  const timer = setInterval(() => processWeeklyDigest(io), 60 * 60 * 1000);
+  timer.unref?.();
+  return timer;
+}
+
 // Tasks that have been "done" for more than 7 days are auto-archived so the
 // Done column doesn't grow without bound. Users can still archive sooner by
 // hand, or restore anything from the archive. Runs hourly (background sweep).

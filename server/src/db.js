@@ -322,6 +322,15 @@ CREATE TABLE IF NOT EXISTS deadline_reminders_sent (
   PRIMARY KEY (deadline_id, due_date, kind)
 );
 
+-- One "your filings due this week" digest per workspace per week (Monday-keyed),
+-- so the Monday-morning summary goes out exactly once even across hourly ticks.
+CREATE TABLE IF NOT EXISTS weekly_digest_sent (
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  week_start TEXT NOT NULL,
+  sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (workspace_id, week_start)
+);
+
 -- Real-time chat scoped to a single task (distinct from async "Notes").
 CREATE TABLE IF NOT EXISTS task_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
