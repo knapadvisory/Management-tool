@@ -68,6 +68,7 @@ async function main() {
   const claims = verify(token, SSO_SECRET);
   check('the token signature verifies with the shared secret', claims !== null);
   check('the token carries the caller’s email + a future expiry', claims && claims.email === 'a@a.test' && claims.exp > Math.floor(Date.now() / 1000));
+  check('the token carries the workspace + role for HR tenant isolation', claims && claims.ws === slug && claims.wsname === 'HR Co' && claims.role === 'admin');
   check('a wrong secret rejects the token', verify(token, 'not-the-secret') === null);
 
   const memberSso = await req('GET', '/api/hr/sso', { token: b });

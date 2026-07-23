@@ -10,6 +10,7 @@
 // disabled and the client hides the HR nav + widget.
 import { Router } from 'express';
 import crypto from 'crypto';
+import db from '../db.js';
 
 const router = Router();
 
@@ -30,11 +31,18 @@ router.get('/config', (req, res) => {
 
 // Mint the signed handoff token and return the HR SSO URL to open.
 // Format must match SsoController in KNAP-HRMS:
-//   base64url(json({email,name,exp})) "." base64url(hmac_sha256(body, secret))
+//   base64url(json({email,name,exp,ws,wsname,role})) "." base64url(hmac_sha256(body, secret))
+// ws/wsname identify the caller's workspace so HR isolates each workspace into
+// its own tenant (a KNAP admin only sees KNAP; a Pravaah admin only sees Pravaah).
 router.get('/sso', (req, res) => {
   if (!ssoConfigured()) return res.status(503).json({ error: 'HR is not configured.' });
+  const ws = db.prepare('SELECT slug, name FROM workspaces WHERE id = ?').get(req.user.workspace_id) || {};
   const exp = Math.floor(Date.now() / 1000) + 120; // 2-minute window
-  const body = Buffer.from(JSON.stringify({ email: req.user.email, name: req.user.name, exp })).toString('base64url');
+  const claims = {
+    email: req.user.email, name: req.user.name, exp,
+    ws: ws.slug || String(req.user.workspace_id), wsname: ws.name || '', role: req.user.role || 'admin',
+  };
+  const body = Buffer.from(JSON.stringify(claims)).toString('base64url');
   const sig = crypto.createHmac('sha256', SSO_SECRET).update(body).digest('base64url');
   res.json({ url: `${HR_PUBLIC_URL}/sso?token=${body}.${sig}` });
 });
@@ -44,9 +52,10 @@ router.get('/sso', (req, res) => {
 router.get('/summary', async (req, res) => {
   if (!API_TOKEN) return res.status(503).json({ error: 'HR is not configured.' });
   try {
+    const ws = db.prepare('SELECT slug FROM workspaces WHERE id = ?').get(req.user.workspace_id)?.slug || String(req.user.workspace_id);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
-    const r = await fetch(`${HR_INTERNAL_URL}/api/summary`, {
+    const r = await fetch(`${HR_INTERNAL_URL}/api/summary?ws=${encodeURIComponent(ws)}`, {
       headers: { Authorization: `Bearer ${API_TOKEN}`, Accept: 'application/json' },
       signal: controller.signal,
     }).finally(() => clearTimeout(timer));
