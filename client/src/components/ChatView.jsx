@@ -198,13 +198,18 @@ export default function ChatView({ channel, user, users = [], onlineIds, onOpenD
         <header className="chat-header">
           <div className="chat-title">
             {channel.is_dm ? (
-              <>
+              <button
+                type="button"
+                className="chat-title-person"
+                onClick={() => openProfile(channel.dm_user)}
+                title={`View ${channel.display_name}'s profile`}
+              >
                 <Avatar user={channel.dm_user} size={30} online={dmOnline} />
                 <div className="chat-title-text">
                   <strong>{channel.display_name}</strong>
                   <span className="chat-subtitle">{dmOnline ? 'Active now' : 'Offline'}</span>
                 </div>
-              </>
+              </button>
             ) : (
               <div className="chat-title-text">
                 <strong>{channel.is_collab ? '👥 ' : '# '}{channel.name}</strong>

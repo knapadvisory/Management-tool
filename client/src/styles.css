@@ -2394,3 +2394,8 @@ button.c360-stat:hover { border-color: var(--accent); }
 .hr-stat span { font-size: 11.5px; color: var(--muted); font-weight: 600; }
 .hr-stat.warn b { color: var(--warning); }
 .hr-stat.ok b { color: var(--success); }
+
+/* Clickable person in a DM chat header → opens their profile popup. */
+.chat-title-person { display: flex; align-items: center; gap: 10px; background: none; border: none; padding: 4px 8px; margin: -4px -8px; border-radius: 10px; cursor: pointer; color: inherit; font: inherit; font-weight: 700; text-align: left; }
+.chat-title-person:hover { background: var(--bg); }
+.chat-title-person:hover strong { text-decoration: underline; text-underline-offset: 2px; }
