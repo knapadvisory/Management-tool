@@ -363,6 +363,13 @@ async function main() {
   check('next occurrence copies checklist (reset)', nextDetail.data.checklist?.length === 1 && nextDetail.data.checklist[0].is_done === 0);
   check('next occurrence shifts the reminder forward a week', nextDetail.data.reminders?.some((r) => r.remind_at.startsWith(expectRemindDay)));
 
+  // Completing the spawned occurrence too must NOT stack a second "rate it" for
+  // the same recurring series — only one pending rating exists at a time.
+  if (nextOcc) await req('PATCH', `/api/tasks/${nextOcc.id}`, { token: a, body: { stage_id: doneStageId } });
+  const myRatings = await req('GET', '/api/tasks/ratings/pending', { token: a });
+  const wcRatings = (myRatings.data.ratings || []).filter((r) => r.task_title === 'Weekly compliance');
+  check('a recurring series raises only one pending rating at a time', wcRatings.length === 1);
+
   // A one-off task moved to done must NOT spawn anything.
   const oneOff = await req('POST', '/api/tasks', { token: a, body: { title: 'One-off', workflow_id: wf.data.id, due_date: '2026-07-10' } });
   const beforeOne = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;

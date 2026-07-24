@@ -225,21 +225,29 @@ function loadTask(req, res) {
 // rates themselves and then names a reporting manager who rates it too.
 function openTaskRating(io, task, completerId) {
   if (!task) return;
-  // Only one open flow per task at a time.
-  if (db.prepare("SELECT 1 FROM task_ratings WHERE task_id = ? AND status = 'pending'").get(task.id)) return;
   const selfAssigned = !task.creator_id || task.creator_id === completerId;
   const raterId = selfAssigned ? completerId : task.creator_id;
-  if (selfAssigned) {
-    db.prepare("INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role) VALUES (?, ?, ?, ?, 'self')")
-      .run(task.id, task.workspace_id, completerId, completerId);
-    createNotification(io, { user_id: completerId, type: 'rating_self', actor_id: completerId, task_id: task.id,
-      text: `Rate your completed task "${task.title}" and choose a reporting manager` });
-  } else {
-    db.prepare("INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role) VALUES (?, ?, ?, ?, 'assigner')")
-      .run(task.id, task.workspace_id, completerId, task.creator_id);
-    createNotification(io, { user_id: task.creator_id, type: 'rating_request', actor_id: completerId, task_id: task.id,
-      text: `Rate the completed task "${task.title}"` });
-  }
+  const role = selfAssigned ? 'self' : 'assigner';
+
+  // Only one open rating per SERIES at a time — keyed on rater/ratee/title/role,
+  // not the individual task. A recurring task (or a re-completed one) must not
+  // stack a fresh "rate it" request for every occurrence; the assigner clears
+  // the current one, and the next occurrence opens its own only once that's done.
+  const already = db.prepare(`
+    SELECT 1 FROM task_ratings r JOIN tasks t ON t.id = r.task_id
+    WHERE r.status = 'pending' AND r.rater_id = ? AND r.ratee_id = ? AND r.role = ?
+      AND t.title = ? AND IFNULL(r.workspace_id, 0) = IFNULL(?, 0)
+    LIMIT 1
+  `).get(raterId, completerId, role, task.title, task.workspace_id);
+  if (already) { io?.to(`user:${raterId}`).emit('rating:update'); return; }
+
+  db.prepare('INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role) VALUES (?, ?, ?, ?, ?)')
+    .run(task.id, task.workspace_id, completerId, raterId, role);
+  createNotification(io, selfAssigned
+    ? { user_id: completerId, type: 'rating_self', actor_id: completerId, task_id: task.id,
+        text: `Rate your completed task "${task.title}" and choose a reporting manager` }
+    : { user_id: task.creator_id, type: 'rating_request', actor_id: completerId, task_id: task.id,
+        text: `Rate the completed task "${task.title}"` });
   io?.to(`user:${raterId}`).emit('rating:update'); // refresh "For Your Review" live
 }
 
