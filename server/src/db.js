@@ -626,8 +626,8 @@ export function repairRecurringDupes() {
 
   for (const g of series) {
     const rows = db.prepare(`
-      SELECT t.id, t.due_date, t.status, s.is_done,
-             substr(IFNULL(t.completed_at, t.updated_at), 1, 10) AS done_day
+      SELECT t.id, t.due_date, t.status, s.is_done, IFNULL(t.completed_at, t.updated_at) AS done_at,
+             EXISTS (SELECT 1 FROM task_ratings r WHERE r.task_id = t.id AND r.status = 'pending') AS has_pending
       FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id
       WHERE t.workspace_id = ? AND t.title = ? AND t.workflow_id = ? AND t.recurrence = ?
         AND IFNULL(t.creator_id, 0) = ? AND t.archived_at IS NULL
@@ -640,12 +640,15 @@ export function repairRecurringDupes() {
     const open = rows.filter((r) => !isDone(r) && r.status !== 'cancelled');
     if (open.length) keep.add(open.slice().sort((a, b) => (b.due_date || '').localeCompare(a.due_date || ''))[0].id);
 
-    // Keep the newest completion PER CALENDAR DAY (real daily history stays;
-    // only the bug's rapid same-day re-completions collapse).
-    const done = rows.filter(isDone);
-    const byDay = new Map();
-    for (const r of done) if (!byDay.has(r.done_day) || r.id > byDay.get(r.done_day)) byDay.set(r.done_day, r.id);
-    for (const id of byDay.values()) keep.add(id);
+    // Completed occurrences already RATED are genuine history — keep them all.
+    for (const r of rows) if (isDone(r) && !r.has_pending) keep.add(r.id);
+
+    // Completed occurrences still AWAITING a rating are the bug's fingerprint
+    // (a healthy series only ever has one). Keep the most recent to rate;
+    // archive the older ones (their stale rating requests are dropped below).
+    const pendingDone = rows.filter((r) => isDone(r) && r.has_pending)
+      .sort((a, b) => (b.done_at || '').localeCompare(a.done_at || '') || (b.id - a.id));
+    if (pendingDone.length) keep.add(pendingDone[0].id);
 
     for (const r of rows) {
       if (!keep.has(r.id)) {
@@ -655,9 +658,14 @@ export function repairRecurringDupes() {
     }
   }
 
-  // Collapse duplicate pending rating requests to one per (rater, ratee, task
-  // title, role). Given ratings (status 'done') are never touched.
-  const dropped = db.prepare(`
+  // Drop rating requests that now point at an archived (collapsed) clone, then
+  // collapse any remaining duplicates to one per rater/ratee/title/role. Given
+  // ratings (status 'done') are never touched.
+  let dropped = db.prepare(`
+    DELETE FROM task_ratings
+    WHERE status = 'pending' AND task_id IN (SELECT id FROM tasks WHERE archived_at IS NOT NULL)
+  `).run().changes;
+  dropped += db.prepare(`
     DELETE FROM task_ratings
     WHERE status = 'pending' AND id NOT IN (
       SELECT MAX(r.id) FROM task_ratings r
@@ -670,11 +678,13 @@ export function repairRecurringDupes() {
   return { archived, dropped };
 }
 
-// Run the repair exactly once against an existing database (guarded by a flag).
-if (!db.prepare(`SELECT 1 FROM app_settings WHERE key = 'repair_recurring_dupes_v1'`).get()) {
+// Run the repair once per version against an existing database (guarded by a
+// flag). The version is bumped when the repair logic improves, so an install
+// that already ran an earlier pass picks up the better one on next restart.
+if (!db.prepare(`SELECT 1 FROM app_settings WHERE key = 'repair_recurring_dupes_v2'`).get()) {
   db.transaction(() => {
     const { archived, dropped } = repairRecurringDupes();
-    db.prepare(`INSERT INTO app_settings (key, value) VALUES ('repair_recurring_dupes_v1', ?)`)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('repair_recurring_dupes_v2', ?)`)
       .run(new Date().toISOString());
     if (archived || dropped) {
       console.log(`[repair] recurring dupes: archived ${archived} duplicate clone(s), removed ${dropped} duplicate rating request(s)`);
