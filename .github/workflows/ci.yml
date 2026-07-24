@@ -39,27 +39,13 @@ jobs:
         run: npm test
         working-directory: server
 
-  # On a merge to main, if tests pass, redeploy TeamHub on the VPS over SSH.
-  deploy:
-    needs: build-and-test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: teamhub-deploy
-      cancel-in-progress: false
-    steps:
-      - name: Redeploy TeamHub on the VPS
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          script_stop: true
-          command_timeout: 20m
-          script: |
-            set -e
-            cd ~/Management-tool
-            git checkout main
-            git pull --ff-only
-            bash deploy/vps-setup.sh
+  # Deployment is PULL-based, not push-based. The VPS runs a systemd timer
+  # (deploy/auto-pull.sh, installed via deploy/install-autodeploy.sh) that
+  # checks origin/main every minute and redeploys TeamHub + HRMS when it moves.
+  #
+  # We deliberately do NOT SSH from GitHub into the VPS: runner IPs are a large
+  # shifting range, so any inbound-SSH firewall change breaks it (the old
+  # appleboy/ssh-action job failed with "dial tcp ...:22: i/o timeout"). Pulling
+  # needs no inbound port and no secrets, and is safe for a public repo since
+  # the box only ever fast-forwards to origin/main. So: merge to main → CI here
+  # gates on tests → the VPS picks up the new commit within ~1 minute.
