@@ -60,15 +60,100 @@ jobs:
             echo "No google-services.json available — APK builds without push"
           fi
 
+      # Decode the release keystore from a secret, if configured. When the
+      # signing secrets are present we produce a signed release APK; otherwise
+      # we fall back to a debug APK so the workflow never fails for lack of keys.
+      - name: Prepare release signing (if secrets provided)
+        id: signing
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS" ] && echo "$KS" | base64 -d > android/app/release.keystore 2>/dev/null && [ -s android/app/release.keystore ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "Release keystore written — this build will be signed"
+          else
+            rm -f android/app/release.keystore
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "No release keystore secret — falling back to a debug APK"
+          fi
+
+      - name: Build signed release APK + AAB
+        if: steps.signing.outputs.signed == 'true'
+        working-directory: client/android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew
+          # Unique, increasing version code per build so Play never rejects an
+          # upload as a duplicate. Offset keeps it above any manual code of 1.
+          VC=$(( ${{ github.run_number }} + 100 ))
+          # APK for direct sideload installs; AAB (.aab) for Google Play upload.
+          ./gradlew assembleRelease bundleRelease --no-daemon \
+            -PversionCodeOverride="$VC" \
+            -PversionNameOverride="1.0.$VC" \
+            -Pandroid.injected.signing.store.file="$PWD/app/release.keystore" \
+            -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD"
+
       - name: Build debug APK
+        if: steps.signing.outputs.signed != 'true'
         working-directory: client/android
         run: |
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Upload signed release APK
+        if: steps.signing.outputs.signed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: teamhub-release-apk
+          path: client/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      # The .aab is what you upload to the Google Play Console.
+      - name: Upload release AAB (for Google Play)
+        if: steps.signing.outputs.signed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: teamhub-release-aab
+          path: client/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      - name: Upload debug APK
+        if: steps.signing.outputs.signed != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: teamhub-debug-apk
           path: client/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # Push the signed APK to Firebase App Distribution so testers get an
+      # in-app "update available" notification. Skips cleanly until the two
+      # Firebase secrets are configured, so the build never fails without them.
+      #   FIREBASE_APP_ID         — Android app ID, e.g. 1:1234567890:android:abcd...
+      #   FIREBASE_SERVICE_ACCOUNT— full JSON of a service account with the
+      #                             "Firebase App Distribution Admin" role
+      - name: Distribute to Firebase App Distribution (if configured)
+        if: steps.signing.outputs.signed == 'true'
+        working-directory: client/android
+        env:
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_APP_ID" ] || [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "Firebase secrets not set — skipping App Distribution upload."
+            echo "(Add FIREBASE_APP_ID and FIREBASE_SERVICE_ACCOUNT to enable it.)"
+            exit 0
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/fb-sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/fb-sa.json"
+          npm install -g firebase-tools
+          firebase appdistribution:distribute \
+            app/build/outputs/apk/release/app-release.apk \
+            --app "$FIREBASE_APP_ID" \
+            --groups "team" \
+            --release-notes "TeamHub build ${{ github.run_number }} (${{ github.sha }})"
+          rm -f "$RUNNER_TEMP/fb-sa.json"
