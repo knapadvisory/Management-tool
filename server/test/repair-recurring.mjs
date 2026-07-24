@@ -31,26 +31,29 @@ const insTask = db.prepare(`INSERT INTO tasks (title, workflow_id, stage_id, ass
   VALUES (?, ?, ?, ?, ?, 'high', ?, ?, ?, ?, ?)`);
 const insRating = db.prepare(`INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role, status) VALUES (?, ?, ?, ?, 'assigner', 'pending')`);
 
-// BUG artifacts: 5 clones of one daily series, all COMPLETED on the same day,
-// each with its own pending rating for Kunal. Plus one open future occurrence.
+// BUG artifacts: 5 clones of one daily series, each COMPLETED on a DIFFERENT
+// day (the user hit each overdue clone on successive days) and each still
+// AWAITING Kunal's rating. Plus one open future occurrence.
 for (let i = 0; i < 5; i++) {
-  const t = insTask.run('Tag ADT-01 GST Audit', wf, done, anuj, kunal, `2026-07-${17 + i}`, 'daily', ws, 'completed', '2026-07-24 10:0'+i+':00').lastInsertRowid;
+  const t = insTask.run('Tag ADT-01 GST Audit', wf, done, anuj, kunal, `2026-07-${17 + i}`, 'daily', ws, 'completed', `2026-07-2${i} 10:00:00`).lastInsertRowid;
   insRating.run(t, ws, anuj, kunal);
 }
 const openId = insTask.run('Tag ADT-01 GST Audit', wf, todo, anuj, kunal, '2026-07-25', 'daily', ws, 'in_progress', null).lastInsertRowid;
 
-// GENUINE daily history: same title pattern but completed on THREE different
-// days — must be preserved (this is not the bug).
+// GENUINE daily history: same recurring series, completed on THREE different
+// days, but already RATED (status 'done') — must be preserved (not the bug).
 const legit = [];
 for (let d = 0; d < 3; d++) {
-  legit.push(insTask.run('Daily standup', wf, done, anuj, kunal, `2026-07-2${d}`, 'daily', ws, 'completed', `2026-07-2${d} 09:00:00`).lastInsertRowid);
+  const t = insTask.run('Daily standup', wf, done, anuj, kunal, `2026-07-2${d}`, 'daily', ws, 'completed', `2026-07-2${d} 09:00:00`).lastInsertRowid;
+  db.prepare(`INSERT INTO task_ratings (task_id, workspace_id, ratee_id, rater_id, role, status, stars) VALUES (?, ?, ?, ?, 'assigner', 'done', 5)`).run(t, ws, anuj, kunal);
+  legit.push(t);
 }
 const legitOpen = insTask.run('Daily standup', wf, todo, anuj, kunal, '2026-07-25', 'daily', ws, 'in_progress', null).lastInsertRowid;
 
 // --- Run the repair ---
 const r1 = repairRecurringDupes();
 
-check('archived the 4 duplicate same-day completions', r1.archived === 4);
+check('archived the 4 duplicate completions awaiting rating', r1.archived === 4);
 check('collapsed 5 pending ratings down to 1', r1.dropped === 4);
 
 const liveAdt = db.prepare(`SELECT id, status FROM tasks WHERE title = 'Tag ADT-01 GST Audit' AND archived_at IS NULL`).all();
