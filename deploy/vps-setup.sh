@@ -82,6 +82,13 @@ WEB_PUSH_SUBJECT="${WEB_PUSH_SUBJECT:-}"
 TEAMHUB_SSO_SECRET="$TEAMHUB_SSO_SECRET"
 TEAMHUB_API_TOKEN="$TEAMHUB_API_TOKEN"
 HR_URL="$HR_URL"
+# Optional single sign-on. Create an OAuth client in Google Cloud / Azure AD,
+# set the redirect URI to https://\$DOMAIN/api/auth/oauth/<provider>/callback,
+# and paste the id + secret here to show the matching button on the login page.
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
+GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
+MICROSOFT_CLIENT_ID="${MICROSOFT_CLIENT_ID:-}"
+MICROSOFT_CLIENT_SECRET="${MICROSOFT_CLIENT_SECRET:-}"
 EOF
 
 # Clean up a broken Caddy apt source from earlier script versions, if present.
@@ -132,6 +139,10 @@ docker run -d --name teamhub --restart unless-stopped \
   ${TEAMHUB_SSO_SECRET:+-e TEAMHUB_SSO_SECRET="$TEAMHUB_SSO_SECRET"} \
   ${TEAMHUB_API_TOKEN:+-e TEAMHUB_API_TOKEN="$TEAMHUB_API_TOKEN"} \
   ${HR_URL:+-e HR_URL="$HR_URL"} \
+  ${GOOGLE_CLIENT_ID:+-e GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID"} \
+  ${GOOGLE_CLIENT_SECRET:+-e GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET"} \
+  ${MICROSOFT_CLIENT_ID:+-e MICROSOFT_CLIENT_ID="$MICROSOFT_CLIENT_ID"} \
+  ${MICROSOFT_CLIENT_SECRET:+-e MICROSOFT_CLIENT_SECRET="$MICROSOFT_CLIENT_SECRET"} \
   -v teamhub-data:/data \
   teamhub:latest
 
