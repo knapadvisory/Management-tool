@@ -7,8 +7,10 @@ android {
         applicationId "com.knapadvisory.teamhub"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // CI passes -PversionCodeOverride=<build number> so every Play upload
+        // gets a unique, increasing version code. Falls back to 1 for local builds.
+        versionCode project.hasProperty('versionCodeOverride') ? project.versionCodeOverride.toInteger() : 1
+        versionName project.hasProperty('versionNameOverride') ? project.versionNameOverride : "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
