@@ -60,13 +60,55 @@ jobs:
             echo "No google-services.json available — APK builds without push"
           fi
 
+      # Decode the release keystore from a secret, if configured. When the
+      # signing secrets are present we produce a signed release APK; otherwise
+      # we fall back to a debug APK so the workflow never fails for lack of keys.
+      - name: Prepare release signing (if secrets provided)
+        id: signing
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS" ] && echo "$KS" | base64 -d > android/app/release.keystore 2>/dev/null && [ -s android/app/release.keystore ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "Release keystore written — this build will be signed"
+          else
+            rm -f android/app/release.keystore
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "No release keystore secret — falling back to a debug APK"
+          fi
+
+      - name: Build signed release APK
+        if: steps.signing.outputs.signed == 'true'
+        working-directory: client/android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$PWD/app/release.keystore" \
+            -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD"
+
       - name: Build debug APK
+        if: steps.signing.outputs.signed != 'true'
         working-directory: client/android
         run: |
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Upload signed release APK
+        if: steps.signing.outputs.signed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: teamhub-release-apk
+          path: client/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Upload debug APK
+        if: steps.signing.outputs.signed != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: teamhub-debug-apk
