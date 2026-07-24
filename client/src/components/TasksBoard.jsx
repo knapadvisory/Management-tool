@@ -8,6 +8,7 @@ import TaskCalendarView from './TaskCalendarView.jsx';
 import ProjectsModal from './ProjectsModal.jsx';
 import TemplatesModal from './TemplatesModal.jsx';
 import NewTaskModal from './NewTaskModal.jsx';
+import TaskImportModal from './TaskImportModal.jsx';
 import { TASK_STATUSES } from '../status.js';
 
 const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
@@ -27,6 +28,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
   const [creating, setCreating] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [dragTaskId, setDragTaskId] = useState(null);
   const [archivedView, setArchivedView] = useState(false);
 
@@ -218,6 +220,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
         <label className="checkbox"><input type="checkbox" checked={filters.watching} onChange={(e) => setFilters((f) => ({ ...f, watching: e.target.checked }))} /> Watching</label>
         <button className="btn btn-sm" onClick={() => setShowProjects(true)}>⚙ Projects</button>
         <button className="btn btn-sm" onClick={() => setShowTemplates(true)}>⧉ Templates</button>
+        {!archivedView && <button className="btn btn-sm" onClick={() => setShowImport(true)} title="Bulk-create tasks from an Excel file">⬆ Import</button>}
         {!archivedView && visibleTasks.some((t) => t.completed_at) && (
           <button className="btn btn-sm" onClick={archiveAllDone} title="Move all completed tasks to the archive">🗄 Archive done</button>
         )}
@@ -283,6 +286,12 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
           defaultWorkflowId={allBoards ? (workflows[0]?.id) : workflowId}
           onClose={() => setCreating(false)}
           onCreated={() => { setCreating(false); loadTasks(workflowId); loadTags(); }}
+        />
+      )}
+      {showImport && (
+        <TaskImportModal
+          onClose={() => setShowImport(false)}
+          onImported={() => { loadTasks(workflowId, archivedView); loadTags(); }}
         />
       )}
     </div>

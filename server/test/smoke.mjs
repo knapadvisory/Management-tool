@@ -389,6 +389,19 @@ async function main() {
   check('completing an overdue recurring task leaves exactly one task', staleAll.length === 1);
   check('and that task stopped recurring', staleAll[0]?.recurrence === 'none' && staleAll[0]?.status === 'completed');
 
+  console.log('Bulk import');
+  const tpl = await fetch(`${BASE}/api/tasks/import/template`, { headers: { Authorization: `Bearer ${a}` } });
+  check('import template downloads as an .xlsx', tpl.ok && (tpl.headers.get('content-type') || '').includes('spreadsheet'));
+  const csv = 'Title *,Priority,Board,Tags\nImport CSV task,high,Onboarding,imported\n,medium,,orphan-row\nAnother import,,Onboarding,\n';
+  const impFd = new FormData();
+  impFd.append('file', new Blob([csv], { type: 'text/csv' }), 'tasks.csv');
+  const impRes = await fetch(`${BASE}/api/tasks/import`, { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: impFd });
+  const imp = await impRes.json();
+  check('bulk import creates the valid rows', imp.created === 2);
+  check('bulk import flags a row that has data but no title', Array.isArray(imp.errors) && imp.errors.length === 1);
+  const imported = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks;
+  check('an imported task landed on the board with its tag', imported.some((t) => t.title === 'Import CSV task' && (t.tags || []).includes('imported')));
+
   console.log('Admin & roles');
   const memberBlocked = await req('GET', '/api/admin/users', { token: b });
   check('member cannot reach admin routes', memberBlocked.status === 403);
