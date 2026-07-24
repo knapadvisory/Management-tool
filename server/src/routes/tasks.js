@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import { Readable } from 'stream';
+import multer from 'multer';
+import ExcelJS from 'exceljs';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
 import { createNotification } from '../notifications.js';
@@ -6,6 +9,22 @@ import { completeDeadlinesForTask } from '../compliance.js';
 import { timeForTask } from './time.js';
 
 const router = Router();
+const uploadImport = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+// Columns of the bulk-import spreadsheet, in order. `key` is how we reference the
+// value internally; `header` is what the user sees in the template.
+const IMPORT_COLUMNS = [
+  { key: 'title', header: 'Title *', width: 40 },
+  { key: 'description', header: 'Description', width: 40 },
+  { key: 'priority', header: 'Priority (low/medium/high/urgent)', width: 26 },
+  { key: 'due_date', header: 'Due date (YYYY-MM-DD)', width: 20 },
+  { key: 'assignee', header: 'Assignee (name or email)', width: 26 },
+  { key: 'board', header: 'Board', width: 18 },
+  { key: 'project', header: 'Project', width: 20 },
+  { key: 'client', header: 'Client', width: 20 },
+  { key: 'tags', header: 'Tags (comma-separated)', width: 24 },
+  { key: 'checklist', header: 'Checklist (semicolon-separated)', width: 34 },
+];
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 const RECURRENCES = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 const STATUSES = ['in_progress', 'completed', 'hold', 'cancelled'];
@@ -273,6 +292,208 @@ router.get('/', (req, res) => {
   }
   sql += ' WHERE ' + where.join(' AND ') + ' ORDER BY t.updated_at DESC';
   res.json({ tasks: db.prepare(sql).all(...params).map(taskWithMeta) });
+});
+
+// --- Bulk import from a spreadsheet ---
+
+// Read an ExcelJS cell into a trimmed string, coping with dates, formulas and
+// rich text so a value typed in Excel comes through as plain text.
+function bufferToStream(buf) {
+  return Readable.from(buf);
+}
+
+function cellStr(v) {
+  if (v === null || v === undefined) return '';
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === 'object') {
+    if (v.text !== undefined) return String(v.text).trim();
+    if (v.result !== undefined) return String(v.result).trim();
+    if (Array.isArray(v.richText)) return v.richText.map((r) => r.text).join('').trim();
+    if (v.hyperlink) return String(v.text || v.hyperlink).trim();
+  }
+  return String(v).trim();
+}
+
+// Match a spreadsheet header to one of our column keys, tolerant of the extra
+// hint text in the template headers (e.g. "Due date (YYYY-MM-DD)" → due_date).
+function headerToKey(header) {
+  const h = header.toLowerCase();
+  if (h.includes('title')) return 'title';
+  if (h.includes('description')) return 'description';
+  if (h.includes('priority')) return 'priority';
+  if (h.includes('due')) return 'due_date';
+  if (h.includes('assignee')) return 'assignee';
+  if (h.includes('board') || h.includes('workflow')) return 'board';
+  if (h.includes('project')) return 'project';
+  if (h.includes('client')) return 'client';
+  if (h.includes('tag')) return 'tags';
+  if (h.includes('checklist') || h.includes('subtask')) return 'checklist';
+  return null;
+}
+
+// GET /import/template — an .xlsx the user fills in, pre-loaded with the columns,
+// an example row, a Priority dropdown, and a reference sheet of the boards,
+// people, projects and clients they can name.
+router.get('/import/template', async (req, res) => {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Tasks');
+  ws.columns = IMPORT_COLUMNS.map((c) => ({ header: c.header, key: c.key, width: c.width }));
+  const head = ws.getRow(1);
+  head.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+  head.alignment = { vertical: 'middle' };
+  head.height = 22;
+
+  ws.addRow({
+    title: 'File GSTR-3B for ABC Pvt Ltd', description: 'Monthly GST return', priority: 'high',
+    due_date: '2026-08-20', assignee: 'Anuj', board: 'Default', project: '', client: 'ABC Pvt Ltd',
+    tags: 'gst, monthly', checklist: 'Collect data; Reconcile; File return',
+  }).font = { italic: true, color: { argb: 'FF9AA3A0' } };
+
+  // Priority dropdown on the data rows.
+  for (let r = 2; r <= 500; r++) {
+    ws.getCell(`C${r}`).dataValidation = {
+      type: 'list', allowBlank: true, formulae: ['"low,medium,high,urgent"'],
+    };
+  }
+
+  // Reference sheet: what the name columns accept.
+  const ref = wb.addWorksheet('Reference');
+  ref.columns = [{ width: 28 }, { width: 60 }];
+  const boards = db.prepare('SELECT name FROM workflows WHERE workspace_id = ? ORDER BY id').all(req.workspaceId).map((w) => w.name);
+  const people = db.prepare('SELECT name, email FROM users WHERE workspace_id = ? AND active = 1 ORDER BY name').all(req.workspaceId);
+  const projects = db.prepare('SELECT name FROM projects WHERE workspace_id = ? ORDER BY name').all(req.workspaceId).map((p) => p.name);
+  const clients = db.prepare('SELECT name FROM clients WHERE workspace_id = ? ORDER BY name').all(req.workspaceId).map((c) => c.name);
+  const rows = [
+    ['How to use', 'Fill one task per row on the "Tasks" sheet, then upload this file. Only Title is required.'],
+    ['Title', 'Required. The task name.'],
+    ['Priority', 'One of: low, medium, high, urgent. Blank = medium.'],
+    ['Due date', 'Format YYYY-MM-DD (e.g. 2026-08-20). Leave blank for no due date.'],
+    ['Assignee', 'A teammate’s name or email (see below). Blank = unassigned.'],
+    ['Board', 'The task board to add to. Blank = ' + (boards[0] || 'the default board') + '.'],
+    ['Tags', 'Comma-separated, e.g. gst, monthly.'],
+    ['Checklist', 'Semicolon-separated steps, e.g. Collect data; Reconcile; File.'],
+    ['', ''],
+    ['Boards', boards.join(', ') || '(none)'],
+    ['People', people.map((p) => `${p.name} (${p.email})`).join(', ') || '(none)'],
+    ['Projects', projects.join(', ') || '(none)'],
+    ['Clients', clients.join(', ') || '(none)'],
+  ];
+  rows.forEach((r) => ref.addRow(r));
+  ref.getColumn(1).font = { bold: true };
+
+  const buf = await wb.xlsx.writeBuffer();
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="task-import-template.xlsx"');
+  res.send(Buffer.from(buf));
+});
+
+// POST /import — parse the uploaded sheet and create the tasks. Returns a summary
+// of what was created and any per-row problems, so nothing fails silently.
+router.post('/import', uploadImport.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  // Lookups (case-insensitive) resolved once for the whole batch.
+  const workflows = db.prepare('SELECT * FROM workflows WHERE workspace_id = ? ORDER BY id').all(req.workspaceId);
+  const wfByName = new Map(workflows.map((w) => [w.name.toLowerCase(), w]));
+  const defaultWf = workflows[0];
+  const users = db.prepare('SELECT id, name, email FROM users WHERE workspace_id = ? AND active = 1').all(req.workspaceId);
+  const userByName = new Map(users.map((u) => [u.name.toLowerCase(), u.id]));
+  const userByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.id]));
+  const projByName = new Map(db.prepare('SELECT id, name FROM projects WHERE workspace_id = ?').all(req.workspaceId).map((p) => [p.name.toLowerCase(), p.id]));
+  const clientByName = new Map(db.prepare('SELECT id, name FROM clients WHERE workspace_id = ?').all(req.workspaceId).map((c) => [c.name.toLowerCase(), c.id]));
+
+  const wb = new ExcelJS.Workbook();
+  try {
+    const name = (req.file.originalname || '').toLowerCase();
+    if (name.endsWith('.csv')) await wb.csv.read(bufferToStream(req.file.buffer));
+    else await wb.xlsx.load(req.file.buffer);
+  } catch {
+    return res.status(400).json({ error: 'Could not read that file. Please upload the .xlsx template (or a .csv).' });
+  }
+  const ws = wb.worksheets[0];
+  if (!ws) return res.status(400).json({ error: 'The file has no sheets.' });
+
+  // Map columns from the header row.
+  const colKey = {};
+  ws.getRow(1).eachCell((cell, col) => { const k = headerToKey(cellStr(cell.value)); if (k) colKey[col] = k; });
+  if (!Object.values(colKey).includes('title')) {
+    return res.status(400).json({ error: 'No "Title" column found. Use the provided template.' });
+  }
+
+  const io = req.app.get('io');
+  const created = [];
+  const errors = [];
+
+  ws.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // header
+    const r = {};
+    row.eachCell({ includeEmpty: false }, (cell, col) => { if (colKey[col]) r[colKey[col]] = cellStr(cell.value); });
+
+    const title = (r.title || '').trim();
+    if (!title) {
+      // Silently skip a fully blank row; flag a row that has data but no title.
+      if (Object.values(r).some((v) => v)) errors.push({ row: rowNumber, message: 'Missing Title' });
+      return;
+    }
+    try {
+      const priority = (r.priority || 'medium').toLowerCase();
+      if (!PRIORITIES.includes(priority)) throw new Error(`Invalid priority "${r.priority}"`);
+
+      const wf = r.board ? wfByName.get(r.board.toLowerCase()) : defaultWf;
+      if (!wf) throw new Error(r.board ? `Board "${r.board}" not found` : 'No board available');
+      const firstStage = db.prepare('SELECT id FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
+      if (!firstStage) throw new Error(`Board "${wf.name}" has no stages`);
+
+      let assigneeId = null;
+      if (r.assignee) {
+        assigneeId = userByEmail.get(r.assignee.toLowerCase()) ?? userByName.get(r.assignee.toLowerCase()) ?? null;
+        if (!assigneeId) throw new Error(`Assignee "${r.assignee}" not found`);
+      }
+      let projectId = null;
+      if (r.project) { projectId = projByName.get(r.project.toLowerCase()); if (!projectId) throw new Error(`Project "${r.project}" not found`); }
+      let clientId = null;
+      if (r.client) { clientId = clientByName.get(r.client.toLowerCase()); if (!clientId) throw new Error(`Client "${r.client}" not found`); }
+
+      let dueDate = null;
+      if (r.due_date) {
+        const m = r.due_date.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (!m) throw new Error(`Due date "${r.due_date}" must be YYYY-MM-DD`);
+        dueDate = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+      }
+
+      const info = db.prepare(`
+        INSERT INTO tasks (title, description, workflow_id, project_id, client_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?)
+      `).run(title, r.description || '', wf.id, projectId, clientId, firstStage.id, assigneeId, req.user.id, priority, dueDate, req.workspaceId);
+      const taskId = info.lastInsertRowid;
+
+      for (const tag of (r.tags || '').split(',')) {
+        const clean = tag.trim().toLowerCase();
+        if (clean) db.prepare('INSERT OR IGNORE INTO task_tags (task_id, tag) VALUES (?, ?)').run(taskId, clean);
+      }
+      (r.checklist || '').split(';').forEach((s, i) => {
+        const text = s.trim();
+        if (text) db.prepare('INSERT INTO task_checklist (task_id, text, position) VALUES (?, ?, ?)').run(taskId, text, i);
+      });
+      logActivity(taskId, req.user.id, 'created this task (bulk import)');
+      addWatcher(taskId, req.user.id);
+      if (assigneeId) {
+        setAssignees(taskId, [assigneeId]);
+        if (assigneeId !== req.user.id) {
+          const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+          io?.to(`user:${assigneeId}`).emit('task:assigned', { task, by: publicUser(req.user) });
+          createNotification(io, { user_id: assigneeId, type: 'task_assigned', actor_id: req.user.id, task_id: taskId, text: `${req.user.name} assigned you "${title}"` });
+        }
+      }
+      emitChanged(req, taskId);
+      created.push(taskId);
+    } catch (e) {
+      errors.push({ row: rowNumber, message: e.message });
+    }
+  });
+
+  res.json({ created: created.length, errors });
 });
 
 router.post('/', (req, res) => {

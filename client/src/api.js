@@ -34,6 +34,35 @@ export async function uploadToDrive(files, folderId = null, sharedWith = []) {
   return data.files;
 }
 
+// Download the bulk task-import spreadsheet template (.xlsx) and save it.
+export async function downloadTaskTemplate() {
+  const res = await fetch('/api/tasks/import/template', { headers: { Authorization: `Bearer ${getToken()}` } });
+  if (!res.ok) throw new Error('Could not download the template');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'task-import-template.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Upload a filled template to bulk-create tasks. Returns { created, errors:[{row,message}] }.
+export async function importTasks(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/tasks/import', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: fd,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Import failed');
+  return data;
+}
+
 // Upload a profile photo; returns the updated public user.
 export async function uploadAvatar(file) {
   const fd = new FormData();
