@@ -671,7 +671,7 @@ export function repairRecurringDupes() {
       SELECT MAX(r.id) FROM task_ratings r
       JOIN tasks t ON t.id = r.task_id
       WHERE r.status = 'pending'
-      GROUP BY r.workspace_id, r.rater_id, r.ratee_id, t.title, r.role
+      GROUP BY IFNULL(r.workspace_id, 0), r.rater_id, r.ratee_id, t.title, r.role
     )
   `).run().changes;
 
@@ -681,10 +681,10 @@ export function repairRecurringDupes() {
 // Run the repair once per version against an existing database (guarded by a
 // flag). The version is bumped when the repair logic improves, so an install
 // that already ran an earlier pass picks up the better one on next restart.
-if (!db.prepare(`SELECT 1 FROM app_settings WHERE key = 'repair_recurring_dupes_v2'`).get()) {
+if (!db.prepare(`SELECT 1 FROM app_settings WHERE key = 'repair_recurring_dupes_v3'`).get()) {
   db.transaction(() => {
     const { archived, dropped } = repairRecurringDupes();
-    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('repair_recurring_dupes_v2', ?)`)
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('repair_recurring_dupes_v3', ?)`)
       .run(new Date().toISOString());
     if (archived || dropped) {
       console.log(`[repair] recurring dupes: archived ${archived} duplicate clone(s), removed ${dropped} duplicate rating request(s)`);
