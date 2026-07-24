@@ -13,6 +13,7 @@ const SECTIONS = [
   { key: 'appearance', tkey: 'settings.appearance', icon: '🎨' },
   { key: 'notifications', tkey: 'settings.notifications', icon: '🔔' },
   { key: 'messages', tkey: 'settings.messages', icon: '💬' },
+  { key: 'calendar', tkey: 'settings.calendar', icon: '📅' },
   { key: 'language', tkey: 'settings.language', icon: '🌐' },
   { key: 'accessibility', tkey: 'settings.accessibility', icon: '♿' },
   { key: 'advanced', tkey: 'settings.advanced', icon: '⚙️' },
@@ -46,6 +47,7 @@ export default function SettingsModal({ user, colors = [], initialSection = 'pro
             {section === 'appearance' && <AppearancePanel user={user} onSaved={onSaved} />}
             {section === 'notifications' && <NotificationsPanel />}
             {section === 'messages' && <MessagesPanel />}
+            {section === 'calendar' && <CalendarPanel />}
             {section === 'language' && <LanguagePanel />}
             {section === 'accessibility' && <AccessibilityPanel />}
             {section === 'advanced' && <AdvancedPanel />}
@@ -268,6 +270,61 @@ function MessagesPanel() {
         <Toggle checked={clock24} onChange={setClock24} label="24-hour clock" hint="Show message and task times as 14:30 instead of 2:30 PM." />
         <Toggle checked={showTyping} onChange={setShowTyping} label="Show typing indicators" hint="Display “… is typing” under a conversation." />
       </div>
+    </div>
+  );
+}
+
+function CalendarPanel() {
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  React.useEffect(() => {
+    api('/calendar/url').then((d) => setUrl(d.url)).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* ignore */ }
+  };
+  const rotate = async () => {
+    if (!window.confirm('Generate a new link? Your current calendar subscription will stop updating and you’ll need to re-subscribe with the new link.')) return;
+    setBusy(true);
+    try { const d = await api('/calendar/rotate', { method: 'POST' }); setUrl(d.url); } catch { /* ignore */ } finally { setBusy(false); }
+  };
+  const googleAddUrl = url ? `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(url)}` : '#';
+
+  return (
+    <div>
+      <h3 className="settings-title">Calendar subscription</h3>
+      <p className="muted settings-hint">
+        Subscribe to this private link in Google Calendar, Apple Calendar or Outlook to see your assigned tasks and the compliance deadlines you own — with a reminder the day before. It refreshes automatically, so new due dates just appear.
+      </p>
+
+      {loading ? (
+        <p className="muted">Loading your link…</p>
+      ) : (
+        <>
+          <label className="profile-label">Your private calendar link</label>
+          <div className="cal-url-row">
+            <input className="auth-input cal-url" readOnly value={url} onFocus={(e) => e.target.select()} />
+            <button className="cal-btn" onClick={copy}>{copied ? 'Copied ✓' : 'Copy'}</button>
+          </div>
+
+          <div className="cal-actions">
+            <a className="cal-btn cal-btn-primary" href={googleAddUrl} target="_blank" rel="noopener noreferrer">Add to Google Calendar</a>
+            <button className="cal-btn" onClick={rotate} disabled={busy}>{busy ? 'Working…' : 'Reset link'}</button>
+          </div>
+
+          <div className="profile-section-title" style={{ marginTop: 18 }}>How to subscribe</div>
+          <ul className="cal-help">
+            <li><b>Google Calendar:</b> click “Add to Google Calendar” above, or Other calendars → From URL → paste the link.</li>
+            <li><b>Apple Calendar:</b> File → New Calendar Subscription → paste the link.</li>
+            <li><b>Outlook:</b> Add calendar → Subscribe from web → paste the link.</li>
+          </ul>
+          <p className="muted settings-hint" style={{ marginTop: 10 }}>Keep this link private — anyone who has it can see your task titles and due dates. Use “Reset link” if it’s ever exposed.</p>
+        </>
+      )}
     </div>
   );
 }

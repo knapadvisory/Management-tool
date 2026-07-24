@@ -11,7 +11,7 @@ const STR = {
     'sidebar.channels': 'Channels', 'action.search': 'Search messages', 'action.settings': 'Settings', 'action.signout': 'Sign out',
     'files.shared': 'Shared files', 'files.drive': 'Drive', 'people.team': 'Team', 'people.collabs': 'Collabs',
     'settings.title': 'Settings', 'settings.profile': 'Profile', 'settings.appearance': 'Appearance', 'settings.notifications': 'Notifications',
-    'settings.messages': 'Messages & media', 'settings.language': 'Language & region', 'settings.accessibility': 'Accessibility',
+    'settings.messages': 'Messages & media', 'settings.calendar': 'Calendar', 'settings.language': 'Language & region', 'settings.accessibility': 'Accessibility',
     'settings.advanced': 'Advanced', 'settings.account': 'Account & password',
     'dash.opentasks': 'Open tasks', 'dash.upcoming': 'Upcoming deadlines', 'dash.taskboard': 'Task board', 'dash.workload': 'Team workload',
     'dash.activity': 'Recent activity', 'dash.allopen': 'All open tasks', 'dash.urgent': 'Urgent tasks', 'dash.seeall': 'See all activity',

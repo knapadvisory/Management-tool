@@ -2476,3 +2476,19 @@ button.c360-stat:hover { border-color: var(--accent); }
   .sso-btn { background: #20222b; color: #e6e7ea; border-color: #363a45; }
   .sso-btn:hover { background: #272a34; }
 }
+
+/* ---- Settings: calendar subscription panel ---- */
+.cal-url-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.cal-url { flex: 1; font-family: ui-monospace, monospace; font-size: 12px; }
+.cal-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cal-btn {
+  padding: 8px 14px; border: 1px solid var(--border, #d5d7de); border-radius: 8px;
+  background: var(--card, #fff); color: var(--text, #1f2430); font-size: 13px; font-weight: 600;
+  cursor: pointer; text-decoration: none; white-space: nowrap; display: inline-flex; align-items: center;
+}
+.cal-btn:hover { background: var(--hover, #f4f5f7); }
+.cal-btn:disabled { opacity: .55; cursor: default; }
+.cal-btn-primary { background: var(--accent, #4f46e5); color: #fff; border-color: transparent; }
+.cal-btn-primary:hover { background: var(--accent-hover, #4338ca); }
+.cal-help { margin: 6px 0 0; padding-left: 18px; color: var(--muted, #6b7280); font-size: 13px; line-height: 1.7; }
+.cal-help b { color: var(--text, #1f2430); }

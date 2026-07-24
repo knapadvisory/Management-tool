@@ -545,6 +545,10 @@ ensureColumn('client_deadlines', 'task_id', 'INTEGER REFERENCES tasks(id)');
 // were completed before this column existed stay NULL (excluded from the rate).
 ensureColumn('client_deadlines', 'completed_at', 'TEXT');
 
+// Per-user secret for the subscribable calendar (iCal) feed. Unguessable; can be
+// rotated to revoke an old feed URL. Generated on first use, not at signup.
+ensureColumn('users', 'calendar_token', 'TEXT');
+
 // Richer client master fields (imported from a firm's client-master workbook).
 // All optional; existing rows keep '' defaults.
 for (const [col] of [

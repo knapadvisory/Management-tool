@@ -9,6 +9,8 @@ import { Server } from 'socket.io';
 import db from './db.js';
 import { register, login, ssoLogin, signToken, requireAuth, requireAdmin, blockGuests, publicUser, workspaceSignupCodeRequired, allowedSignupDomains, createWorkspaceAdmin, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, createPasswordReset, findPasswordReset, applyPasswordReset, userByEmail, AVATAR_COLORS } from './auth.js';
 import { enabledProviders, providerConfigured, authUrl as oauthAuthUrl, signState, verifyState, exchangeCodeForIdentity } from './oauth.js';
+import crypto from 'crypto';
+import { buildUserCalendar } from './ical.js';
 import { emailEnabled, sendMail, layout, button } from './email.js';
 import { pushEnabled, getVapidPublicKey } from './push.js';
 import { createWorkspace, workspaceBySlug, workspaceById, publicWorkspace, deleteWorkspace } from './workspaces.js';
@@ -293,6 +295,38 @@ app.get('/api/auth/oauth/:provider/callback', async (req, res) => {
   } catch (e) {
     return returnTo({ oauth_error: e.message || 'Single sign-on failed. Please try again.' });
   }
+});
+
+// --- Subscribable calendar feed (iCal) ---
+// Public feed: anyone with the unguessable token URL gets the user's dated work
+// as a calendar their app can subscribe to. No auth header (calendar apps can't
+// send one) — the token IS the credential, and it can be rotated to revoke it.
+app.get('/api/calendar/:token/feed.ics', (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE calendar_token = ?').get(req.params.token);
+  if (!user || user.deleted || !user.active) return res.status(404).send('Calendar not found');
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+  res.setHeader('Content-Disposition', 'inline; filename="teamhub.ics"');
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  res.send(buildUserCalendar(user));
+});
+
+const calendarFeedUrl = (req, token) => `${baseUrl(req)}/api/calendar/${token}/feed.ics`;
+
+// The signed-in user's own feed URL (minted on first request).
+app.get('/api/calendar/url', requireAuth, blockGuests, (req, res) => {
+  let token = req.user.calendar_token;
+  if (!token) {
+    token = crypto.randomBytes(24).toString('hex');
+    db.prepare('UPDATE users SET calendar_token = ? WHERE id = ?').run(token, req.user.id);
+  }
+  res.json({ url: calendarFeedUrl(req, token) });
+});
+
+// Rotate the token — the old feed URL stops working immediately.
+app.post('/api/calendar/rotate', requireAuth, blockGuests, (req, res) => {
+  const token = crypto.randomBytes(24).toString('hex');
+  db.prepare('UPDATE users SET calendar_token = ? WHERE id = ?').run(token, req.user.id);
+  res.json({ url: calendarFeedUrl(req, token) });
 });
 
 // --- Public guest invites (no auth: anyone with the link) ---
