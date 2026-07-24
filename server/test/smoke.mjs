@@ -353,22 +353,18 @@ async function main() {
   const doneStageId = wf.data.stages[2].id; // 'Signed' is a done stage
   await req('PATCH', `/api/tasks/${recId}`, { token: a, body: { stage_id: doneStageId } });
   const recDone = await req('GET', `/api/tasks/${recId}`, { token: a });
+  // Completion is FINAL: the task is done once, its recurrence is switched off,
+  // and NO next occurrence is spawned (a task is one thing, not a chain).
   check('moving into a done stage auto-marks the task Completed', recDone.data.task.status === 'completed');
+  check('completing a recurring task stops its recurrence', recDone.data.task.recurrence === 'none');
   const afterList = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
-  check('completing a recurring task spawns the next occurrence', afterList.data.tasks.length === countBefore + 1);
-  const nextOcc = afterList.data.tasks.find((t) => t.title === 'Weekly compliance' && t.id !== recId);
-  check('next occurrence due one week later', !!nextOcc && nextOcc.due_date === expectNextDue);
-  check('next occurrence keeps recurrence + tags', !!nextOcc && nextOcc.recurrence === 'weekly' && nextOcc.tags.includes('compliance'));
-  const nextDetail = nextOcc ? await req('GET', `/api/tasks/${nextOcc.id}`, { token: a }) : { data: {} };
-  check('next occurrence copies checklist (reset)', nextDetail.data.checklist?.length === 1 && nextDetail.data.checklist[0].is_done === 0);
-  check('next occurrence shifts the reminder forward a week', nextDetail.data.reminders?.some((r) => r.remind_at.startsWith(expectRemindDay)));
+  check('completing a recurring task does NOT spawn a copy', afterList.data.tasks.length === countBefore);
+  check('no second "Weekly compliance" occurrence exists', afterList.data.tasks.filter((t) => t.title === 'Weekly compliance').length === 1);
 
-  // Completing the spawned occurrence too must NOT stack a second "rate it" for
-  // the same recurring series — only one pending rating exists at a time.
-  if (nextOcc) await req('PATCH', `/api/tasks/${nextOcc.id}`, { token: a, body: { stage_id: doneStageId } });
+  // The completion raises exactly one rating request for the assigner/self.
   const myRatings = await req('GET', '/api/tasks/ratings/pending', { token: a });
   const wcRatings = (myRatings.data.ratings || []).filter((r) => r.task_title === 'Weekly compliance');
-  check('a recurring series raises only one pending rating at a time', wcRatings.length === 1);
+  check('completing a task raises exactly one pending rating', wcRatings.length === 1);
 
   // A one-off task moved to done must NOT spawn anything.
   const oneOff = await req('POST', '/api/tasks', { token: a, body: { title: 'One-off', workflow_id: wf.data.id, due_date: '2026-07-10' } });
@@ -381,24 +377,17 @@ async function main() {
   const oneReopen = await req('GET', `/api/tasks/${oneOff.data.id}`, { token: a });
   check('moving out of a done stage reopens to In Progress', oneReopen.data.task.status === 'in_progress');
 
-  // Regression: completing a LONG-OVERDUE recurring task must produce a single
-  // FUTURE occurrence — not another already-overdue clone that has to be marked
-  // done again and again (each spawning a duplicate rating request).
+  // Regression: completing a LONG-OVERDUE recurring task must NOT leave a pile.
+  // Completion is final — one Done card, recurrence switched off, no clones.
   const overdueDue = isoDay(midnight - 7 * DAY); // due a week ago
-  const todayStr = isoDay(midnight);
   const stale = await req('POST', '/api/tasks', {
     token: a, body: { title: 'Stale daily', workflow_id: wf.data.id, due_date: overdueDue, recurrence: 'daily' },
   });
   await req('PATCH', `/api/tasks/${stale.data.id}`, { token: a, body: { stage_id: doneStageId } });
   const staleList = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks;
-  const staleClones = staleList.filter((t) => t.title === 'Stale daily' && t.id !== stale.data.id);
-  check('overdue recurring task spawns exactly one occurrence', staleClones.length === 1);
-  check('the spawned occurrence is in the future (not overdue)', staleClones[0]?.due_date > todayStr);
-  // Completing that fresh future occurrence should NOT create a second open sibling.
-  await req('PATCH', `/api/tasks/${staleClones[0].id}`, { token: a, body: { stage_id: doneStageId } });
-  const openClones = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks
-    .filter((t) => t.title === 'Stale daily' && t.status !== 'completed');
-  check('never two open occurrences of the same series at once', openClones.length <= 1);
+  const staleAll = staleList.filter((t) => t.title === 'Stale daily');
+  check('completing an overdue recurring task leaves exactly one task', staleAll.length === 1);
+  check('and that task stopped recurring', staleAll[0]?.recurrence === 'none' && staleAll[0]?.status === 'completed');
 
   console.log('Admin & roles');
   const memberBlocked = await req('GET', '/api/admin/users', { token: b });
@@ -487,7 +476,9 @@ async function main() {
   const beforeS = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
   await req('PATCH', `/api/tasks/${recS.data.id}`, { token: a, body: { status: 'completed' } });
   const afterS = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks.length;
-  check('completing via status spawns the next occurrence', afterS === beforeS + 1);
+  check('completing via status does NOT spawn a copy', afterS === beforeS);
+  const recSDone = await req('GET', `/api/tasks/${recS.data.id}`, { token: a });
+  check('completing via status stops the recurrence', recSDone.data.task.recurrence === 'none');
 
   console.log('Task archive');
   // A completed task can be archived out of the active board and restored.

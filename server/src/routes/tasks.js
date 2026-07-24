@@ -2,7 +2,6 @@ import { Router } from 'express';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
 import { createNotification } from '../notifications.js';
-import { nextDueDateAfter } from '../reminders.js';
 import { completeDeadlinesForTask } from '../compliance.js';
 import { timeForTask } from './time.js';
 
@@ -151,65 +150,6 @@ function emitChanged(req, taskId) {
   return task;
 }
 
-// When a recurring task is completed, clone it into the first stage with the
-// due date advanced by its repeat rule. Tags, checklist (reset) and reminders
-// (shifted by the same interval) carry over. Returns the new task or null.
-function spawnNextOccurrence(req, task) {
-  // Advance past every missed interval to the first FUTURE due date, so a task
-  // completed long after it was due yields ONE upcoming occurrence — not a
-  // backlog of already-overdue clones (which also triggered a rating request
-  // each). See nextDueDateAfter.
-  const newDue = nextDueDateAfter(task.due_date, task.recurrence);
-  if (!newDue) return null;
-
-  // Never run two live occurrences of the same series at once. If an open
-  // (not completed/cancelled) sibling already exists — e.g. clearing a backlog
-  // of past clones one by one — don't spawn another; collapse to the single
-  // existing next occurrence instead.
-  const openSibling = db.prepare(`
-    SELECT t.id FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id
-    WHERE t.workspace_id = ? AND t.title = ? AND t.recurrence = ?
-      AND t.workflow_id = ? AND IFNULL(t.creator_id, 0) = IFNULL(?, 0)
-      AND t.id <> ? AND t.status NOT IN ('completed', 'cancelled')
-      AND s.is_done = 0 AND t.archived_at IS NULL
-    LIMIT 1
-  `).get(task.workspace_id, task.title, task.recurrence, task.workflow_id, task.creator_id, task.id);
-  if (openSibling) return null;
-
-  const firstStage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(task.workflow_id);
-  if (!firstStage) return null;
-
-  const info = db.prepare(`
-    INSERT INTO tasks (title, description, workflow_id, project_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(task.title, task.description, task.workflow_id, task.project_id, firstStage.id,
-    task.assignee_id, task.creator_id, task.priority, newDue, task.recurrence, task.workspace_id);
-  const newId = info.lastInsertRowid;
-
-  for (const { tag } of db.prepare('SELECT tag FROM task_tags WHERE task_id = ?').all(task.id)) {
-    db.prepare('INSERT OR IGNORE INTO task_tags (task_id, tag) VALUES (?, ?)').run(newId, tag);
-  }
-  const steps = db.prepare('SELECT text, position FROM task_checklist WHERE task_id = ? ORDER BY position, id').all(task.id);
-  const insStep = db.prepare('INSERT INTO task_checklist (task_id, text, position, is_done) VALUES (?, ?, ?, 0)');
-  steps.forEach((s) => insStep.run(newId, s.text, s.position));
-  setAssignees(newId, assigneeIdsFor(task.id));
-  for (const uid of db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task.id).map((r) => r.user_id)) {
-    addWatcher(newId, uid);
-  }
-  // Shift each future reminder forward by the same number of days as the due date moved.
-  const shiftDays = Math.round((new Date(newDue + 'T00:00:00Z') - new Date(task.due_date + 'T00:00:00Z')) / 86400000);
-  for (const rem of db.prepare('SELECT remind_at FROM task_reminders WHERE task_id = ?').all(task.id)) {
-    const at = new Date(rem.remind_at.replace(' ', 'T') + 'Z');
-    if (Number.isNaN(at.getTime())) continue;
-    at.setUTCDate(at.getUTCDate() + shiftDays);
-    db.prepare('INSERT INTO task_reminders (task_id, remind_at, created_by) VALUES (?, ?, ?)')
-      .run(newId, at.toISOString().slice(0, 19).replace('T', ' '), req.user.id);
-  }
-  logActivity(newId, req.user.id, `created automatically (repeats ${task.recurrence}) — due ${newDue}`);
-  emitChanged(req, newId);
-  notifyWatchers(req, db.prepare('SELECT * FROM tasks WHERE id = ?').get(newId), `is up next (repeats ${task.recurrence}, due ${newDue})`, 'task_recurred');
-  return newId;
-}
 
 function loadTask(req, res) {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
@@ -568,6 +508,13 @@ router.patch('/:id', (req, res) => {
   const isDoneNow = now.status === 'completed' || !!now.is_done;
   if (isDoneNow && !now.completed_at) {
     db.prepare(`UPDATE tasks SET completed_at = datetime('now') WHERE id = ?`).run(task.id);
+    // Completing a task is FINAL — it never spawns a copy. If it was marked as
+    // recurring, finishing it stops the recurrence, so the task is done exactly
+    // once (one Done card, one rating) instead of regenerating.
+    if (task.recurrence && task.recurrence !== 'none') {
+      db.prepare("UPDATE tasks SET recurrence = 'none' WHERE id = ?").run(task.id);
+      logActivity(task.id, req.user.id, 'completed — recurrence stopped');
+    }
     // If this task was generated from a compliance deadline, tick the deadline
     // off (and roll a recurring one to its next period).
     completeDeadlinesForTask(task.id, req.user.id);
@@ -592,9 +539,6 @@ router.patch('/:id', (req, res) => {
       createNotification(io, { user_id: id, type: 'task_assigned', actor_id: req.user.id, task_id: task.id, text: `${req.user.name} assigned you "${updated.title}"` });
     }
   }
-  // Completing a recurring task — via a done stage or the Completed status —
-  // generates its next occurrence automatically (only once per request).
-  if (movedToDone || completedNow) spawnNextOccurrence(req, db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id));
   res.json(updated);
 });
 
