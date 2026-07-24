@@ -313,9 +313,23 @@ async function main() {
   check('task survives template deletion', afterTmplDel.status === 200 && afterTmplDel.data.task.checklist_total === 5);
 
   console.log('Recurrence & reminders');
+  // Dates are relative to today so the recurrence math is deterministic no
+  // matter when the suite runs. The task is due in the FUTURE, so completing it
+  // advances by exactly one interval (a long-overdue task instead jumps past
+  // today to a single future occurrence — see nextDueDateAfter).
+  const DAY = 86400000;
+  const midnight = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+  const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const dueMs = midnight + 3 * DAY;                 // due 3 days out
+  const dueDate = isoDay(dueMs);
+  const origRemind = new Date(dueMs - DAY + 9 * 3600000).toISOString();   // due-1, 09:00Z (survives, carries over)
+  const earlyRemind = new Date(dueMs - 2 * DAY + 9 * 3600000).toISOString(); // due-2 (added then deleted)
+  const expectNextDue = isoDay(dueMs + 7 * DAY);    // weekly → +7 from the due date
+  const expectRemindDay = isoDay(dueMs + 6 * DAY);  // reminder shifts by the same 7 days → due+6
+
   const recTask = await req('POST', '/api/tasks', {
     token: a,
-    body: { title: 'Weekly compliance', workflow_id: wf.data.id, priority: 'medium', due_date: '2026-07-10', recurrence: 'weekly', tags: ['compliance'], checklist: ['Gather docs'], reminders: ['2026-07-09T09:00:00.000Z'] },
+    body: { title: 'Weekly compliance', workflow_id: wf.data.id, priority: 'medium', due_date: dueDate, recurrence: 'weekly', tags: ['compliance'], checklist: ['Gather docs'], reminders: [origRemind] },
   });
   check('task created with recurrence', recTask.status === 201 && recTask.data.recurrence === 'weekly');
   const recId = recTask.data.id;
@@ -326,10 +340,11 @@ async function main() {
   check('reminder created with the task', recDetail.data.reminders.length === 1);
   check('unsent reminder count surfaced on task', recDetail.data.task.reminder_count === 1);
 
-  const remAdd = await req('POST', `/api/tasks/${recId}/reminders`, { token: a, body: { remind_at: '2026-07-08T09:00:00.000Z' } });
+  const remAdd = await req('POST', `/api/tasks/${recId}/reminders`, { token: a, body: { remind_at: earlyRemind } });
   check('reminder added via endpoint', Array.isArray(remAdd.data) && remAdd.data.length === 2);
   const badRem = await req('POST', `/api/tasks/${recId}/reminders`, { token: a, body: { remind_at: 'not-a-date' } });
   check('invalid reminder time rejected', badRem.status === 400);
+  // remAdd.data is ascending by time, so [0] is the earlier (added) reminder — delete it, the task's original survives.
   const remDel = await req('DELETE', `/api/tasks/${recId}/reminders/${remAdd.data[0].id}`, { token: a });
   check('reminder removed', remDel.data.length === 1);
 
@@ -342,11 +357,11 @@ async function main() {
   const afterList = await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a });
   check('completing a recurring task spawns the next occurrence', afterList.data.tasks.length === countBefore + 1);
   const nextOcc = afterList.data.tasks.find((t) => t.title === 'Weekly compliance' && t.id !== recId);
-  check('next occurrence due one week later', !!nextOcc && nextOcc.due_date === '2026-07-17');
+  check('next occurrence due one week later', !!nextOcc && nextOcc.due_date === expectNextDue);
   check('next occurrence keeps recurrence + tags', !!nextOcc && nextOcc.recurrence === 'weekly' && nextOcc.tags.includes('compliance'));
   const nextDetail = nextOcc ? await req('GET', `/api/tasks/${nextOcc.id}`, { token: a }) : { data: {} };
   check('next occurrence copies checklist (reset)', nextDetail.data.checklist?.length === 1 && nextDetail.data.checklist[0].is_done === 0);
-  check('next occurrence shifts the reminder forward a week', nextDetail.data.reminders?.some((r) => r.remind_at.startsWith('2026-07-16')));
+  check('next occurrence shifts the reminder forward a week', nextDetail.data.reminders?.some((r) => r.remind_at.startsWith(expectRemindDay)));
 
   // A one-off task moved to done must NOT spawn anything.
   const oneOff = await req('POST', '/api/tasks', { token: a, body: { title: 'One-off', workflow_id: wf.data.id, due_date: '2026-07-10' } });
@@ -358,6 +373,25 @@ async function main() {
   await req('PATCH', `/api/tasks/${oneOff.data.id}`, { token: a, body: { stage_id: wf.data.stages[0].id } });
   const oneReopen = await req('GET', `/api/tasks/${oneOff.data.id}`, { token: a });
   check('moving out of a done stage reopens to In Progress', oneReopen.data.task.status === 'in_progress');
+
+  // Regression: completing a LONG-OVERDUE recurring task must produce a single
+  // FUTURE occurrence — not another already-overdue clone that has to be marked
+  // done again and again (each spawning a duplicate rating request).
+  const overdueDue = isoDay(midnight - 7 * DAY); // due a week ago
+  const todayStr = isoDay(midnight);
+  const stale = await req('POST', '/api/tasks', {
+    token: a, body: { title: 'Stale daily', workflow_id: wf.data.id, due_date: overdueDue, recurrence: 'daily' },
+  });
+  await req('PATCH', `/api/tasks/${stale.data.id}`, { token: a, body: { stage_id: doneStageId } });
+  const staleList = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks;
+  const staleClones = staleList.filter((t) => t.title === 'Stale daily' && t.id !== stale.data.id);
+  check('overdue recurring task spawns exactly one occurrence', staleClones.length === 1);
+  check('the spawned occurrence is in the future (not overdue)', staleClones[0]?.due_date > todayStr);
+  // Completing that fresh future occurrence should NOT create a second open sibling.
+  await req('PATCH', `/api/tasks/${staleClones[0].id}`, { token: a, body: { stage_id: doneStageId } });
+  const openClones = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks
+    .filter((t) => t.title === 'Stale daily' && t.status !== 'completed');
+  check('never two open occurrences of the same series at once', openClones.length <= 1);
 
   console.log('Admin & roles');
   const memberBlocked = await req('GET', '/api/admin/users', { token: b });

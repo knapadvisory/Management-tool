@@ -20,6 +20,26 @@ export function nextDueDate(dateStr, recurrence) {
   return d.toISOString().slice(0, 10);
 }
 
+// The next occurrence strictly AFTER `today` (YYYY-MM-DD), skipping any missed
+// past occurrences. Completing a long-overdue recurring task then produces a
+// single future occurrence instead of a backlog of already-overdue clones
+// (one per missed interval). Falls back to a plain single step if `today` is
+// omitted. `today` defaults to the current UTC date — the same boundary the
+// rest of the app uses to decide "overdue".
+export function nextDueDateAfter(dateStr, recurrence, today = new Date().toISOString().slice(0, 10)) {
+  let next = nextDueDate(dateStr, recurrence);
+  if (!next) return null;
+  // Roll forward while the candidate is today-or-earlier, so the result is a
+  // genuinely future date that won't immediately read as overdue.
+  let guard = 0;
+  while (next <= today && guard++ < 10000) {
+    const step = nextDueDate(next, recurrence);
+    if (!step || step === next) break;
+    next = step;
+  }
+  return next;
+}
+
 // Everyone who should hear about a task: its assignee plus all watchers.
 function taskAudience(taskId, assigneeId) {
   const ids = new Set(db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(taskId).map((r) => r.user_id));

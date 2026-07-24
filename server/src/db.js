@@ -606,6 +606,82 @@ db.prepare(`
     AND (status = 'completed' OR stage_id IN (SELECT id FROM workflow_stages WHERE is_done = 1))
 `).run();
 
+// Repair damage from the old recurrence bug: completing an overdue recurring
+// task used to spawn a chain of already-overdue clones — each a separate task
+// that raised its own rating request. This collapses the artifacts (redundant
+// open copies, and rapid same-day re-completions of one series) and
+// de-duplicates the pending rating requests they created. Deliberately
+// conservative: it keeps one open occurrence and one completion PER DAY per
+// series, so genuine day-by-day history is untouched. Archiving is reversible;
+// given ratings (status 'done') are never deleted. Idempotent — safe to re-run.
+export function repairRecurringDupes() {
+  let archived = 0;
+  const series = db.prepare(`
+    SELECT workspace_id, title, workflow_id, recurrence, IFNULL(creator_id, 0) AS creator_id
+    FROM tasks
+    WHERE recurrence IN ('daily','weekly','monthly','yearly') AND archived_at IS NULL
+    GROUP BY workspace_id, title, workflow_id, recurrence, IFNULL(creator_id, 0)
+    HAVING COUNT(*) > 1
+  `).all();
+
+  for (const g of series) {
+    const rows = db.prepare(`
+      SELECT t.id, t.due_date, t.status, s.is_done,
+             substr(IFNULL(t.completed_at, t.updated_at), 1, 10) AS done_day
+      FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id
+      WHERE t.workspace_id = ? AND t.title = ? AND t.workflow_id = ? AND t.recurrence = ?
+        AND IFNULL(t.creator_id, 0) = ? AND t.archived_at IS NULL
+    `).all(g.workspace_id, g.title, g.workflow_id, g.recurrence, g.creator_id);
+
+    const isDone = (r) => r.status === 'completed' || r.is_done;
+    const keep = new Set();
+
+    // Keep the single furthest-out OPEN occurrence.
+    const open = rows.filter((r) => !isDone(r) && r.status !== 'cancelled');
+    if (open.length) keep.add(open.slice().sort((a, b) => (b.due_date || '').localeCompare(a.due_date || ''))[0].id);
+
+    // Keep the newest completion PER CALENDAR DAY (real daily history stays;
+    // only the bug's rapid same-day re-completions collapse).
+    const done = rows.filter(isDone);
+    const byDay = new Map();
+    for (const r of done) if (!byDay.has(r.done_day) || r.id > byDay.get(r.done_day)) byDay.set(r.done_day, r.id);
+    for (const id of byDay.values()) keep.add(id);
+
+    for (const r of rows) {
+      if (!keep.has(r.id)) {
+        db.prepare(`UPDATE tasks SET archived_at = datetime('now') WHERE id = ?`).run(r.id);
+        archived++;
+      }
+    }
+  }
+
+  // Collapse duplicate pending rating requests to one per (rater, ratee, task
+  // title, role). Given ratings (status 'done') are never touched.
+  const dropped = db.prepare(`
+    DELETE FROM task_ratings
+    WHERE status = 'pending' AND id NOT IN (
+      SELECT MAX(r.id) FROM task_ratings r
+      JOIN tasks t ON t.id = r.task_id
+      WHERE r.status = 'pending'
+      GROUP BY r.workspace_id, r.rater_id, r.ratee_id, t.title, r.role
+    )
+  `).run().changes;
+
+  return { archived, dropped };
+}
+
+// Run the repair exactly once against an existing database (guarded by a flag).
+if (!db.prepare(`SELECT 1 FROM app_settings WHERE key = 'repair_recurring_dupes_v1'`).get()) {
+  db.transaction(() => {
+    const { archived, dropped } = repairRecurringDupes();
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES ('repair_recurring_dupes_v1', ?)`)
+      .run(new Date().toISOString());
+    if (archived || dropped) {
+      console.log(`[repair] recurring dupes: archived ${archived} duplicate clone(s), removed ${dropped} duplicate rating request(s)`);
+    }
+  })();
+}
+
 // Give a freshly-created workspace its starter content: a #general channel and
 // a default task workflow. Called when a new workspace is provisioned.
 export function seedWorkspace(workspaceId) {

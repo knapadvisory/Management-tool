@@ -11,7 +11,7 @@ process.env.DATA_DIR = mkdtempSync(path.join(tmpdir(), 'teamhub-rem-'));
 process.env.JWT_SECRET = 'reminders-test';
 
 const { default: db } = await import('../src/db.js');
-const { nextDueDate, processDueReminders } = await import('../src/reminders.js');
+const { nextDueDate, nextDueDateAfter, processDueReminders } = await import('../src/reminders.js');
 
 let failures = 0;
 const check = (name, ok) => { console.log(`  ${ok ? '✓' : '✗'} ${name}`); if (!ok) failures++; };
@@ -24,6 +24,22 @@ check('yearly advance', nextDueDate('2026-07-10', 'yearly') === '2027-07-10');
 check('month rollover', nextDueDate('2026-12-20', 'monthly') === '2027-01-20');
 check('none returns null', nextDueDate('2026-07-10', 'none') === null);
 check('missing date returns null', nextDueDate(null, 'weekly') === null);
+
+// --- nextDueDateAfter: completing a long-overdue recurring task must jump to
+// the next FUTURE occurrence, not crawl forward one interval at a time (which
+// produced a backlog of overdue clones + duplicate rating requests). ---
+check('daily 7 days overdue → single future date',
+  nextDueDateAfter('2026-07-17', 'daily', '2026-07-24') === '2026-07-25');
+check('daily due today → tomorrow',
+  nextDueDateAfter('2026-07-24', 'daily', '2026-07-24') === '2026-07-25');
+check('weekly keeps its cadence, skips missed weeks',
+  nextDueDateAfter('2026-07-10', 'weekly', '2026-07-24') === '2026-07-31');
+check('monthly long overdue lands in the future',
+  nextDueDateAfter('2026-01-15', 'monthly', '2026-07-24') === '2026-08-15');
+check('future-dated task still advances one interval',
+  nextDueDateAfter('2026-07-30', 'daily', '2026-07-24') === '2026-07-31');
+check('non-recurring returns null',
+  nextDueDateAfter('2026-07-10', 'none', '2026-07-24') === null);
 
 // --- processDueReminders ---
 // Seed the minimum graph: a user, a workflow+stage, a task, and reminders.
