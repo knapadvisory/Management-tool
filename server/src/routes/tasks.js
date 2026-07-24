@@ -2,7 +2,7 @@ import { Router } from 'express';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
 import { createNotification } from '../notifications.js';
-import { nextDueDate } from '../reminders.js';
+import { nextDueDateAfter } from '../reminders.js';
 import { completeDeadlinesForTask } from '../compliance.js';
 import { timeForTask } from './time.js';
 
@@ -155,8 +155,27 @@ function emitChanged(req, taskId) {
 // due date advanced by its repeat rule. Tags, checklist (reset) and reminders
 // (shifted by the same interval) carry over. Returns the new task or null.
 function spawnNextOccurrence(req, task) {
-  const newDue = nextDueDate(task.due_date, task.recurrence);
+  // Advance past every missed interval to the first FUTURE due date, so a task
+  // completed long after it was due yields ONE upcoming occurrence — not a
+  // backlog of already-overdue clones (which also triggered a rating request
+  // each). See nextDueDateAfter.
+  const newDue = nextDueDateAfter(task.due_date, task.recurrence);
   if (!newDue) return null;
+
+  // Never run two live occurrences of the same series at once. If an open
+  // (not completed/cancelled) sibling already exists — e.g. clearing a backlog
+  // of past clones one by one — don't spawn another; collapse to the single
+  // existing next occurrence instead.
+  const openSibling = db.prepare(`
+    SELECT t.id FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id
+    WHERE t.workspace_id = ? AND t.title = ? AND t.recurrence = ?
+      AND t.workflow_id = ? AND IFNULL(t.creator_id, 0) = IFNULL(?, 0)
+      AND t.id <> ? AND t.status NOT IN ('completed', 'cancelled')
+      AND s.is_done = 0 AND t.archived_at IS NULL
+    LIMIT 1
+  `).get(task.workspace_id, task.title, task.recurrence, task.workflow_id, task.creator_id, task.id);
+  if (openSibling) return null;
+
   const firstStage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(task.workflow_id);
   if (!firstStage) return null;
 
