@@ -234,6 +234,13 @@ const MessageComposer = forwardRef(function MessageComposer({ channel, members, 
       return;
     }
     if (e.key === 'Enter') {
+      // On touch devices (phone/tablet) the Return key always inserts a new
+      // line, like WhatsApp — you send with the send button. Enter-to-send only
+      // applies to a physical keyboard, where Shift+Enter gives a newline.
+      const coarsePointer = typeof window !== 'undefined' && window.matchMedia
+        && window.matchMedia('(pointer: coarse)').matches;
+      if (coarsePointer) return; // let the editor insert a newline
+
       // Enter-to-send (default): Enter sends, Shift+Enter = newline.
       // Otherwise: Enter = newline, Ctrl/Cmd+Enter sends.
       if (getPrefs().enterToSend) {
