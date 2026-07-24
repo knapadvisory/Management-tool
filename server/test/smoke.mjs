@@ -107,6 +107,19 @@ async function main() {
   const ssoStart = await fetch(`${BASE}/api/auth/oauth/google/start`, { redirect: 'manual' });
   check('oauth start 404s when the provider is not configured', ssoStart.status === 404);
 
+  // Subscribable calendar feed.
+  const calUrl = await req('GET', '/api/calendar/url', { token: a });
+  check('calendar url endpoint returns a feed link', calUrl.status === 200 && /\/api\/calendar\/[a-f0-9]+\/feed\.ics$/.test(calUrl.data.url || ''));
+  const feed = await fetch(calUrl.data.url);
+  const feedBody = await feed.text();
+  check('the feed serves a valid iCalendar', feed.ok && (feed.headers.get('content-type') || '').includes('text/calendar') && feedBody.startsWith('BEGIN:VCALENDAR'));
+  const rotated = await req('POST', '/api/calendar/rotate', { token: a });
+  check('rotating the token issues a new link', rotated.status === 200 && rotated.data.url && rotated.data.url !== calUrl.data.url);
+  const oldFeed = await fetch(calUrl.data.url);
+  check('the old feed link stops working after rotation', oldFeed.status === 404);
+  const bogusFeed = await fetch(`${BASE}/api/calendar/deadbeef/feed.ics`);
+  check('an unknown calendar token 404s', bogusFeed.status === 404);
+
   console.log('Self-service profile');
   const cfg = await req('GET', '/api/config');
   check('config exposes the avatar palette', Array.isArray(cfg.data.avatar_colors) && cfg.data.avatar_colors.length > 0);
