@@ -200,6 +200,29 @@ export function userByEmail(email) {
   return db.prepare('SELECT * FROM users WHERE email = ?').get((email || '').trim().toLowerCase()) || null;
 }
 
+// Sign in an EXISTING user by their (provider-verified) email — for SSO. Applies
+// the same gating as password login, minus the password check. Never creates a
+// user: a verified email with no account is rejected, not signed up.
+export function ssoLogin(email) {
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get((email || '').trim().toLowerCase());
+  if (!user) {
+    throw Object.assign(new Error('No TeamHub account uses that email. Ask your workspace admin to add you first.'), { status: 403 });
+  }
+  if (user.deleted) {
+    throw Object.assign(new Error('This account no longer exists. Contact your administrator.'), { status: 403 });
+  }
+  if (!user.approved) {
+    throw Object.assign(new Error('Your account is still awaiting approval from your workspace admin.'), { status: 403 });
+  }
+  if (!user.active) {
+    throw Object.assign(new Error('This account has been deactivated. Contact your administrator.'), { status: 403 });
+  }
+  if (user.role === 'guest') {
+    throw Object.assign(new Error('Guest accounts sign in with their invite link, not single sign-on.'), { status: 403 });
+  }
+  return user;
+}
+
 export function login({ email, password }) {
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get((email || '').trim().toLowerCase());
   if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {

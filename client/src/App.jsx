@@ -53,6 +53,21 @@ const resetToken = () => {
   return m ? m[1] : null;
 };
 
+// The SSO callback bounces back to /?oauth_token=… (or ?oauth_error=…). Consume
+// it once, at module load, so the token is in place before <App> first renders.
+(() => {
+  try {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('oauth_token')) {
+      setToken(p.get('oauth_token'));
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (p.get('oauth_error')) {
+      sessionStorage.setItem('oauth_error', p.get('oauth_error'));
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  } catch { /* non-browser / storage disabled */ }
+})();
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [workspace, setWorkspace] = useState(null);

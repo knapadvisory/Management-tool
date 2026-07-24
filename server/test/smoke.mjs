@@ -99,6 +99,14 @@ async function main() {
   });
   check('wrong password rejected', badLogin.status === 401);
 
+  // Single sign-on: with no provider secrets configured (as in tests), the
+  // providers endpoint reports everything off and the start route 404s.
+  const ssoProviders = await req('GET', '/api/auth/oauth/providers');
+  check('oauth providers endpoint lists google + microsoft', ssoProviders.status === 200 && 'google' in ssoProviders.data && 'microsoft' in ssoProviders.data);
+  check('oauth providers are off when unconfigured', ssoProviders.data.google === false && ssoProviders.data.microsoft === false);
+  const ssoStart = await fetch(`${BASE}/api/auth/oauth/google/start`, { redirect: 'manual' });
+  check('oauth start 404s when the provider is not configured', ssoStart.status === 404);
+
   console.log('Self-service profile');
   const cfg = await req('GET', '/api/config');
   check('config exposes the avatar palette', Array.isArray(cfg.data.avatar_colors) && cfg.data.avatar_colors.length > 0);

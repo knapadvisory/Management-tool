@@ -7,7 +7,8 @@ import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 
 import db from './db.js';
-import { register, login, signToken, requireAuth, requireAdmin, blockGuests, publicUser, workspaceSignupCodeRequired, allowedSignupDomains, createWorkspaceAdmin, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, createPasswordReset, findPasswordReset, applyPasswordReset, userByEmail, AVATAR_COLORS } from './auth.js';
+import { register, login, ssoLogin, signToken, requireAuth, requireAdmin, blockGuests, publicUser, workspaceSignupCodeRequired, allowedSignupDomains, createWorkspaceAdmin, updateOwnProfile, changeOwnPassword, createGuest, findReturningGuest, createPasswordReset, findPasswordReset, applyPasswordReset, userByEmail, AVATAR_COLORS } from './auth.js';
+import { enabledProviders, providerConfigured, authUrl as oauthAuthUrl, signState, verifyState, exchangeCodeForIdentity } from './oauth.js';
 import { emailEnabled, sendMail, layout, button } from './email.js';
 import { pushEnabled, getVapidPublicKey } from './push.js';
 import { createWorkspace, workspaceBySlug, workspaceById, publicWorkspace, deleteWorkspace } from './workspaces.js';
@@ -258,6 +259,40 @@ app.post('/api/auth/login', (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user), workspace: publicWorkspace(workspaceById(req.user.workspace_id)) });
+});
+
+// --- Google / Microsoft single sign-on (OpenID Connect) ---
+// Which SSO buttons the login page should show (only configured providers).
+app.get('/api/auth/oauth/providers', (req, res) => res.json(enabledProviders()));
+
+// Kick off sign-in: redirect the browser to the provider's consent screen.
+app.get('/api/auth/oauth/:provider/start', (req, res) => {
+  const { provider } = req.params;
+  if (!providerConfigured(provider)) return res.status(404).json({ error: 'That sign-in method is not configured.' });
+  const redirectUri = `${baseUrl(req)}/api/auth/oauth/${provider}/callback`;
+  res.redirect(oauthAuthUrl(provider, redirectUri, signState(provider)));
+});
+
+// Provider redirects back here with a code; we verify it, match the email to an
+// existing user, and bounce back to the app with a one-time token in the URL.
+app.get('/api/auth/oauth/:provider/callback', async (req, res) => {
+  const { provider } = req.params;
+  const returnTo = (params) => res.redirect(`${baseUrl(req)}/?${new URLSearchParams(params).toString()}`);
+  try {
+    if (!providerConfigured(provider)) throw new Error('That sign-in method is not configured.');
+    if (!req.query.code || !verifyState(req.query.state, provider)) {
+      throw new Error('Sign-in was cancelled or the link expired. Please try again.');
+    }
+    const redirectUri = `${baseUrl(req)}/api/auth/oauth/${provider}/callback`;
+    const identity = await exchangeCodeForIdentity(provider, String(req.query.code), redirectUri);
+    if (!identity.email || !identity.emailVerified) {
+      throw new Error('Your email address could not be verified with the provider.');
+    }
+    const user = ssoLogin(identity.email);
+    return returnTo({ oauth_token: signToken(user) });
+  } catch (e) {
+    return returnTo({ oauth_error: e.message || 'Single sign-on failed. Please try again.' });
+  }
 });
 
 // --- Public guest invites (no auth: anyone with the link) ---

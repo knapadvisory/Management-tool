@@ -2459,3 +2459,20 @@ button.c360-stat:hover { border-color: var(--accent); }
 .rep-type.rep-filing { background: #f3e8ff; color: #7e22ce; }
 .rep-overdue-num { color: #dc2626; font-weight: 600; }
 .an-empty { text-align: center; color: var(--muted, #6b7280); padding: 24px; }
+
+/* ---- Google / Microsoft SSO buttons on the login card ---- */
+.sso-block { display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px; }
+.sso-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 11px 14px; border: 1px solid var(--border, #d5d7de); border-radius: 9px;
+  background: #fff; color: #1f2430; font-size: 14px; font-weight: 600; text-decoration: none;
+  transition: background .12s, box-shadow .12s;
+}
+.sso-btn:hover { background: #f7f8fa; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.sso-or { display: flex; align-items: center; text-align: center; color: var(--muted, #8a8f98); font-size: 12px; margin: 4px 0 2px; }
+.sso-or::before, .sso-or::after { content: ''; flex: 1; height: 1px; background: var(--border, #e5e7eb); }
+.sso-or span { padding: 0 12px; }
+@media (prefers-color-scheme: dark) {
+  .sso-btn { background: #20222b; color: #e6e7ea; border-color: #363a45; }
+  .sso-btn:hover { background: #272a34; }
+}
