@@ -401,6 +401,21 @@ async function main() {
   check('bulk import flags a row that has data but no title', Array.isArray(imp.errors) && imp.errors.length === 1);
   const imported = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks;
   check('an imported task landed on the board with its tag', imported.some((t) => t.title === 'Import CSV task' && (t.tags || []).includes('imported')));
+  check('bulk import returns the Drive copy id', Number.isInteger(imp.drive_file_id));
+  const driveList = (await req('GET', '/api/drive', { token: a })).data;
+  check('the uploaded import sheet is saved into the shared Drive',
+    (driveList.files || []).some((f) => /^Task import /.test(f.original_name)));
+
+  console.log('Analytics reports');
+  for (const rtype of ['compliance', 'productivity', 'aging']) {
+    const rep = await req('GET', `/api/analytics/reports/${rtype}`, { token: a });
+    check(`${rtype} report returns columns and rows`,
+      rep.status === 200 && Array.isArray(rep.data.columns) && Array.isArray(rep.data.rows) && !!rep.data.title);
+  }
+  const badRep = await req('GET', '/api/analytics/reports/nonsense', { token: a });
+  check('an unknown report type is rejected', badRep.status === 400);
+  const repExport = await fetch(`${BASE}/api/analytics/reports/aging/export`, { headers: { Authorization: `Bearer ${a}` } });
+  check('a report exports as an .xlsx', repExport.ok && (repExport.headers.get('content-type') || '').includes('spreadsheet'));
 
   console.log('Admin & roles');
   const memberBlocked = await req('GET', '/api/admin/users', { token: b });

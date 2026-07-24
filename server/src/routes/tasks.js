@@ -7,6 +7,7 @@ import { publicUser } from '../auth.js';
 import { createNotification } from '../notifications.js';
 import { completeDeadlinesForTask } from '../compliance.js';
 import { timeForTask } from './time.js';
+import { storeBufferInDrive } from './drive.js';
 
 const router = Router();
 const uploadImport = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -14,16 +15,17 @@ const uploadImport = multer({ storage: multer.memoryStorage(), limits: { fileSiz
 // Columns of the bulk-import spreadsheet, in order. `key` is how we reference the
 // value internally; `header` is what the user sees in the template.
 const IMPORT_COLUMNS = [
-  { key: 'title', header: 'Title *', width: 40 },
-  { key: 'description', header: 'Description', width: 40 },
-  { key: 'priority', header: 'Priority (low/medium/high/urgent)', width: 26 },
-  { key: 'due_date', header: 'Due date (YYYY-MM-DD)', width: 20 },
-  { key: 'assignee', header: 'Assignee (name or email)', width: 26 },
-  { key: 'board', header: 'Board', width: 18 },
-  { key: 'project', header: 'Project', width: 20 },
-  { key: 'client', header: 'Client', width: 20 },
-  { key: 'tags', header: 'Tags (comma-separated)', width: 24 },
-  { key: 'checklist', header: 'Checklist (semicolon-separated)', width: 34 },
+  { key: 'title', header: 'Title', width: 42, required: true, note: 'Required. The task name — e.g. "File GSTR-3B for ABC Pvt Ltd".' },
+  { key: 'description', header: 'Description', width: 40, note: 'Optional. Any extra detail or instructions for the task.' },
+  { key: 'priority', header: 'Priority', width: 14, note: 'One of: low, medium, high, urgent. Leave blank for medium. (Pick from the dropdown.)' },
+  { key: 'due_date', header: 'Due Date', width: 16, note: 'Format YYYY-MM-DD, e.g. 2026-08-20. Leave blank for no due date.' },
+  { key: 'recurrence', header: 'Recurrence', width: 14, note: 'One of: none, daily, weekly, monthly, yearly. Blank = none. (Pick from the dropdown.)' },
+  { key: 'assignee', header: 'Assignee', width: 24, note: "A teammate's name or email — see the People list on the Reference sheet. Blank = unassigned." },
+  { key: 'board', header: 'Board', width: 18, note: 'The task board to add to — see the Boards list on the Reference sheet. Blank = the first board.' },
+  { key: 'project', header: 'Project', width: 20, note: 'Optional. Must match a Project name on the Reference sheet.' },
+  { key: 'client', header: 'Client', width: 22, note: 'Optional. Must match a Client name on the Reference sheet.' },
+  { key: 'tags', header: 'Tags', width: 24, note: 'Optional. Comma-separated, e.g. gst, monthly.' },
+  { key: 'checklist', header: 'Checklist', width: 36, note: 'Optional. Semicolon-separated steps, e.g. Collect data; Reconcile; File return.' },
 ];
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 const RECURRENCES = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
@@ -336,51 +338,112 @@ function headerToKey(header) {
 // people, projects and clients they can name.
 router.get('/import/template', async (req, res) => {
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Tasks');
-  ws.columns = IMPORT_COLUMNS.map((c) => ({ header: c.header, key: c.key, width: c.width }));
+  wb.creator = 'TeamHub';
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet('Tasks', {
+    views: [{ state: 'frozen', ySplit: 1 }],   // keep the header visible while scrolling
+  });
+  ws.columns = IMPORT_COLUMNS.map((c) => ({ key: c.key, width: c.width }));
+
+  // Styled header row with a hover note explaining each column.
   const head = ws.getRow(1);
-  head.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  IMPORT_COLUMNS.forEach((c, i) => {
+    const cell = head.getCell(i + 1);
+    cell.value = c.required ? `${c.header} *` : c.header;
+    cell.note = { texts: [{ text: c.note }], margins: { insetmode: 'auto' } };
+  });
+  head.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
   head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
-  head.alignment = { vertical: 'middle' };
-  head.height = 22;
+  head.alignment = { vertical: 'middle', horizontal: 'left' };
+  head.height = 26;
+  head.border = { bottom: { style: 'thin', color: { argb: 'FF4338CA' } } };
 
-  ws.addRow({
-    title: 'File GSTR-3B for ABC Pvt Ltd', description: 'Monthly GST return', priority: 'high',
-    due_date: '2026-08-20', assignee: 'Anuj', board: 'Default', project: '', client: 'ABC Pvt Ltd',
-    tags: 'gst, monthly', checklist: 'Collect data; Reconcile; File return',
-  }).font = { italic: true, color: { argb: 'FF9AA3A0' } };
+  // A couple of greyed-out example rows so the format is obvious. Users can
+  // overwrite or delete these — the import ignores fully blank rows, but these
+  // do have a Title, so tell people to clear them before uploading.
+  const examples = [
+    { title: 'File GSTR-3B for ABC Pvt Ltd', description: 'Monthly GST return', priority: 'high',
+      due_date: '2026-08-20', recurrence: 'monthly', assignee: 'Anuj', board: 'Default', project: '',
+      client: 'ABC Pvt Ltd', tags: 'gst, monthly', checklist: 'Collect data; Reconcile; File return' },
+    { title: 'TDS Q1 working — Eclat', description: '', priority: 'medium',
+      due_date: '2026-07-31', recurrence: 'none', assignee: '', board: 'Default', project: '',
+      client: '', tags: 'tds', checklist: '' },
+  ];
+  examples.forEach((ex) => {
+    const row = ws.addRow(ex);
+    row.font = { italic: true, color: { argb: 'FF9AA3A0' } };
+  });
+  // A visible hint in the first example's Title cell.
+  ws.getCell('A2').note = { texts: [{ text: 'These two rows are examples — clear them (or type over them) before you upload.' }] };
 
-  // Priority dropdown on the data rows.
-  for (let r = 2; r <= 500; r++) {
-    ws.getCell(`C${r}`).dataValidation = {
+  // Dropdowns for Priority and Recurrence on all data rows.
+  const priorityCol = IMPORT_COLUMNS.findIndex((c) => c.key === 'priority') + 1;
+  const recurrenceCol = IMPORT_COLUMNS.findIndex((c) => c.key === 'recurrence') + 1;
+  const colLetter = (n) => ws.getColumn(n).letter;
+  for (let r = 2; r <= 1000; r++) {
+    ws.getCell(`${colLetter(priorityCol)}${r}`).dataValidation = {
       type: 'list', allowBlank: true, formulae: ['"low,medium,high,urgent"'],
     };
+    ws.getCell(`${colLetter(recurrenceCol)}${r}`).dataValidation = {
+      type: 'list', allowBlank: true, formulae: ['"none,daily,weekly,monthly,yearly"'],
+    };
   }
+  // Filter dropdowns across the header.
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: IMPORT_COLUMNS.length } };
 
-  // Reference sheet: what the name columns accept.
+  // ---- Reference sheet: instructions + the exact names each column accepts ----
   const ref = wb.addWorksheet('Reference');
-  ref.columns = [{ width: 28 }, { width: 60 }];
+  ref.columns = [{ width: 22 }, { width: 90 }];
+
   const boards = db.prepare('SELECT name FROM workflows WHERE workspace_id = ? ORDER BY id').all(req.workspaceId).map((w) => w.name);
   const people = db.prepare('SELECT name, email FROM users WHERE workspace_id = ? AND active = 1 ORDER BY name').all(req.workspaceId);
   const projects = db.prepare('SELECT name FROM projects WHERE workspace_id = ? ORDER BY name').all(req.workspaceId).map((p) => p.name);
   const clients = db.prepare('SELECT name FROM clients WHERE workspace_id = ? ORDER BY name').all(req.workspaceId).map((c) => c.name);
-  const rows = [
-    ['How to use', 'Fill one task per row on the "Tasks" sheet, then upload this file. Only Title is required.'],
-    ['Title', 'Required. The task name.'],
-    ['Priority', 'One of: low, medium, high, urgent. Blank = medium.'],
-    ['Due date', 'Format YYYY-MM-DD (e.g. 2026-08-20). Leave blank for no due date.'],
-    ['Assignee', 'A teammate’s name or email (see below). Blank = unassigned.'],
-    ['Board', 'The task board to add to. Blank = ' + (boards[0] || 'the default board') + '.'],
-    ['Tags', 'Comma-separated, e.g. gst, monthly.'],
-    ['Checklist', 'Semicolon-separated steps, e.g. Collect data; Reconcile; File.'],
-    ['', ''],
-    ['Boards', boards.join(', ') || '(none)'],
-    ['People', people.map((p) => `${p.name} (${p.email})`).join(', ') || '(none)'],
-    ['Projects', projects.join(', ') || '(none)'],
-    ['Clients', clients.join(', ') || '(none)'],
+
+  const title = ref.addRow(['How to use this template']);
+  title.font = { bold: true, size: 14, color: { argb: 'FF4F46E5' } };
+  ref.addRow(['', '']);
+  const steps = [
+    '1.  Go to the "Tasks" sheet and fill in one task per row.',
+    '2.  Only Title is required — every other column is optional.',
+    '3.  Delete the two grey example rows before you upload.',
+    '4.  Save the file, then use "Import tasks" in TeamHub and choose it.',
+    '5.  Any row with a problem is reported back to you by row number — nothing fails silently.',
   ];
-  rows.forEach((r) => ref.addRow(r));
-  ref.getColumn(1).font = { bold: true };
+  steps.forEach((s) => { ref.addRow(['', s]).getCell(2).alignment = { wrapText: true }; });
+  ref.addRow(['', '']);
+
+  const sectionHead = (label) => {
+    const row = ref.addRow([label, '']);
+    row.getCell(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF6366F1' } };
+    return row;
+  };
+  const fieldRows = [
+    ['Column', 'What to enter'],
+    ...IMPORT_COLUMNS.map((c) => [c.required ? `${c.header} *` : c.header, c.note]),
+  ];
+  sectionHead('Columns');
+  fieldRows.forEach((r, i) => {
+    const row = ref.addRow(r);
+    row.getCell(1).font = { bold: i === 0 };
+    row.getCell(2).alignment = { wrapText: true };
+  });
+  ref.addRow(['', '']);
+
+  sectionHead('Names you can use');
+  const nameRows = [
+    ['Boards', boards.join('  ·  ') || '(none yet)'],
+    ['People', people.map((p) => `${p.name} (${p.email})`).join('  ·  ') || '(none yet)'],
+    ['Projects', projects.join('  ·  ') || '(none yet)'],
+    ['Clients', clients.join('  ·  ') || '(none yet)'],
+  ];
+  nameRows.forEach(([k, v]) => {
+    const row = ref.addRow([k, v]);
+    row.getCell(1).font = { bold: true };
+    row.getCell(2).alignment = { wrapText: true };
+  });
 
   const buf = await wb.xlsx.writeBuffer();
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -440,6 +503,9 @@ router.post('/import', uploadImport.single('file'), async (req, res) => {
       const priority = (r.priority || 'medium').toLowerCase();
       if (!PRIORITIES.includes(priority)) throw new Error(`Invalid priority "${r.priority}"`);
 
+      const recurrence = (r.recurrence || 'none').toLowerCase();
+      if (!RECURRENCES.includes(recurrence)) throw new Error(`Invalid recurrence "${r.recurrence}"`);
+
       const wf = r.board ? wfByName.get(r.board.toLowerCase()) : defaultWf;
       if (!wf) throw new Error(r.board ? `Board "${r.board}" not found` : 'No board available');
       const firstStage = db.prepare('SELECT id FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
@@ -464,8 +530,8 @@ router.post('/import', uploadImport.single('file'), async (req, res) => {
 
       const info = db.prepare(`
         INSERT INTO tasks (title, description, workflow_id, project_id, client_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?)
-      `).run(title, r.description || '', wf.id, projectId, clientId, firstStage.id, assigneeId, req.user.id, priority, dueDate, req.workspaceId);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(title, r.description || '', wf.id, projectId, clientId, firstStage.id, assigneeId, req.user.id, priority, dueDate, recurrence, req.workspaceId);
       const taskId = info.lastInsertRowid;
 
       for (const tag of (r.tags || '').split(',')) {
@@ -493,7 +559,25 @@ router.post('/import', uploadImport.single('file'), async (req, res) => {
     }
   });
 
-  res.json({ created: created.length, errors });
+  // Keep a copy of the uploaded sheet in the shared team Drive, so there's an
+  // audit trail of what was imported. Best-effort — never fail the import if
+  // the Drive write hiccups.
+  let driveFileId = null;
+  try {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const base = (req.file.originalname || 'task-import.xlsx').replace(/\.[^.]+$/, '');
+    const ext = (req.file.originalname && req.file.originalname.includes('.')) ? req.file.originalname.slice(req.file.originalname.lastIndexOf('.')) : '.xlsx';
+    driveFileId = storeBufferInDrive({
+      buffer: req.file.buffer,
+      originalName: `Task import ${stamp} — ${base} (${created.length} tasks)${ext}`,
+      mimeType: req.file.mimetype,
+      uploaderId: req.user.id,
+      workspaceId: req.workspaceId,
+      io,
+    });
+  } catch { /* Drive copy is best-effort */ }
+
+  res.json({ created: created.length, errors, drive_file_id: driveFileId });
 });
 
 router.post('/', (req, res) => {
