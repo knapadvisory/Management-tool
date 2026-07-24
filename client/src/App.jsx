@@ -15,7 +15,7 @@ import homeIco from './assets/icons/Home.png';
 import taskIco from './assets/icons/Task.png';
 import dmsIco from './assets/icons/DMs.png';
 import filesIco from './assets/icons/Files.png';
-import clientIco from './assets/icons/Client.png';
+import activityIco from './assets/icons/Activity.png';
 import ClientsView from './components/ClientsView.jsx';
 import AnalyticsView from './components/AnalyticsView.jsx';
 import TimesheetView from './components/TimesheetView.jsx';
@@ -579,7 +579,7 @@ export default function App() {
           { type: 'tasks', ico: taskIco, label: 'Tasks' },
           { type: 'messenger', ico: dmsIco, label: 'Chat', match: (t) => t === 'messenger' || t === 'channel' },
           { type: 'files', ico: filesIco, label: 'Files', match: (t) => t === 'files' || t === 'drive' },
-          { type: 'clients', ico: clientIco, label: 'Clients' },
+          { type: 'activity', ico: activityIco, label: 'Activity' },
         ].map((t) => {
           const active = t.match ? t.match(view?.type) : view?.type === t.type;
           return (
