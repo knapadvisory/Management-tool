@@ -214,10 +214,17 @@ export default function DashboardView({ user, users = [], hrEnabled = false, onO
               <h2>{taskHits ? 'Task search' : t('dash.allopen')}</h2>
               <input className="dash-task-search" placeholder="🔍 Search tasks or a client's tasks…"
                 value={taskQuery} onChange={(e) => setTaskQuery(e.target.value)} />
-              {!taskHits && <span className="pill-count">{data.all_tasks.length}</span>}
             </div>
-            <TaskList tasks={taskHits ?? data.all_tasks} onOpenTask={openTask}
-              empty={taskHits ? 'No tasks match your search.' : 'No open tasks.'} detailed currentUserId={user.id} />
+            <TaskListPanel
+              tasks={taskHits ?? data.all_tasks}
+              mode="open"
+              hideSearch
+              onOpenTask={openTask}
+              currentUserId={user.id}
+              TaskList={TaskList}
+              ClosedList={ClosedList}
+              empty={taskHits ? 'No tasks match your search.' : 'No open tasks.'}
+            />
           </section>
         </div>
 

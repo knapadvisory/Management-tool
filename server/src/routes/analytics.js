@@ -9,6 +9,7 @@
 // focus a single person via ?user_id; every other staff member sees only their
 // own numbers, no matter what they pass.
 import { Router } from 'express';
+import ExcelJS from 'exceljs';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
 
@@ -411,6 +412,274 @@ router.get('/detail', (req, res) => {
   }
 
   return res.status(400).json({ error: 'Unknown metric' });
+});
+
+// ============================================================================
+// Reports — tabular, exportable views. Each builder returns a uniform shape:
+//   { key, title, subtitle, columns: [{key,label,align?}], rows: [...],
+//     summary?: [{label, value}] }
+// so the client renders every report with one generic table + Excel export.
+//
+// Scope rule matches the rest of analytics: admins see the whole firm (or one
+// focused person via ?user_id); everyone else sees only their own work.
+// ============================================================================
+
+function reportScope(req) {
+  const isAdmin = req.user.role === 'admin';
+  const focusUser = isAdmin ? (req.query.user_id ? Number(req.query.user_id) : null) : req.user.id;
+  return { isAdmin, focusUser };
+}
+
+// Client Compliance Tracker — every statutory filing per client, with a status.
+function buildCompliance(ws, { focusUser }) {
+  const today = iso(new Date());
+  const p = [ws];
+  let sql = `
+    SELECT d.id, d.title, d.due_date, d.recurrence, d.completed,
+           c.name AS client_name, c.pan, c.gstin,
+           u.name AS assignee_name
+    FROM client_deadlines d
+    JOIN clients c ON c.id = d.client_id
+    LEFT JOIN users u ON u.id = d.assignee_id
+    WHERE c.workspace_id = ?`;
+  if (focusUser) { sql += ' AND d.assignee_id = ?'; p.push(focusUser); }
+  sql += ' ORDER BY (d.completed = 1), d.due_date ASC';
+  const raw = db.prepare(sql).all(...p);
+
+  const statusOf = (d) => {
+    if (d.completed) return 'Completed';
+    if (d.due_date < today) return 'Overdue';
+    if (daysBetween(today, d.due_date) <= 30) return 'Due soon';
+    return 'Upcoming';
+  };
+  const rows = raw.map((d) => ({
+    client: d.client_name,
+    filing: d.title,
+    due_date: d.due_date,
+    days: d.completed ? '' : daysBetween(today, d.due_date), // +future / -overdue
+    recurrence: d.recurrence === 'none' ? '—' : d.recurrence,
+    assignee: d.assignee_name || 'Unassigned',
+    status: statusOf(d),
+  }));
+
+  const count = (s) => rows.filter((r) => r.status === s).length;
+  return {
+    key: 'compliance',
+    title: 'Client Compliance Tracker',
+    subtitle: 'Statutory filings by client, with current status',
+    columns: [
+      { key: 'client', label: 'Client' },
+      { key: 'filing', label: 'Filing' },
+      { key: 'due_date', label: 'Due date' },
+      { key: 'days', label: 'Days', align: 'right' },
+      { key: 'recurrence', label: 'Recurs' },
+      { key: 'assignee', label: 'Assignee' },
+      { key: 'status', label: 'Status' },
+    ],
+    rows,
+    summary: [
+      { label: 'Overdue', value: count('Overdue'), tone: 'bad' },
+      { label: 'Due soon (≤30d)', value: count('Due soon'), tone: 'warn' },
+      { label: 'Upcoming', value: count('Upcoming') },
+      { label: 'Completed', value: count('Completed'), tone: 'good' },
+    ],
+  };
+}
+
+// Team Productivity — per person over the selected period.
+function buildProductivity(ws, period, { focusUser }) {
+  const today = iso(new Date());
+  const { from, to } = resolvePeriod(period);
+  const users = db.prepare(
+    `SELECT id, name, avatar_color, avatar_url FROM users
+     WHERE workspace_id = ? AND active = 1 AND role != 'guest'
+     ${focusUser ? 'AND id = ?' : ''} ORDER BY name COLLATE NOCASE`
+  ).all(...(focusUser ? [ws, focusUser] : [ws]));
+
+  const rows = users.map((u) => {
+    // Tasks completed in the window (primary assignee or in the assignee set).
+    const done = db.prepare(
+      `SELECT t.due_date, t.completed_at FROM tasks t
+       WHERE t.workspace_id = ? AND t.completed_at IS NOT NULL AND date(t.completed_at) BETWEEN ? AND ?
+         AND (t.assignee_id = ? OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?))`
+    ).all(ws, from, to, u.id, u.id);
+    const withDue = done.filter((d) => d.due_date);
+    const onTime = withDue.filter((d) => iso(new Date(d.completed_at)) <= d.due_date).length;
+
+    const overdueNow = db.prepare(
+      `SELECT COUNT(*) n FROM tasks t
+       WHERE t.workspace_id = ? AND t.status NOT IN ('completed','cancelled') AND t.archived_at IS NULL
+         AND t.due_date IS NOT NULL AND t.due_date < ?
+         AND (t.assignee_id = ? OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?))`
+    ).get(ws, today, u.id, u.id).n;
+
+    const mins = db.prepare(
+      `SELECT COALESCE(SUM(minutes),0) m FROM time_entries
+       WHERE workspace_id = ? AND is_running = 0 AND user_id = ? AND entry_date BETWEEN ? AND ?`
+    ).get(ws, u.id, from, to).m;
+
+    return {
+      person: u.name,
+      completed: done.length,
+      on_time_pct: withDue.length ? Math.round((onTime / withDue.length) * 100) : null,
+      overdue_now: overdueNow,
+      hours: Math.round((mins / 60) * 10) / 10,
+    };
+  });
+
+  const sum = (k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
+  return {
+    key: 'productivity',
+    title: 'Team Productivity',
+    subtitle: `Completed work and hours · ${from} → ${to}`,
+    columns: [
+      { key: 'person', label: 'Person' },
+      { key: 'completed', label: 'Completed', align: 'right' },
+      { key: 'on_time_pct', label: 'On-time %', align: 'right' },
+      { key: 'overdue_now', label: 'Overdue now', align: 'right' },
+      { key: 'hours', label: 'Hours logged', align: 'right' },
+    ],
+    rows,
+    summary: [
+      { label: 'Tasks completed', value: sum('completed'), tone: 'good' },
+      { label: 'Currently overdue', value: sum('overdue_now'), tone: 'bad' },
+      { label: 'Hours logged', value: Math.round(sum('hours') * 10) / 10 },
+    ],
+  };
+}
+
+// Overdue & Aging — every overdue task and filing, bucketed by how late it is.
+function buildAging(ws, { focusUser }) {
+  const today = iso(new Date());
+  const bucketOf = (days) => (days <= 7 ? '0–7' : days <= 15 ? '8–15' : days <= 30 ? '16–30' : '30+');
+
+  const taskP = [ws, today];
+  let taskSql = `
+    SELECT t.id, t.title, t.due_date, c.name AS client_name, u.name AS owner_name
+    FROM tasks t
+    LEFT JOIN clients c ON c.id = t.client_id
+    LEFT JOIN users u ON u.id = t.assignee_id
+    WHERE t.workspace_id = ? AND t.status NOT IN ('completed','cancelled') AND t.archived_at IS NULL
+      AND t.due_date IS NOT NULL AND t.due_date < ?`;
+  if (focusUser) { taskSql += ' AND (t.assignee_id = ? OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?))'; taskP.push(focusUser, focusUser); }
+  const tasks = db.prepare(taskSql).all(...taskP).map((r) => ({
+    type: 'Task', item: r.title, client: r.client_name || '—',
+    owner: r.owner_name || 'Unassigned', due_date: r.due_date, days: daysBetween(r.due_date, today),
+  }));
+
+  const filP = [ws, today];
+  let filSql = `
+    SELECT d.title, d.due_date, c.name AS client_name, u.name AS owner_name
+    FROM client_deadlines d
+    JOIN clients c ON c.id = d.client_id
+    LEFT JOIN users u ON u.id = d.assignee_id
+    WHERE c.workspace_id = ? AND d.completed = 0 AND d.due_date < ?`;
+  if (focusUser) { filSql += ' AND d.assignee_id = ?'; filP.push(focusUser); }
+  const filings = db.prepare(filSql).all(...filP).map((r) => ({
+    type: 'Filing', item: r.title, client: r.client_name,
+    owner: r.owner_name || 'Unassigned', due_date: r.due_date, days: daysBetween(r.due_date, today),
+  }));
+
+  const rows = [...tasks, ...filings]
+    .map((r) => ({ ...r, bucket: bucketOf(r.days) }))
+    .sort((a, b) => b.days - a.days);
+
+  // Per-owner bucket summary.
+  const byOwner = new Map();
+  for (const r of rows) {
+    if (!byOwner.has(r.owner)) byOwner.set(r.owner, { owner: r.owner, '0–7': 0, '8–15': 0, '16–30': 0, '30+': 0, total: 0 });
+    const o = byOwner.get(r.owner);
+    o[r.bucket] += 1; o.total += 1;
+  }
+  const ownerRows = [...byOwner.values()].sort((a, b) => b.total - a.total);
+
+  return {
+    key: 'aging',
+    title: 'Overdue & Aging',
+    subtitle: 'Every overdue task and filing, by how late it is',
+    columns: [
+      { key: 'type', label: 'Type' },
+      { key: 'item', label: 'Item' },
+      { key: 'client', label: 'Client' },
+      { key: 'owner', label: 'Owner' },
+      { key: 'due_date', label: 'Due date' },
+      { key: 'days', label: 'Days late', align: 'right' },
+      { key: 'bucket', label: 'Bucket' },
+    ],
+    rows,
+    summary: [
+      { label: '0–7 days', value: rows.filter((r) => r.bucket === '0–7').length, tone: 'warn' },
+      { label: '8–15 days', value: rows.filter((r) => r.bucket === '8–15').length, tone: 'warn' },
+      { label: '16–30 days', value: rows.filter((r) => r.bucket === '16–30').length, tone: 'bad' },
+      { label: '30+ days', value: rows.filter((r) => r.bucket === '30+').length, tone: 'bad' },
+    ],
+    ownerBreakdown: {
+      columns: [
+        { key: 'owner', label: 'Owner' },
+        { key: '0–7', label: '0–7', align: 'right' },
+        { key: '8–15', label: '8–15', align: 'right' },
+        { key: '16–30', label: '16–30', align: 'right' },
+        { key: '30+', label: '30+', align: 'right' },
+        { key: 'total', label: 'Total', align: 'right' },
+      ],
+      rows: ownerRows,
+    },
+  };
+}
+
+function buildReport(type, ws, req) {
+  const scope = reportScope(req);
+  if (type === 'compliance') return buildCompliance(ws, scope);
+  if (type === 'productivity') return buildProductivity(ws, req.query.period, scope);
+  if (type === 'aging') return buildAging(ws, scope);
+  return null;
+}
+
+// GET /api/analytics/reports/:type  → JSON report
+router.get('/reports/:type', (req, res) => {
+  const report = buildReport(req.params.type, Number(req.workspaceId), req);
+  if (!report) return res.status(400).json({ error: 'Unknown report' });
+  res.json(report);
+});
+
+// GET /api/analytics/reports/:type/export  → the same report as an .xlsx
+router.get('/reports/:type/export', async (req, res) => {
+  const report = buildReport(req.params.type, Number(req.workspaceId), req);
+  if (!report) return res.status(400).json({ error: 'Unknown report' });
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'TeamHub';
+  wb.created = new Date();
+
+  const addTable = (ws, columns, rows) => {
+    ws.columns = columns.map((c) => ({ key: c.key, header: c.label, width: Math.max(12, c.label.length + 4) }));
+    const head = ws.getRow(1);
+    head.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+    head.height = 22;
+    rows.forEach((r) => ws.addRow(r));
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } };
+    // Widen columns to fit content.
+    ws.columns.forEach((col) => {
+      let max = col.header ? col.header.length : 10;
+      col.eachCell({ includeEmpty: false }, (cell) => { max = Math.max(max, String(cell.value ?? '').length); });
+      col.width = Math.min(60, Math.max(12, max + 2));
+    });
+  };
+
+  const main = wb.addWorksheet(report.title.slice(0, 31));
+  addTable(main, report.columns, report.rows);
+  if (report.ownerBreakdown) {
+    const ws2 = wb.addWorksheet('By owner');
+    addTable(ws2, report.ownerBreakdown.columns, report.ownerBreakdown.rows);
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  const stamp = iso(new Date());
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${report.key}-report-${stamp}.xlsx"`);
+  res.send(Buffer.from(buf));
 });
 
 export default router;

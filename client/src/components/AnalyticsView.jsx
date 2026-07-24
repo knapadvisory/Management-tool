@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { api } from '../api.js';
+import { api, downloadReport } from '../api.js';
 import Avatar from './Avatar.jsx';
 import TaskModal from './TaskModal.jsx';
 
-// Practice Analytics — two tabs:
+// Practice Analytics — three tabs:
 //  • Overview  — firm-wide (or personal) KPIs, throughput, compliance, quality.
 //  • Appraisals — employee rating leaderboard + every rated task (with rater).
+//  • Reports   — tabular, exportable reports (compliance / productivity / aging).
 // Charts are hand-drawn inline SVG so there's no chart-library weight.
+
+const REPORT_TYPES = [
+  { key: 'compliance', label: 'Client Compliance', hasPeriod: false },
+  { key: 'productivity', label: 'Team Productivity', hasPeriod: true },
+  { key: 'aging', label: 'Overdue & Aging', hasPeriod: false },
+];
 
 const PERIODS = [
   { key: 'week', label: 'Week' },
@@ -571,6 +578,131 @@ function DetailModal({ metric, period, userId, clientId, isAdmin, onOpenTask, on
   );
 }
 
+// ============ Reports tab ============
+function ReportTable({ columns, rows, empty = 'Nothing to show.' }) {
+  return (
+    <div className="an-table-wrap">
+      <table className="an-table">
+        <thead>
+          <tr>{columns.map((c) => <th key={c.key} style={c.align === 'right' ? { textAlign: 'right' } : null}>{c.label}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && <tr><td colSpan={columns.length} className="an-empty">{empty}</td></tr>}
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {columns.map((c) => {
+                let v = r[c.key];
+                if (c.key === 'status') return <td key={c.key}><span className={`rep-status rep-${String(v).toLowerCase().replace(/[^a-z]/g, '')}`}>{v}</span></td>;
+                if (c.key === 'type') return <td key={c.key}><span className={`rep-type rep-${String(v).toLowerCase()}`}>{v}</span></td>;
+                if (c.key === 'on_time_pct') v = v == null ? '—' : `${v}%`;
+                if (c.key === 'days' && typeof v === 'number') return <td key={c.key} style={{ textAlign: 'right' }} className={v < 0 ? 'rep-overdue-num' : ''}>{v < 0 ? `${-v}d late` : v === 0 ? 'today' : `${v}d`}</td>;
+                return <td key={c.key} style={c.align === 'right' ? { textAlign: 'right' } : null}>{v === '' || v == null ? '—' : v}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Reports({ isAdmin, userId, period, setPeriod }) {
+  const [type, setType] = useState('compliance');
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [q, setQ] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const meta = REPORT_TYPES.find((r) => r.key === type);
+
+  const params = useMemo(() => {
+    const p = {};
+    if (meta?.hasPeriod) p.period = period;
+    if (isAdmin && userId) p.user_id = userId;
+    return p;
+  }, [meta, period, isAdmin, userId]);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setErr(''); setQ('');
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null)).toString();
+    api(`/analytics/reports/${type}${qs ? `?${qs}` : ''}`)
+      .then((d) => { if (alive) setData(d); })
+      .catch((e) => { if (alive) setErr(e.message); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [type, params]);
+
+  const view = useMemo(() => {
+    if (!data) return [];
+    const needle = q.trim().toLowerCase();
+    if (!needle) return data.rows;
+    return data.rows.filter((r) => Object.values(r).some((v) => String(v).toLowerCase().includes(needle)));
+  }, [data, q]);
+
+  const onExport = async () => {
+    setExporting(true);
+    try { await downloadReport(type, params); } catch (e) { setErr(e.message); } finally { setExporting(false); }
+  };
+
+  return (
+    <div className="an-reports">
+      <div className="rep-bar">
+        <div className="an-seg">
+          {REPORT_TYPES.map((r) => <button key={r.key} className={type === r.key ? 'on' : ''} onClick={() => setType(r.key)}>{r.label}</button>)}
+        </div>
+        {meta?.hasPeriod && (
+          <div className="an-seg">
+            {PERIODS.map((p) => <button key={p.key} className={period === p.key ? 'on' : ''} onClick={() => setPeriod(p.key)}>{p.label}</button>)}
+          </div>
+        )}
+        <div className="rep-bar-right">
+          <input className="tlp-search" placeholder="Filter rows…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <button className="rep-export" onClick={onExport} disabled={exporting || !data?.rows?.length}>
+            {exporting ? 'Exporting…' : '⬇ Export to Excel'}
+          </button>
+        </div>
+      </div>
+
+      {err && <div className="an-error">Couldn’t load report: {err}</div>}
+      {loading && !data && <div className="an-loading">Loading…</div>}
+      {data && (
+        <div className={loading ? 'an-dim' : ''}>
+          <div className="rep-head">
+            <div>
+              <h2>{data.title}</h2>
+              <div className="an-sub">{data.subtitle}</div>
+            </div>
+          </div>
+
+          {data.summary && (
+            <div className="rep-summary">
+              {data.summary.map((s) => (
+                <div key={s.label} className={`rep-kpi ${s.tone ? `rep-${s.tone}` : ''}`}>
+                  <span className="rep-kpi-val">{s.value}</span>
+                  <span className="rep-kpi-lbl">{s.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="an-card">
+            <div className="rep-count muted">{view.length} of {data.rows.length} rows</div>
+            <ReportTable columns={data.columns} rows={view} empty="Nothing to report — all clear 🎉" />
+          </div>
+
+          {data.ownerBreakdown && (
+            <div className="an-card">
+              <div className="rep-head"><h2>By owner</h2></div>
+              <ReportTable columns={data.ownerBreakdown.columns} rows={data.ownerBreakdown.rows} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AnalyticsView({ user, users = [] }) {
   const isAdmin = user.role === 'admin';
   const [tab, setTab] = useState('overview');
@@ -639,6 +771,7 @@ export default function AnalyticsView({ user, users = [] }) {
       <div className="an-tabs">
         <button className={tab === 'overview' ? 'on' : ''} onClick={() => setTab('overview')}>Overview</button>
         <button className={tab === 'appraisals' ? 'on' : ''} onClick={() => setTab('appraisals')}>Appraisals</button>
+        <button className={tab === 'reports' ? 'on' : ''} onClick={() => setTab('reports')}>Reports</button>
       </div>
 
       {tab === 'overview' && (<>
@@ -660,6 +793,12 @@ export default function AnalyticsView({ user, users = [] }) {
       {tab === 'appraisals' && (
         <div className="an-body">
           <Appraisals user={user} isAdmin={isAdmin} focusUserId={userId} onFocusUser={setUserId} onOpenTask={openTask} />
+        </div>
+      )}
+
+      {tab === 'reports' && (
+        <div className="an-body">
+          <Reports isAdmin={isAdmin} userId={userId} period={period} setPeriod={setPeriod} />
         </div>
       )}
 

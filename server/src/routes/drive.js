@@ -23,6 +23,22 @@ const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024, files: 5
 
 const router = Router();
 
+// Store an in-memory buffer as a shared Drive file and return its attachment id.
+// Used by features that generate/receive a file server-side (e.g. bulk task
+// import) and want a copy to live in the team Drive. Best-effort: callers wrap
+// this so a Drive hiccup never fails their main operation.
+export function storeBufferInDrive({ buffer, originalName, mimeType, uploaderId, workspaceId, io = null, folderId = null }) {
+  const ext = path.extname(originalName || '').slice(0, 10);
+  const stored = `${crypto.randomBytes(16).toString('hex')}${ext}`;
+  fs.writeFileSync(path.join(uploadDir, stored), buffer);
+  const info = db.prepare(`
+    INSERT INTO attachments (uploader_id, stored_name, original_name, mime_type, size, is_drive, drive_folder_id, workspace_id)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+  `).run(uploaderId, stored, originalName || stored, mimeType || 'application/octet-stream', buffer.length, folderId, workspaceId);
+  io?.emit('drive:changed');
+  return info.lastInsertRowid;
+}
+
 // People a Drive file is tagged with.
 function sharedWith(attId) {
   return db.prepare(`

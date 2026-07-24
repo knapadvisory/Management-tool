@@ -2424,3 +2424,38 @@ button.c360-stat:hover { border-color: var(--accent); }
 .an-th-sort { cursor: pointer; user-select: none; }
 .an-th-sort:hover { color: var(--text); }
 .an-th-arrow { font-size: 9px; opacity: .7; }
+
+/* ---- Analytics: Reports tab ---- */
+.an-reports { display: flex; flex-direction: column; gap: 14px; }
+.rep-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.rep-bar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.rep-bar-right .tlp-search { min-width: 180px; }
+.rep-export {
+  background: var(--accent); color: #fff; border: none; padding: 8px 14px;
+  border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.rep-export:hover:not(:disabled) { background: var(--accent-hover); }
+.rep-export:disabled { opacity: .5; cursor: default; }
+.rep-head { display: flex; align-items: baseline; justify-content: space-between; margin: 4px 0 2px; }
+.rep-head h2 { margin: 0; font-size: 17px; }
+.rep-count { font-size: 12px; padding: 0 0 6px; }
+.rep-summary { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 12px; }
+.rep-kpi {
+  flex: 1 1 120px; min-width: 110px; background: var(--card, #fff); border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px;
+}
+.rep-kpi-val { font-size: 24px; font-weight: 700; line-height: 1; }
+.rep-kpi-lbl { font-size: 12px; color: var(--muted, #6b7280); }
+.rep-kpi.rep-bad { border-color: #fecaca; } .rep-kpi.rep-bad .rep-kpi-val { color: #dc2626; }
+.rep-kpi.rep-warn { border-color: #fde68a; } .rep-kpi.rep-warn .rep-kpi-val { color: #d97706; }
+.rep-kpi.rep-good { border-color: #bbf7d0; } .rep-kpi.rep-good .rep-kpi-val { color: #16a34a; }
+.rep-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.rep-status.rep-overdue { background: #fee2e2; color: #b91c1c; }
+.rep-status.rep-duesoon { background: #fef3c7; color: #b45309; }
+.rep-status.rep-upcoming { background: #e0e7ff; color: #4338ca; }
+.rep-status.rep-completed { background: #dcfce7; color: #15803d; }
+.rep-type { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; }
+.rep-type.rep-task { background: #e0e7ff; color: #4338ca; }
+.rep-type.rep-filing { background: #f3e8ff; color: #7e22ce; }
+.rep-overdue-num { color: #dc2626; font-weight: 600; }
+.an-empty { text-align: center; color: var(--muted, #6b7280); padding: 24px; }

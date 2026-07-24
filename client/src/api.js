@@ -63,6 +63,25 @@ export async function importTasks(file) {
   return data;
 }
 
+// Download an Analytics report as an .xlsx. `params` is an object of query
+// values (e.g. { period: 'month', user_id: 3 }).
+export async function downloadReport(type, params = {}) {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null));
+  const res = await fetch(`/api/analytics/reports/${type}/export?${qs.toString()}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new Error('Could not export the report');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${type}-report.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // Upload a profile photo; returns the updated public user.
 export async function uploadAvatar(file) {
   const fd = new FormData();

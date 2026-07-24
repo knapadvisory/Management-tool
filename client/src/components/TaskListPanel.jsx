@@ -9,7 +9,7 @@ const dayNum = (d) => (d ? new Date(d + 'T00:00:00').getTime() : Infinity);
 const isLate = (t) => t.completed_at && t.due_date && String(t.completed_at).slice(0, 10) > t.due_date;
 const ownerOf = (t) => t.assignee?.name || '';
 
-export default function TaskListPanel({ tasks, mode, onOpenTask, currentUserId, TaskList, ClosedList, empty = 'No tasks here.' }) {
+export default function TaskListPanel({ tasks, mode, onOpenTask, currentUserId, TaskList, ClosedList, empty = 'No tasks here.', hideSearch = false }) {
   const closed = mode === 'closed';
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(closed ? 'completed_desc' : 'due_asc');
@@ -50,7 +50,9 @@ export default function TaskListPanel({ tasks, mode, onOpenTask, currentUserId, 
   return (
     <div className="tlp">
       <div className="tlp-bar">
-        <input className="tlp-search" placeholder="Search tasks…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {!hideSearch && (
+          <input className="tlp-search" placeholder="Search tasks…" value={q} onChange={(e) => setQ(e.target.value)} />
+        )}
         <label className="tlp-ctl">Sort
           <select value={sort} onChange={(e) => setSort(e.target.value)}>
             {sortOpts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
