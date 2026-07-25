@@ -294,7 +294,7 @@ router.get('/engagements', (req, res) => {
   const ws = req.workspaceId;
   const today = new Date().toISOString().slice(0, 10);
   const month = today.slice(0, 7);
-  const clients = db.prepare('SELECT id, name, type, status, contact_person FROM clients WHERE workspace_id = ? ORDER BY name COLLATE NOCASE').all(ws);
+  const clients = db.prepare('SELECT id, name, type, status, contact_person, constitution, gstin, pan FROM clients WHERE workspace_id = ? ORDER BY name COLLATE NOCASE').all(ws);
 
   const lastDoneStmt = db.prepare(`
     SELECT title, completed_at FROM tasks
@@ -317,6 +317,7 @@ router.get('/engagements', (req, res) => {
     return {
       id: c.id, name: c.name, type: c.type, status: c.status,
       contact_person: c.contact_person || '',
+      constitution: c.constitution || '', gstin: c.gstin || '', pan: c.pan || '',
       tags: tagsFor(c.id),
       last_completed: lastDone ? { title: lastDone.title, date: String(lastDone.completed_at).slice(0, 10) } : null,
       next_due: nd ? { title: nd.title, date: nd.due_date, overdue: nd.due_date < today } : null,

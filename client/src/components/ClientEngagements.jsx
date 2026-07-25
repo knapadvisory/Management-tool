@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 
-// Clients landing view: a firm-wide "client engagements" table — one row per
-// client showing the services they use, their last completed task and the next
-// thing due — with headline stats and a service filter. Replaces the old empty
-// promo panel. Clicking a row opens that client's detail.
+// Clients landing view: a full-width, firm-wide "clients & services" table — one
+// row per client showing the services they use, their last completed task, the
+// next thing due and the responsible manager. Search + service chips filter it.
+// Clicking a row opens that client's detail.
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-// Stable-ish colour per service tag, so the same tag always reads the same.
 const CHIP_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#0ea5e9', '#ec4899', '#14b8a6', '#f97316', '#6366f1'];
 const chipColor = (tag) => {
   let h = 0;
@@ -22,10 +21,19 @@ const fmtDate = (d) => {
 };
 const TYPE_LABEL = { company: 'Company', individual: 'Individual' };
 
-export default function ClientEngagements({ onSelect, onAdd }) {
+// Current Indian financial year label, e.g. "FY 2026-27".
+function fyLabel() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const startY = now.getMonth() >= 3 ? y : y - 1; // FY starts in April
+  return `FY ${startY}-${String((startY + 1) % 100).padStart(2, '0')}`;
+}
+
+export default function ClientEngagements({ onSelect, onAdd, onImport, onBulk }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
-  const [service, setService] = useState(''); // '' = all services
+  const [service, setService] = useState('');
+  const [q, setQ] = useState('');
 
   useEffect(() => {
     api('/clients/engagements').then(setData).catch((e) => setErr(e.message));
@@ -33,11 +41,20 @@ export default function ClientEngagements({ onSelect, onAdd }) {
 
   const rows = useMemo(() => {
     if (!data) return [];
-    return service ? data.rows.filter((r) => r.tags.includes(service)) : data.rows;
-  }, [data, service]);
+    const needle = q.trim().toLowerCase();
+    return data.rows.filter((r) => {
+      if (service && !r.tags.includes(service)) return false;
+      if (needle && !(
+        r.name.toLowerCase().includes(needle) ||
+        (r.gstin || '').toLowerCase().includes(needle) ||
+        (r.pan || '').toLowerCase().includes(needle)
+      )) return false;
+      return true;
+    });
+  }, [data, service, q]);
 
-  if (err) return <div className="ceng"><div className="empty-hint">Couldn’t load engagements: {err}</div></div>;
-  if (!data) return <div className="ceng"><div className="ceng-loading">Loading engagements…</div></div>;
+  if (err) return <div className="ceng"><div className="empty-hint">Couldn’t load clients: {err}</div></div>;
+  if (!data) return <div className="ceng"><div className="ceng-loading">Loading clients…</div></div>;
 
   const s = data.summary;
 
@@ -45,30 +62,36 @@ export default function ClientEngagements({ onSelect, onAdd }) {
     <div className="ceng">
       <div className="ceng-head">
         <div className="ceng-head-main">
-          <div className="ceng-eyebrow">Client book</div>
-          <h1>Client engagements</h1>
+          <div className="ceng-eyebrow">Client master · {s.active_clients} active</div>
+          <h1>Clients &amp; services</h1>
         </div>
-        <div className="ceng-stats">
-          <div className="ceng-stat"><span className="ceng-stat-num">{s.active_clients}</span><span className="ceng-stat-lbl">active clients</span></div>
-          <div className="ceng-stat"><span className="ceng-stat-num ceng-accent">{s.filed_this_month}</span><span className="ceng-stat-lbl">filed this month</span></div>
-          <div className="ceng-stat"><span className={`ceng-stat-num ${s.past_due ? 'ceng-danger' : ''}`}>{s.past_due}</span><span className="ceng-stat-lbl">past due</span></div>
+        <div className="ceng-head-actions">
+          <span className="ceng-fy">{fyLabel()}</span>
+          {onImport && <button className="btn btn-sm" onClick={onImport}>⬆ Import</button>}
+          {onBulk && <button className="btn btn-sm" onClick={onBulk}>🗓 Bulk deadlines</button>}
+          <button className="btn btn-primary btn-sm" onClick={onAdd}>＋ Add client</button>
         </div>
       </div>
 
-      {data.services.length > 0 && (
+      <div className="ceng-toolbar">
+        <input className="ceng-search" placeholder="Search clients, GSTIN, PAN…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="ceng-filters">
           <button className={`ceng-chip-btn ${service === '' ? 'on' : ''}`} onClick={() => setService('')}>All services</button>
           {data.services.map((t) => (
-            <button key={t} className={`ceng-chip-btn ${service === t ? 'on' : ''}`} onClick={() => setService(t)}>{t}</button>
+            <button key={t} className={`ceng-chip-btn ${service === t ? 'on' : ''}`} onClick={() => setService(service === t ? '' : t)}>{t}</button>
           ))}
         </div>
-      )}
+        <span className="ceng-count">
+          {rows.length} of {data.rows.length} shown
+          {(s.filed_this_month || s.past_due) ? <> · <span className="ceng-accent">{s.filed_this_month} filed</span>{s.past_due ? <> · <span className="ceng-danger">{s.past_due} past due</span></> : null}</> : null}
+        </span>
+      </div>
 
       <div className="ceng-tablewrap">
         {rows.length === 0 ? (
           <div className="ceng-empty">
             <div className="ceng-empty-art">🗂️</div>
-            <p>{data.rows.length === 0 ? 'No clients yet.' : 'No clients use this service yet.'}</p>
+            <p>{data.rows.length === 0 ? 'No clients yet.' : 'No clients match.'}</p>
             {data.rows.length === 0 && <button className="btn btn-primary" onClick={onAdd}>Add a client</button>}
           </div>
         ) : (
@@ -79,6 +102,7 @@ export default function ClientEngagements({ onSelect, onAdd }) {
                 <th>Services engaged</th>
                 <th>Last task completed</th>
                 <th className="ceng-r">Next due</th>
+                <th>Manager</th>
               </tr>
             </thead>
             <tbody>
@@ -86,7 +110,10 @@ export default function ClientEngagements({ onSelect, onAdd }) {
                 <tr key={r.id} onClick={() => onSelect(r.id)}>
                   <td className="ceng-client">
                     <div className="ceng-client-name">{r.name}</div>
-                    <div className="ceng-client-sub">{TYPE_LABEL[r.type] || r.type}{r.contact_person ? ` · ${r.contact_person}` : ''}</div>
+                    <div className="ceng-client-sub">
+                      {r.constitution || TYPE_LABEL[r.type] || r.type}
+                      {(r.gstin || r.pan) ? ` · ${r.gstin || r.pan}` : ''}
+                    </div>
                   </td>
                   <td>
                     <div className="ceng-chips">
@@ -114,6 +141,7 @@ export default function ClientEngagements({ onSelect, onAdd }) {
                       </>
                     ) : <span className="ceng-chip-none">—</span>}
                   </td>
+                  <td className="ceng-mgr">{r.contact_person || <span className="ceng-chip-none">—</span>}</td>
                 </tr>
               ))}
             </tbody>
