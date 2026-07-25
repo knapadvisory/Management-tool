@@ -585,6 +585,11 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 }
 .approval-banner .approval-actions { display: flex; gap: 6px; }
 
+/* Draggable floating panels (dashboard drill-down lists, etc.) */
+.draggable-panel { will-change: transform; }
+.draggable-panel .drag-handle { cursor: move; user-select: none; touch-action: none; gap: 8px; }
+.draggable-panel .drag-handle .drag-hint { font-size: 11px; font-weight: 500; margin-left: auto; margin-right: 8px; white-space: nowrap; }
+
 /* ---------- Workflows ---------- */
 .workflow-form {
   display: flex; flex-direction: column; gap: 10px; padding: 14px;

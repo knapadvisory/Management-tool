@@ -47,6 +47,7 @@ function timeAgo(iso) {
 import ReviewWidget from './ReviewWidget.jsx';
 import HrWidget from './HrWidget.jsx';
 import TaskListPanel from './TaskListPanel.jsx';
+import DraggablePanel from './DraggablePanel.jsx';
 
 export default function DashboardView({ user, users = [], hrEnabled = false, onOpenHr, onOpenTasks, onOpenActivity, onOpenTimesheet }) {
   const [data, setData] = useState(null);
@@ -327,24 +328,26 @@ export default function DashboardView({ user, users = [], hrEnabled = false, onO
       )}
 
       {listPopup && (
-        <div className="modal-overlay" onClick={() => setListPopup(null)}>
-          <div className="modal dash-listpopup" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <strong>{listPopup.title} <span className="pill-count">{listPopup.tasks.length}</span></strong>
-              <button className="icon-btn" onClick={() => setListPopup(null)}>✕</button>
-            </div>
-            <div className="dash-listpopup-body">
-              <TaskListPanel
-                tasks={listPopup.tasks}
-                mode={listPopup.mode}
-                onOpenTask={(id) => { setListPopup(null); openTask(id); }}
-                currentUserId={user.id}
-                TaskList={TaskList}
-                ClosedList={ClosedList}
-              />
-            </div>
+        <DraggablePanel
+          className="dash-listpopup"
+          onClose={() => setListPopup(null)}
+          header={<>
+            <strong>{listPopup.title} <span className="pill-count">{listPopup.tasks.length}</span></strong>
+            <span className="drag-hint muted">⠿ drag to move</span>
+            <button className="icon-btn" onClick={() => setListPopup(null)}>✕</button>
+          </>}
+        >
+          <div className="dash-listpopup-body">
+            <TaskListPanel
+              tasks={listPopup.tasks}
+              mode={listPopup.mode}
+              onOpenTask={(id) => { setListPopup(null); openTask(id); }}
+              currentUserId={user.id}
+              TaskList={TaskList}
+              ClosedList={ClosedList}
+            />
           </div>
-        </div>
+        </DraggablePanel>
       )}
 
       {openTaskId && (
