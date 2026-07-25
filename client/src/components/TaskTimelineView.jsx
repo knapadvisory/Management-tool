@@ -11,6 +11,10 @@ const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 const parse = (s) => new Date(s + 'T00:00:00');
 const DAY_W = 26;
 
+// Initials of the person a task is assigned to (the primary assignee), e.g.
+// "Anuj Singh Negi" → "AS". Blank when unassigned.
+const initials = (name) => (name || '').trim().split(/\s+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+
 const PRIO_CLASS = { urgent: 'gantt-urgent', high: 'gantt-high', medium: 'gantt-medium', low: 'gantt-low' };
 
 export default function TaskTimelineView({ tasks, onOpen }) {
@@ -88,9 +92,9 @@ export default function TaskTimelineView({ tasks, onOpen }) {
                       className={`gantt-bar ${cls}`}
                       style={{ left, width: span * DAY_W - 4 }}
                       onClick={() => onOpen(t.id)}
-                      title={`${t.title}\n${s === t.due_date ? `Due ${t.due_date}` : `${s} → ${t.due_date}`}${t.assignee ? `\n${t.assignee.name}` : ''}${t.is_blocked ? '\n🔒 Blocked' : ''}`}
+                      title={`${t.title}\n${s === t.due_date ? `Due ${t.due_date}` : `${s} → ${t.due_date}`}${t.assignee ? `\nAssigned to ${t.assignee.name}` : '\nUnassigned'}${t.is_blocked ? '\n🔒 Blocked' : ''}`}
                     >
-                      <span className="gantt-bar-label">{t.title}</span>
+                      <span className="gantt-bar-label">{t.assignee ? initials(t.assignee.name) : '·'}</span>
                     </button>
                   </div>
                 </div>
