@@ -515,37 +515,57 @@ function buildProductivity(ws, period, { focusUser }) {
      ${focusUser ? 'AND id = ?' : ''} ORDER BY name COLLATE NOCASE`
   ).all(...(focusUser ? [ws, focusUser] : [ws]));
 
-  const rows = users.map((u) => {
-    // Tasks completed in the window (primary assignee or in the assignee set).
+  // Each task is credited to exactly ONE owner — its primary assignee
+  // (tasks.assignee_id), or the "Unassigned" bucket below when it has none. That
+  // makes the Completed / Overdue columns a clean partition, so the column
+  // totals equal the true task counts (no double-counting a multi-assignee task,
+  // no silently dropping unassigned ones) and reconcile with the headline KPIs,
+  // the Overview tab, and the home dashboard.
+  const rowFor = (label, ownerCond, params, opts = {}) => {
     const done = db.prepare(
       `SELECT t.due_date, t.completed_at FROM tasks t
        WHERE t.workspace_id = ? AND t.completed_at IS NOT NULL AND date(t.completed_at) BETWEEN ? AND ?
-         AND (t.assignee_id = ? OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?))`
-    ).all(ws, from, to, u.id, u.id);
+         AND ${ownerCond}`
+    ).all(ws, from, to, ...params);
     const withDue = done.filter((d) => d.due_date);
     const onTime = withDue.filter((d) => iso(new Date(d.completed_at)) <= d.due_date).length;
 
     const overdueNow = db.prepare(
       `SELECT COUNT(*) n FROM tasks t
        WHERE t.workspace_id = ? AND t.status NOT IN ('completed','cancelled') AND t.archived_at IS NULL
-         AND t.due_date IS NOT NULL AND t.due_date < ?
-         AND (t.assignee_id = ? OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?))`
-    ).get(ws, today, u.id, u.id).n;
+         AND t.due_date IS NOT NULL AND t.due_date != '' AND t.due_date < ?
+         AND ${ownerCond}`
+    ).get(ws, today, ...params).n;
 
+    return {
+      user_id: opts.user_id ?? null,
+      person: label,
+      avatar_color: opts.avatar_color,
+      avatar_url: opts.avatar_url,
+      completed: done.length,
+      on_time_pct: withDue.length ? Math.round((onTime / withDue.length) * 100) : null,
+      overdue_now: overdueNow,
+      hours: opts.hours ?? 0,
+    };
+  };
+
+  const rows = users.map((u) => {
     const mins = db.prepare(
       `SELECT COALESCE(SUM(minutes),0) m FROM time_entries
        WHERE workspace_id = ? AND is_running = 0 AND user_id = ? AND entry_date BETWEEN ? AND ?`
     ).get(ws, u.id, from, to).m;
-
-    return {
-      user_id: u.id,
-      person: u.name,
-      completed: done.length,
-      on_time_pct: withDue.length ? Math.round((onTime / withDue.length) * 100) : null,
-      overdue_now: overdueNow,
+    return rowFor(u.name, 't.assignee_id = ?', [u.id], {
+      user_id: u.id, avatar_color: u.avatar_color, avatar_url: u.avatar_url,
       hours: Math.round((mins / 60) * 10) / 10,
-    };
+    });
   });
+
+  // Surface completed/overdue work that belongs to no one, so the totals stay
+  // whole. Only in the whole-team view (a personal report is just that person).
+  if (!focusUser) {
+    const un = rowFor('Unassigned', 't.assignee_id IS NULL', []);
+    if (un.completed || un.overdue_now) rows.push(un);
+  }
 
   const sum = (k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
   return {
