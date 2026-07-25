@@ -48,6 +48,7 @@ import ReviewWidget from './ReviewWidget.jsx';
 import HrWidget from './HrWidget.jsx';
 import TaskListPanel from './TaskListPanel.jsx';
 import DraggablePanel from './DraggablePanel.jsx';
+import ScopeInfo from './ScopeInfo.jsx';
 
 export default function DashboardView({ user, users = [], hrEnabled = false, onOpenHr, onOpenTasks, onOpenActivity, onOpenTimesheet }) {
   const [data, setData] = useState(null);
@@ -153,16 +154,20 @@ export default function DashboardView({ user, users = [], hrEnabled = false, onO
       {/* Practice command-centre KPIs */}
       <div className="dash-kpis">
         <button className="dash-kpi" onClick={onOpenTasks}>
-          <span className="dash-kpi-num">{s.open}</span><span className="dash-kpi-lbl">Active tasks</span>
+          <span className="dash-kpi-num">{s.open}</span>
+          <span className="dash-kpi-lbl">Active tasks <ScopeInfo text="Tasks not yet completed or cancelled (excludes archived). Admins see the whole firm; members see tasks they created, are assigned, or watch." /></span>
         </button>
         <button className={`dash-kpi ${s.overdue ? 'warn' : ''}`} onClick={() => openList('Overdue', (t) => t.due_date && daysUntil(t.due_date) < 0 && OPEN(t))}>
-          <span className="dash-kpi-num">{s.overdue}</span><span className="dash-kpi-lbl">Overdue tasks</span>
+          <span className="dash-kpi-num">{s.overdue}</span>
+          <span className="dash-kpi-lbl">Overdue tasks <ScopeInfo text="Active (open) tasks whose due date is already past. Completed and cancelled tasks are never counted as overdue." /></span>
         </button>
         <button className="dash-kpi ok" onClick={openClosedThisMonth}>
-          <span className="dash-kpi-num">{s.closed_month ?? 0}</span><span className="dash-kpi-lbl">Closed this month</span>
+          <span className="dash-kpi-num">{s.closed_month ?? 0}</span>
+          <span className="dash-kpi-lbl">Closed this month <ScopeInfo text="Tasks completed during this calendar month, counted once each. Includes tasks that have since been archived — so this can be higher than the board's Completed column." /></span>
         </button>
         <div className="dash-kpi">
-          <span className="dash-kpi-num">{s.clients ?? 0}</span><span className="dash-kpi-lbl">Active clients</span>
+          <span className="dash-kpi-num">{s.clients ?? 0}</span>
+          <span className="dash-kpi-lbl">Active clients <ScopeInfo text="Distinct projects that still have at least one open task." /></span>
         </div>
       </div>
 
@@ -201,7 +206,7 @@ export default function DashboardView({ user, users = [], hrEnabled = false, onO
                 ))}
                 <button className="board-col done" onClick={() => openList('Completed', (t) => t.status === 'completed')}>
                   <div className="board-col-count">{data.done_count}</div>
-                  <div className="board-col-name muted">Completed</div>
+                  <div className="board-col-name muted">Completed <ScopeInfo text="All completed tasks still on the active board (not archived), all-time. Archiving a completed task removes it from here — use “Closed this month” for a period count." /></div>
                 </button>
                 {data.board.length === 0 && <p className="muted" style={{ padding: 12 }}>No open tasks.</p>}
               </div>

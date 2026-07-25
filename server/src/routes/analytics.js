@@ -581,9 +581,12 @@ function buildProductivity(ws, period, { focusUser }) {
     ],
     rows,
     summary: [
-      { label: 'Tasks completed', value: sum('completed'), tone: 'good' },
-      { label: 'Currently overdue', value: sum('overdue_now'), tone: 'bad' },
-      { label: 'Hours logged', value: Math.round(sum('hours') * 10) / 10 },
+      { label: 'Tasks completed', value: sum('completed'), tone: 'good',
+        info: `Distinct tasks completed in this period (${from} → ${to}), each credited to one owner (or “Unassigned”). Equals the sum of the Completed column. The home page's “Closed this month” uses a monthly window, so it can differ.` },
+      { label: 'Currently overdue', value: sum('overdue_now'), tone: 'bad',
+        info: 'Open (not completed/cancelled) tasks whose due date is already past, as of today — independent of the period above. Each task counted once.' },
+      { label: 'Hours logged', value: Math.round(sum('hours') * 10) / 10,
+        info: `Timesheet hours logged in this period (${from} → ${to}) across the team.` },
     ],
   };
 }
