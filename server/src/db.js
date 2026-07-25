@@ -240,6 +240,23 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
 );
 CREATE INDEX IF NOT EXISTS idx_task_deps_on ON task_dependencies(depends_on_id);
 
+-- Approval requests to cancel or delete a task. A member requests; the task's
+-- assignor (or an admin) approves or rejects. The task isn't cancelled/deleted
+-- until approved.
+CREATE TABLE IF NOT EXISTS task_approvals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  requested_by INTEGER NOT NULL REFERENCES users(id),
+  approver_id INTEGER REFERENCES users(id),
+  kind TEXT NOT NULL,                        -- 'cancel' | 'delete'
+  reason TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',     -- pending | approved | rejected
+  workspace_id INTEGER REFERENCES workspaces(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_task_approvals_approver ON task_approvals(approver_id, status);
+
 CREATE TABLE IF NOT EXISTS task_checklist (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -549,6 +566,10 @@ ensureColumn('tasks', 'client_id', 'INTEGER REFERENCES clients(id)');
 // Optional planned start date (YYYY-MM-DD) so the timeline can draw a bar from
 // start → due; when absent the timeline falls back to a marker on the due date.
 ensureColumn('tasks', 'start_date', 'TEXT');
+// The "assignor" (reporting person) — who allotted the work, approves its
+// cancel/delete, and rates it. Defaults to the creator; a self-created task can
+// name someone else so approvals/ratings route to a real reporting manager.
+ensureColumn('tasks', 'assignor_id', 'INTEGER REFERENCES users(id)');
 // A compliance deadline can be assigned to a staff member (who files it) and,
 // once turned into an actionable task, linked to that task.
 ensureColumn('client_deadlines', 'assignee_id', 'INTEGER REFERENCES users(id)');

@@ -542,8 +542,18 @@ async function main() {
   check('Hold without a reason is rejected', holdNoReason.status === 400);
   const holdReason = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'hold', status_reason: 'Waiting on client documents' } });
   check('Hold with a reason is accepted', holdReason.status === 200 && holdReason.data.status === 'hold' && holdReason.data.status_reason.includes('client documents'));
-  const cancelNoReason = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'cancelled' } });
-  check('Cancel without a reason is rejected', cancelNoReason.status === 400);
+  // Cancelling now needs the assignor's approval — a member can't cancel directly.
+  const cancelDirect = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'cancelled', status_reason: 'x' } });
+  check('a member cannot cancel a task directly — approval required', cancelDirect.status === 403);
+  const reqCancel = await req('POST', `/api/tasks/${stId}/request-action`, { token: b, body: { kind: 'cancel', reason: 'Duplicate' } });
+  check('a member can request cancellation', reqCancel.status === 201 && reqCancel.data.requested === true);
+  const pend = await req('GET', '/api/tasks/approvals/pending', { token: a });
+  check('the assignor sees the pending cancel request', pend.data.approvals.some((x) => x.task_id === stId && x.kind === 'cancel'));
+  const appId = pend.data.approvals.find((x) => x.task_id === stId).id;
+  const approveReq = await req('POST', `/api/tasks/approvals/${appId}/approve`, { token: a });
+  check('the assignor approves the request', approveReq.status === 200);
+  const afterApprove = await req('GET', `/api/tasks/${stId}`, { token: a });
+  check('an approved cancel sets the task to cancelled', afterApprove.data.task.status === 'cancelled');
   const badStatus = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'archived' } });
   check('invalid status rejected', badStatus.status === 400);
   const backToProgress = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'in_progress' } });
