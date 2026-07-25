@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Avatar from './Avatar.jsx';
 import { dueStatus } from './TaskCard.jsx';
 import { statusMeta } from '../status.js';
+import { api } from '../api.js';
 
 const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 
@@ -11,10 +12,13 @@ function delayDays(due, completedAt) {
   return Math.round((new Date(completedAt.slice(0, 10) + 'T00:00:00') - new Date(due + 'T00:00:00')) / 86400000);
 }
 
-export default function TaskListView({ tasks, onOpen }) {
+export default function TaskListView({ tasks, onOpen, user, users = [], onChanged }) {
   const [sort, setSort] = useState({ key: 'updated', dir: -1 });
+  const [sel, setSel] = useState(() => new Set());     // selected task ids
+  const [busy, setBusy] = useState(false);
+  const isAdmin = user?.role === 'admin';
 
-  function sorted() {
+  const rows = useMemo(() => {
     const arr = [...tasks];
     const { key, dir } = sort;
     arr.sort((a, b) => {
@@ -34,7 +38,7 @@ export default function TaskListView({ tasks, onOpen }) {
       return av < bv ? dir : av > bv ? -dir : 0;
     });
     return arr;
-  }
+  }, [tasks, sort]);
 
   const header = (key, label) => (
     <th onClick={() => setSort((s) => ({ key, dir: s.key === key ? -s.dir : 1 }))}>
@@ -42,11 +46,61 @@ export default function TaskListView({ tasks, onOpen }) {
     </th>
   );
 
+  const allChecked = rows.length > 0 && rows.every((t) => sel.has(t.id));
+  const toggleAll = () => setSel(allChecked ? new Set() : new Set(rows.map((t) => t.id)));
+  const toggle = (id) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const clear = () => setSel(new Set());
+
+  // Run `fn` over every selected task, tolerating per-task permission errors,
+  // then refresh the list and report anything that couldn't be changed.
+  async function runBulk(fn, label) {
+    const ids = [...sel];
+    if (!ids.length) return;
+    setBusy(true);
+    let failed = 0;
+    await Promise.all(ids.map((id) => fn(id).catch(() => { failed += 1; })));
+    setBusy(false);
+    clear();
+    onChanged?.();
+    if (failed) window.alert(`${label}: ${ids.length - failed} done, ${failed} skipped (you may not have permission on those).`);
+  }
+
+  const bulkPriority = (p) => p && runBulk((id) => api(`/tasks/${id}`, { method: 'PATCH', body: { priority: p } }), 'Priority');
+  const bulkDue = (d) => runBulk((id) => api(`/tasks/${id}`, { method: 'PATCH', body: { due_date: d || null } }), 'Due date');
+  const bulkAssign = (uid) => runBulk((id) => api(`/tasks/${id}`, { method: 'PATCH', body: { assignee_ids: uid ? [Number(uid)] : [] } }), 'Reassign');
+  const bulkArchive = () => runBulk((id) => api(`/tasks/${id}/archive`, { method: 'POST' }), 'Archive');
+  const bulkDelete = () => {
+    if (!window.confirm(`Delete ${sel.size} task${sel.size === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    runBulk((id) => api(`/tasks/${id}`, { method: 'DELETE' }), 'Delete');
+  };
+
+  const people = users.filter((u) => u.name && u.role !== 'guest');
+
   return (
     <div className="list-view">
+      {sel.size > 0 && (
+        <div className="bulk-bar">
+          <span className="bulk-count">{sel.size} selected</span>
+          <select className="bulk-ctl" defaultValue="" onChange={(e) => { bulkAssign(e.target.value === 'none' ? '' : e.target.value); e.target.value = ''; }} disabled={busy}>
+            <option value="" disabled>Reassign to…</option>
+            <option value="none">Unassign</option>
+            {people.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <select className="bulk-ctl" defaultValue="" onChange={(e) => { bulkPriority(e.target.value); e.target.value = ''; }} disabled={busy}>
+            <option value="" disabled>Set priority…</option>
+            <option value="urgent">Urgent</option><option value="high">High</option>
+            <option value="medium">Medium</option><option value="low">Low</option>
+          </select>
+          <label className="bulk-ctl bulk-due">Due<input type="date" onChange={(e) => bulkDue(e.target.value)} disabled={busy} /></label>
+          <button className="bulk-btn" onClick={bulkArchive} disabled={busy}>🗄 Archive</button>
+          {isAdmin && <button className="bulk-btn bulk-danger" onClick={bulkDelete} disabled={busy}>🗑 Delete</button>}
+          <button className="bulk-btn bulk-clear" onClick={clear} disabled={busy}>Clear</button>
+        </div>
+      )}
       <table className="task-table">
         <thead>
           <tr>
+            <th className="bulk-check"><input type="checkbox" checked={allChecked} onChange={toggleAll} aria-label="Select all" /></th>
             {header('title', 'Task')}
             {header('board', 'Board')}
             {header('stage', 'Stage')}
@@ -61,8 +115,11 @@ export default function TaskListView({ tasks, onOpen }) {
           </tr>
         </thead>
         <tbody>
-          {sorted().map((t) => (
-            <tr key={t.id} onClick={() => onOpen(t.id)}>
+          {rows.map((t) => (
+            <tr key={t.id} className={sel.has(t.id) ? 'row-selected' : ''} onClick={() => onOpen(t.id)}>
+              <td className="bulk-check" onClick={(e) => e.stopPropagation()}>
+                <input type="checkbox" checked={sel.has(t.id)} onChange={() => toggle(t.id)} aria-label={`Select ${t.title}`} />
+              </td>
               <td>
                 <div className="list-title">{t.title}</div>
                 {t.project && <span className="project-dot inline" style={{ background: t.project.color }} />}
@@ -92,7 +149,7 @@ export default function TaskListView({ tasks, onOpen }) {
               <td>{t.checklist_total > 0 ? `${t.checklist_done}/${t.checklist_total}` : <span className="muted">—</span>}</td>
             </tr>
           ))}
-          {tasks.length === 0 && <tr><td colSpan={11} className="muted" style={{ padding: 20 }}>No tasks match these filters.</td></tr>}
+          {tasks.length === 0 && <tr><td colSpan={12} className="muted" style={{ padding: 20 }}>No tasks match these filters.</td></tr>}
         </tbody>
       </table>
     </div>
