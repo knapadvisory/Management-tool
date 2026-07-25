@@ -451,6 +451,14 @@ async function main() {
   }
   const badRep = await req('GET', '/api/analytics/reports/nonsense', { token: a });
   check('an unknown report type is rejected', badRep.status === 400);
+  // Drill-down support: productivity rows carry a user_id, aging rows a task_id,
+  // and the overdue-tasks detail metric resolves.
+  const prodRep = await req('GET', '/api/analytics/reports/productivity', { token: a });
+  check('productivity rows expose user_id for drill-down', prodRep.data.rows.every((r) => Number.isInteger(r.user_id)));
+  const agingRep = await req('GET', '/api/analytics/reports/aging', { token: a });
+  check('aging rows expose task_id (tasks) for drill-down', agingRep.data.rows.every((r) => 'task_id' in r));
+  const odTasks = await req('GET', '/api/analytics/detail?metric=overdue_tasks&period=month', { token: a });
+  check('overdue-tasks drill metric returns rows array', odTasks.status === 200 && Array.isArray(odTasks.data.rows));
   const repExport = await fetch(`${BASE}/api/analytics/reports/aging/export`, { headers: { Authorization: `Bearer ${a}` } });
   check('a report exports as an .xlsx', repExport.ok && (repExport.headers.get('content-type') || '').includes('spreadsheet'));
 

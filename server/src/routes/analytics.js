@@ -375,6 +375,25 @@ router.get('/detail', (req, res) => {
     return res.json({ metric, rows });
   }
 
+  if (metric === 'overdue_tasks') {
+    const p = [ws, today];
+    let sql = `SELECT t.id, t.title, t.due_date, cl.name AS client_name,
+        u.name AS who_name, u.avatar_color AS who_color, u.avatar_url AS who_url
+      FROM tasks t
+      LEFT JOIN clients cl ON cl.id = t.client_id
+      LEFT JOIN users u ON u.id = t.assignee_id
+      WHERE t.workspace_id = ? AND t.status NOT IN ('completed','cancelled') AND t.archived_at IS NULL
+        AND t.due_date IS NOT NULL AND t.due_date != '' AND t.due_date < ?`;
+    sql += taskScope('t', p) + clientClause('t', p);
+    sql += ' ORDER BY t.due_date ASC LIMIT 300';
+    const rows = db.prepare(sql).all(...p).map((r) => ({
+      id: r.id, title: r.title, client_name: r.client_name,
+      who: r.who_name ? { name: r.who_name, avatar_color: r.who_color, avatar_url: r.who_url } : null,
+      due_date: r.due_date, days_overdue: daysBetween(r.due_date, today),
+    }));
+    return res.json({ metric, rows });
+  }
+
   if (metric === 'billable') {
     // `users` carry an avatar; `clients` don't — only select the avatar columns
     // when grouping by person.
@@ -519,6 +538,7 @@ function buildProductivity(ws, period, { focusUser }) {
     ).get(ws, u.id, from, to).m;
 
     return {
+      user_id: u.id,
       person: u.name,
       completed: done.length,
       on_time_pct: withDue.length ? Math.round((onTime / withDue.length) * 100) : null,
@@ -563,7 +583,7 @@ function buildAging(ws, { focusUser }) {
       AND t.due_date IS NOT NULL AND t.due_date < ?`;
   if (focusUser) { taskSql += ' AND (t.assignee_id = ? OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?))'; taskP.push(focusUser, focusUser); }
   const tasks = db.prepare(taskSql).all(...taskP).map((r) => ({
-    type: 'Task', item: r.title, client: r.client_name || '—',
+    type: 'Task', task_id: r.id, item: r.title, client: r.client_name || '—',
     owner: r.owner_name || 'Unassigned', due_date: r.due_date, days: daysBetween(r.due_date, today),
   }));
 
@@ -576,7 +596,7 @@ function buildAging(ws, { focusUser }) {
     WHERE c.workspace_id = ? AND d.completed = 0 AND d.due_date < ?`;
   if (focusUser) { filSql += ' AND d.assignee_id = ?'; filP.push(focusUser); }
   const filings = db.prepare(filSql).all(...filP).map((r) => ({
-    type: 'Filing', item: r.title, client: r.client_name,
+    type: 'Filing', task_id: null, item: r.title, client: r.client_name,
     owner: r.owner_name || 'Unassigned', due_date: r.due_date, days: daysBetween(r.due_date, today),
   }));
 
