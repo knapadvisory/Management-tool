@@ -570,6 +570,29 @@ ensureColumn('tasks', 'start_date', 'TEXT');
 // cancel/delete, and rates it. Defaults to the creator; a self-created task can
 // name someone else so approvals/ratings route to a real reporting manager.
 ensureColumn('tasks', 'assignor_id', 'INTEGER REFERENCES users(id)');
+// --- Completed-task consistency backfill (idempotent) ---
+// A completed task must (a) carry a completed_at timestamp and (b) sit in its
+// workflow's done stage. Legacy rows — bulk-imported, or completed before these
+// rules existed — could break either invariant, which made the dashboard's
+// "Completed" count (by status) disagree with Archive-done (by completed_at) and
+// left "Completed" cards stranded in open columns like "To Do".
+//   (a) Stamp completed_at where it's missing (best-effort: use updated_at).
+db.exec(`UPDATE tasks SET completed_at = COALESCE(updated_at, datetime('now'))
+         WHERE status = 'completed' AND completed_at IS NULL`);
+//   (b) Move completed tasks into their workflow's done stage (last one flagged
+//       is_done). Skipped for workflows that have no done stage, and no-ops once
+//       every completed task already sits in a done stage.
+db.exec(`
+  UPDATE tasks SET stage_id = (
+    SELECT s.id FROM workflow_stages s
+    WHERE s.workflow_id = tasks.workflow_id AND s.is_done = 1
+    ORDER BY s.position DESC, s.id DESC LIMIT 1
+  )
+  WHERE status = 'completed'
+    AND EXISTS (SELECT 1 FROM workflow_stages s WHERE s.workflow_id = tasks.workflow_id AND s.is_done = 1)
+    AND stage_id NOT IN (SELECT id FROM workflow_stages s WHERE s.workflow_id = tasks.workflow_id AND s.is_done = 1)
+`);
+
 // A compliance deadline can be assigned to a staff member (who files it) and,
 // once turned into an actionable task, linked to that task.
 ensureColumn('client_deadlines', 'assignee_id', 'INTEGER REFERENCES users(id)');
