@@ -590,10 +590,27 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .draggable-panel .drag-handle { cursor: move; user-select: none; touch-action: none; gap: 8px; }
 .draggable-panel .drag-handle .drag-hint { font-size: 11px; font-weight: 500; margin-left: auto; margin-right: 8px; white-space: nowrap; }
 
-/* Scope-explainer info marker on KPI tiles — hover/tap shows a title tooltip */
-.scope-info { display: inline-block; width: 0.95em; height: 0.95em; vertical-align: -0.12em;
-  object-fit: contain; opacity: 0.85; cursor: help; }
-.scope-info:hover, .scope-info:focus { opacity: 1; outline: none; }
+/* Scope-explainer info marker on KPI tiles — hover/tap shows a styled tooltip */
+.scope-info-wrap { position: relative; display: inline-block; cursor: help; outline: none; vertical-align: -0.12em; }
+.scope-info { display: block; width: 0.95em; height: 0.95em; object-fit: contain; opacity: 0.85; }
+.scope-info-wrap:hover .scope-info, .scope-info-wrap:focus .scope-info { opacity: 1; }
+
+.scope-tip {
+  position: absolute; top: calc(100% + 8px); right: 0; left: auto;
+  width: max-content; max-width: 260px;
+  background: #1f2937; color: #fff; text-align: left; text-transform: none;
+  letter-spacing: normal; font-weight: 400; font-size: 12px; line-height: 1.45;
+  padding: 8px 11px; border-radius: 9px; white-space: normal; word-break: break-word;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28); z-index: 2000; pointer-events: none;
+  opacity: 0; visibility: hidden; transform: translateY(-4px);
+  transition: opacity .12s ease, transform .12s ease;
+}
+.scope-info-wrap:hover .scope-tip, .scope-info-wrap:focus .scope-tip { opacity: 1; visibility: visible; transform: translateY(0); }
+/* Small caret pointing up at the icon */
+.scope-tip::before {
+  content: ''; position: absolute; bottom: 100%; right: 6px;
+  border: 6px solid transparent; border-bottom-color: #1f2937;
+}
 
 /* ---------- Workflows ---------- */
 .workflow-form {
