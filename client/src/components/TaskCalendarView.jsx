@@ -53,17 +53,20 @@ export default function TaskCalendarView({ tasks, onOpen }) {
             <div key={i} className={`cal-cell ${key === today ? 'today' : ''}`}>
               <div className="cal-date">{date.getDate()}</div>
               <div className="cal-tasks">
-                {dayTasks.slice(0, 4).map((t) => (
-                  <button
-                    key={t.id}
-                    className={`cal-task ${dueStatus(t.due_date)}`}
-                    style={t.project ? { borderLeftColor: t.project.color } : undefined}
-                    onClick={() => onOpen(t.id)}
-                    title={t.title}
-                  >
-                    {t.title}
-                  </button>
-                ))}
+                {dayTasks.slice(0, 4).map((t) => {
+                  const finished = t.status === 'completed' || t.status === 'cancelled';
+                  return (
+                    <button
+                      key={t.id}
+                      className={`cal-task ${finished ? 'done' : dueStatus(t.due_date)}`}
+                      style={t.project ? { borderLeftColor: t.project.color } : undefined}
+                      onClick={() => onOpen(t.id)}
+                      title={finished ? `${t.title} (${t.status})` : t.title}
+                    >
+                      {t.title}
+                    </button>
+                  );
+                })}
                 {dayTasks.length > 4 && <span className="cal-more">+{dayTasks.length - 4} more</span>}
               </div>
             </div>

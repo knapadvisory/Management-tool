@@ -101,6 +101,9 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
 
   async function toggleWatch() {
     const watching = watchers.some((w) => w.id === user.id);
+    // Guard against accidentally dropping a watch — once unwatched, the task
+    // stops showing under the "Watching" filter.
+    if (watching && !window.confirm('Stop watching this task? It will no longer appear under the "Watching" filter.')) return;
     await api(`/tasks/${taskId}/watch`, { method: watching ? 'DELETE' : 'POST' });
     load();
   }
