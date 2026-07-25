@@ -73,7 +73,10 @@ export default function DashboardView({ user, users = [], hrEnabled = false, onO
         const d = await api(`/search?q=${encodeURIComponent(taskQuery.trim())}`);
         setTaskHits((d.tasks || []).map((t) => ({
           id: t.id, title: t.title, priority: t.priority, due_date: t.due_date, status: t.status,
-          stage: t.stage, project: t.client_name ? { name: t.client_name, color: '#6b7280' } : null,
+          completed_at: t.completed_at, stage: t.stage,
+          creator: t.creator_name ? { name: t.creator_name, avatar_color: t.creator_color, avatar_url: t.creator_url } : null,
+          assignee: t.assignee_name ? { name: t.assignee_name, avatar_color: t.assignee_color, avatar_url: t.assignee_url } : null,
+          project: t.client_name ? { name: t.client_name, color: '#6b7280' } : null,
         })));
       } catch { setTaskHits([]); }
     }, 220);
@@ -215,16 +218,8 @@ export default function DashboardView({ user, users = [], hrEnabled = false, onO
               <input className="dash-task-search" placeholder="🔍 Search tasks or a client's tasks…"
                 value={taskQuery} onChange={(e) => setTaskQuery(e.target.value)} />
             </div>
-            <TaskListPanel
-              tasks={taskHits ?? data.all_tasks}
-              mode="open"
-              hideSearch
-              onOpenTask={openTask}
-              currentUserId={user.id}
-              TaskList={TaskList}
-              ClosedList={ClosedList}
-              empty={taskHits ? 'No tasks match your search.' : 'No open tasks.'}
-            />
+            <OpenTasksTable rows={taskHits ?? data.all_tasks} onOpen={openTask}
+              empty={taskHits ? 'No tasks match your search.' : 'No open tasks.'} />
           </section>
         </div>
 
@@ -425,6 +420,40 @@ function dashRel(t, me) {
 }
 
 // "Closed this month" list: due date, actual completion date, and delay.
+// The Home "All open tasks / Task search" table. Columns: Task · Assigned by ·
+// Assignee · Due · Stage · Completed. Completed/cancelled rows read as done
+// (muted + struck) with their completion date, so search results don't look
+// like live work.
+function OpenTasksTable({ rows, onOpen, empty }) {
+  const person = (p) => p ? <span className="ot-person"><Avatar user={p} size={18} /> {p.name}</span> : <span className="muted">—</span>;
+  return (
+    <div className="ot-wrap">
+      <table className="ot-table">
+        <thead>
+          <tr><th>Task</th><th>Assigned by</th><th>Assignee</th><th>Due date</th><th>Stage</th><th>Completed</th></tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>{empty}</td></tr>}
+          {rows.map((t) => {
+            const done = t.status === 'completed' || t.status === 'cancelled' || !!t.completed_at;
+            const badge = dueBadge(t.due_date);
+            return (
+              <tr key={t.id} className={`ot-row ${done ? 'ot-done' : ''}`} onClick={() => onOpen(t.id)}>
+                <td className="ot-title">{t.title}{t.project && <span className="ot-client"> · {t.project.name}</span>}</td>
+                <td>{person(t.creator)}</td>
+                <td>{person(t.assignee)}</td>
+                <td>{t.due_date ? <span className={`ot-due tone-${badge.tone}`}>{fmtDay(t.due_date)}</span> : <span className="muted">—</span>}</td>
+                <td className="muted">{t.stage || '—'}</td>
+                <td>{t.completed_at ? <span className="ot-completed">{fmtDay(t.completed_at.slice(0, 10))}</span> : <span className="muted">—</span>}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ClosedList({ tasks, onOpenTask }) {
   if (!tasks.length) return <p className="muted" style={{ padding: 12 }}>No tasks completed this month.</p>;
   const delayDays = (due, done) => {

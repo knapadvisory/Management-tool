@@ -49,11 +49,15 @@ router.get('/', (req, res) => {
     taskParams.push(req.user.id, req.user.id, req.user.id);
   }
   const tasks = db.prepare(`
-    SELECT t.id, t.title, t.status, t.due_date, t.priority, t.client_id, t.archived_at,
-           cl.name AS client_name, s.name AS stage, s.is_done
+    SELECT t.id, t.title, t.status, t.due_date, t.completed_at, t.priority, t.client_id, t.archived_at,
+           cl.name AS client_name, s.name AS stage, s.is_done,
+           cr.name AS creator_name, cr.avatar_color AS creator_color, cr.avatar_url AS creator_url,
+           asg.name AS assignee_name, asg.avatar_color AS assignee_color, asg.avatar_url AS assignee_url
     FROM tasks t
     JOIN workflow_stages s ON s.id = t.stage_id
     LEFT JOIN clients cl ON cl.id = t.client_id
+    LEFT JOIN users cr ON cr.id = t.creator_id
+    LEFT JOIN users asg ON asg.id = t.assignee_id
     WHERE t.workspace_id = ? AND (t.title LIKE ? ESCAPE '\\' OR cl.name LIKE ? ESCAPE '\\')${visClause}
     ORDER BY (t.archived_at IS NOT NULL), (s.is_done), t.updated_at DESC LIMIT 30
   `).all(...taskParams);
