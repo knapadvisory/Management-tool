@@ -250,7 +250,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
         </div>
       )}
 
-      {view === 'list' && <TaskListView tasks={visibleTasks} onOpen={setOpenTaskId} />}
+      {view === 'list' && <TaskListView tasks={visibleTasks} onOpen={setOpenTaskId} user={user} users={users} onChanged={() => loadTasks(workflowId, archivedView)} />}
       {view === 'calendar' && <TaskCalendarView tasks={visibleTasks} onOpen={setOpenTaskId} />}
       {view === 'timeline' && <TaskTimelineView tasks={visibleTasks} onOpen={setOpenTaskId} />}
 
