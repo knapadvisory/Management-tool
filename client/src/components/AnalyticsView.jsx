@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { api, downloadReport } from '../api.js';
 import Avatar from './Avatar.jsx';
 import TaskModal from './TaskModal.jsx';
+import useDragPosition from '../useDragPosition.js';
 
 // Practice Analytics — three tabs:
 //  • Overview  — firm-wide (or personal) KPIs, throughput, compliance, quality.
@@ -449,6 +450,7 @@ const METRIC_TITLE = {
   overdue_tasks: 'Overdue tasks',
 };
 function DetailModal({ metric, period, userId, clientId, isAdmin, onOpenTask, onClose }) {
+  const dragProps = useDragPosition();
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
@@ -491,9 +493,10 @@ function DetailModal({ metric, period, userId, clientId, isAdmin, onOpenTask, on
 
   return (
     <div className="an-modal-overlay" onClick={onClose}>
-      <div className="an-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="an-modal-head">
+      <div className="an-modal draggable-panel" style={dragProps.style} onClick={(e) => e.stopPropagation()}>
+        <div className="an-modal-head drag-handle" onPointerDown={dragProps.onPointerDown} title="Drag to move">
           <strong>{METRIC_TITLE[metric]}</strong>
+          <span className="drag-hint muted">⠿ drag to move</span>
           <button className="an-modal-x" onClick={onClose}>✕</button>
         </div>
         <div className="an-modal-body">
