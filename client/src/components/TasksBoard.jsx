@@ -141,8 +141,10 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
 
   // Client-side filtering keeps the board responsive to live updates.
   const assigneesOf = (t) => (t.assignees?.length ? t.assignees : (t.assignee ? [t.assignee] : []));
+  const isMine = (t) => assigneesOf(t).some((a) => a.id === user.id) || t.creator?.id === user.id || t.creator_id === user.id;
   const visibleTasks = tasks.filter((t) => {
-    if (filters.mine && !assigneesOf(t).some((a) => a.id === user.id)) return false;
+    // "Mine" = work I'm doing (assigned to me) OR work I handed out (I created it).
+    if (filters.mine && !isMine(t)) return false;
     if (filters.assignee_id && !assigneesOf(t).some((a) => a.id === Number(filters.assignee_id))) return false;
     if (filters.creator_id && t.creator?.id !== Number(filters.creator_id)) return false;
     if (filters.project_id && t.project?.id !== Number(filters.project_id)) return false;
@@ -217,11 +219,11 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
           <option value="overdue">⚠ Overdue</option>
           <option value="nodate">No due date</option>
         </select>
-        <label className="checkbox"><input type="checkbox" checked={filters.mine} onChange={(e) => setFilters((f) => ({ ...f, mine: e.target.checked }))} /> Mine</label>
+        <label className="checkbox" title="Tasks assigned to me or that I allotted to someone"><input type="checkbox" checked={filters.mine} onChange={(e) => setFilters((f) => ({ ...f, mine: e.target.checked }))} /> Mine</label>
         <label className="checkbox"><input type="checkbox" checked={filters.watching} onChange={(e) => setFilters((f) => ({ ...f, watching: e.target.checked }))} /> Watching</label>
         <button className="btn btn-sm" onClick={() => setShowProjects(true)}>⚙ Projects</button>
         <button className="btn btn-sm" onClick={() => setShowTemplates(true)}>⧉ Templates</button>
-        {!archivedView && <button className="btn btn-sm" onClick={() => setShowImport(true)} title="Bulk-create tasks from an Excel file">⬆ Import</button>}
+        {!archivedView && <button className="imp-open-btn" onClick={() => setShowImport(true)} title="Bulk-create tasks from an Excel file">⬆ Import Bulk Task</button>}
         {!archivedView && visibleTasks.some((t) => t.completed_at) && (
           <button className="btn btn-sm" onClick={archiveAllDone} title="Move all completed tasks to the archive">🗄 Archive done</button>
         )}
