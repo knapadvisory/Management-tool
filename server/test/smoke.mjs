@@ -442,6 +442,17 @@ async function main() {
   const driveList = (await req('GET', '/api/drive', { token: a })).data;
   check('the uploaded import sheet is saved into the shared Drive',
     (driveList.files || []).some((f) => /^Task import /.test(f.original_name)));
+  // A first name resolves to a full name on import ("Nina" -> "Nina Patel").
+  const nina = await req('POST', '/api/admin/users', { token: a, body: { name: 'Nina Patel', email: 'nina@smoke.test', password: 'secret123' } });
+  const csv2 = 'Title *,Board,Assignee\nFirst-name assign,Onboarding,Nina\n';
+  const impFd2 = new FormData();
+  impFd2.append('file', new Blob([csv2], { type: 'text/csv' }), 'a.csv');
+  const impRes2 = await fetch(`${BASE}/api/tasks/import`, { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: impFd2 });
+  const imp2 = await impRes2.json();
+  check('import resolves a first name to the full user', imp2.created === 1 && (imp2.errors || []).length === 0);
+  const withNina = (await req('GET', `/api/tasks?workflow_id=${wf.data.id}`, { token: a })).data.tasks
+    .find((t) => t.title === 'First-name assign');
+  check('the first-name-imported task is assigned to Nina Patel', withNina?.assignee?.id === nina.data.id);
 
   console.log('Analytics reports');
   for (const rtype of ['compliance', 'productivity', 'aging']) {

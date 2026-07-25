@@ -2338,7 +2338,10 @@ button.c360-stat:hover { border-color: var(--accent); }
 .an-rank-name { font-size: 13px; font-weight: 640; display: flex; align-items: center; gap: 6px; }
 .an-rank-score { text-align: right; }
 .an-rank-score b { font-size: 16px; font-variant-numeric: tabular-nums; }
-.an-rank-n { display: block; font-size: 10px; color: var(--muted); }
+.an-rank-score { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.an-rank-avg b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.an-rank-outof { font-size: 11px; color: var(--muted); margin-left: 1px; }
+.an-rank-n { display: block; font-size: 10px; color: var(--muted); white-space: nowrap; }
 .an-trend { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 10px; }
 .an-trend.up { color: var(--success); background: var(--success-soft); }
 .an-trend.down { color: var(--danger); background: var(--danger-soft); }
@@ -2626,3 +2629,20 @@ button.c360-stat:hover { border-color: var(--accent); }
 .bulk-clear { margin-left: auto; }
 .task-table th.bulk-check, .task-table td.bulk-check { width: 32px; text-align: center; padding-left: 8px; padding-right: 0; cursor: default; }
 .task-table tr.row-selected { background: var(--accent-soft, #eef2ff); }
+
+/* ---- Home: All open tasks / Task search table ---- */
+.ot-wrap { overflow-x: auto; }
+.ot-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.ot-table thead th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #6b7280); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border, #e5e7eb); white-space: nowrap; }
+.ot-row { cursor: pointer; border-bottom: 1px solid var(--line, #f1f2f4); }
+.ot-row:hover { background: var(--hover, #f7f8fa); }
+.ot-row td { padding: 9px 10px; vertical-align: middle; }
+.ot-title { font-weight: 600; }
+.ot-client { color: var(--muted, #6b7280); font-weight: 400; font-size: 12px; }
+.ot-person { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ot-due.tone-over { color: #dc2626; font-weight: 600; }
+.ot-due.tone-today { color: #d97706; font-weight: 600; }
+.ot-due.tone-soon { color: #d97706; }
+.ot-completed { color: #16a34a; font-weight: 600; }
+.ot-done .ot-title { text-decoration: line-through; }
+.ot-done td { color: var(--muted, #9aa0aa); opacity: .85; }
