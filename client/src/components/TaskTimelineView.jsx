@@ -55,6 +55,19 @@ export default function TaskTimelineView({ tasks, onOpen }) {
   const todayStr = ymd(new Date());
   const todayIdx = days.some((d) => ymd(d) === todayStr) ? idxOf(todayStr) : -1;
 
+  // How many tasks fall DUE on each calendar day, so the header can flag busy
+  // dates. Only open tasks count toward the "due" load (finished/cancelled work
+  // isn't pending). The tallest day scales the little bars to full height.
+  const dueByDay = useMemo(() => {
+    const m = {};
+    for (const t of dated) {
+      if (t.status === 'completed' || t.status === 'cancelled') continue;
+      m[t.due_date] = (m[t.due_date] || 0) + 1;
+    }
+    return m;
+  }, [dated]);
+  const maxDue = Math.max(1, ...Object.values(dueByDay));
+
   return (
     <div className="gantt">
       <div className="gantt-scroll">
@@ -63,12 +76,21 @@ export default function TaskTimelineView({ tasks, onOpen }) {
           <div className="gantt-head">
             <div className="gantt-gutter gantt-head-gutter">Task</div>
             <div className="gantt-track gantt-head-track" style={{ width }}>
-              {days.map((d, i) => (
-                <div key={i} className={`gantt-tick ${d.getDay() === 0 || d.getDay() === 6 ? 'weekend' : ''} ${ymd(d) === todayStr ? 'today' : ''}`} style={{ width: DAY_W }}>
-                  {d.getDate() === 1 || i === 0 ? <span className="gantt-month">{MONTHS[d.getMonth()]}</span> : null}
-                  <span className="gantt-day">{d.getDate()}</span>
-                </div>
-              ))}
+              {days.map((d, i) => {
+                const due = dueByDay[ymd(d)] || 0;
+                return (
+                  <div key={i} className={`gantt-tick ${d.getDay() === 0 || d.getDay() === 6 ? 'weekend' : ''} ${ymd(d) === todayStr ? 'today' : ''}`} style={{ width: DAY_W }}>
+                    {d.getDate() === 1 || i === 0 ? <span className="gantt-month">{MONTHS[d.getMonth()]}</span> : null}
+                    {due > 0 && (
+                      <span className="gantt-duecount" title={`${due} task${due > 1 ? 's' : ''} due on ${ymd(d)}`}>
+                        <span className="gantt-duebar" style={{ height: `${6 + (due / maxDue) * 16}px` }} />
+                        <span className="gantt-duenum">{due}</span>
+                      </span>
+                    )}
+                    <span className="gantt-day">{d.getDate()}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

@@ -156,6 +156,11 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
     if (filters.tag && !t.tags?.includes(filters.tag)) return false;
     if (filters.watching && !t.watcher_ids?.includes(user.id)) return false;
     if (filters.status && (t.status || 'in_progress') !== filters.status) return false;
+    // Cancelled tasks are dead work — keep them out of the active board/list/
+    // timeline unless the viewer explicitly filters for "Cancelled" (or is in the
+    // archived view). This keeps the list total in step with the home "Active
+    // tasks" count, which also excludes cancelled.
+    if (!archivedView && !filters.status && (t.status === 'cancelled')) return false;
     switch (filters.due) {
       case 'overdue': if (!t.due_date || t.due_date >= todayYMD) return false; break;
       case 'today': if (t.due_date !== todayYMD) return false; break;

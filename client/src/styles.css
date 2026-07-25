@@ -590,26 +590,29 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .draggable-panel .drag-handle { cursor: move; user-select: none; touch-action: none; gap: 8px; }
 .draggable-panel .drag-handle .drag-hint { font-size: 11px; font-weight: 500; margin-left: auto; margin-right: 8px; white-space: nowrap; }
 
-/* Scope-explainer info marker on KPI tiles — hover/tap shows a styled tooltip */
+/* Scope-explainer info marker on KPI tiles — hover/tap shows a styled tooltip.
+   The tooltip itself is portalled to <body> (position:fixed) and clamped to the
+   viewport in JS, so it never clips against a card or a screen edge. */
 .scope-info-wrap { position: relative; display: inline-block; cursor: help; outline: none; vertical-align: -0.12em; }
 .scope-info { display: block; width: 0.95em; height: 0.95em; object-fit: contain; opacity: 0.85; }
 .scope-info-wrap:hover .scope-info, .scope-info-wrap:focus .scope-info { opacity: 1; }
 
 .scope-tip {
-  position: absolute; top: calc(100% + 8px); right: 0; left: auto;
-  width: max-content; max-width: 260px;
-  background: #1f2937; color: #fff; text-align: left; text-transform: none;
-  letter-spacing: normal; font-weight: 400; font-size: 12px; line-height: 1.45;
-  padding: 8px 11px; border-radius: 9px; white-space: normal; word-break: break-word;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28); z-index: 2000; pointer-events: none;
-  opacity: 0; visibility: hidden; transform: translateY(-4px);
-  transition: opacity .12s ease, transform .12s ease;
+  position: fixed; z-index: 4000; pointer-events: none;
+  background: var(--tooltip-bg, #1f2937); color: var(--tooltip-fg, #fff);
+  border: 1px solid var(--tooltip-border, rgba(255,255,255,0.08));
+  text-align: left; text-transform: none; letter-spacing: normal; font-weight: 400;
+  font-size: 12px; line-height: 1.45; padding: 8px 11px; border-radius: 9px;
+  white-space: normal; word-break: break-word; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.30);
+  animation: scope-tip-in .12s ease;
 }
-.scope-info-wrap:hover .scope-tip, .scope-info-wrap:focus .scope-tip { opacity: 1; visibility: visible; transform: translateY(0); }
-/* Small caret pointing up at the icon */
-.scope-tip::before {
-  content: ''; position: absolute; bottom: 100%; right: 6px;
-  border: 6px solid transparent; border-bottom-color: #1f2937;
+@keyframes scope-tip-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+/* Caret, positioned in JS to point back at the icon */
+.scope-tip-arrow { position: absolute; bottom: 100%; width: 0; height: 0; transform: translateX(-6px);
+  border: 6px solid transparent; border-bottom-color: var(--tooltip-bg, #1f2937); }
+:root { --tooltip-bg: #1f2937; --tooltip-fg: #fff; --tooltip-border: rgba(255,255,255,0.08); }
+:root[data-theme="dark"], .dark {
+  --tooltip-bg: #f8fafc; --tooltip-fg: #0f172a; --tooltip-border: rgba(0,0,0,0.12);
 }
 
 /* ---------- Workflows ---------- */
@@ -2553,10 +2556,17 @@ button.c360-stat:hover { border-color: var(--accent); }
 .gantt-inner { min-width: 100%; }
 .gantt-head { display: flex; position: sticky; top: 0; z-index: 3; background: var(--card, #fff); border-bottom: 1px solid var(--border, #e5e7eb); }
 .gantt-gutter { width: 220px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-right: 1px solid var(--border, #e5e7eb); background: var(--card, #fff); position: sticky; left: 0; z-index: 2; }
-.gantt-head-gutter { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--muted, #6b7280); height: 46px; }
+.gantt-head-gutter { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--muted, #6b7280); height: 54px; display: flex; align-items: flex-end; padding-bottom: 4px; }
 .gantt-track { position: relative; height: 46px; }
 .gantt-head-track { display: flex; }
-.gantt-tick { flex: none; text-align: center; font-size: 11px; color: var(--muted, #8a8f98); border-right: 1px solid var(--line, #f0f1f3); padding-top: 5px; position: relative; }
+.gantt-tick { flex: none; text-align: center; font-size: 11px; color: var(--muted, #8a8f98); border-right: 1px solid var(--line, #f0f1f3); padding-top: 4px; position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; min-height: 54px; box-sizing: border-box; padding-bottom: 4px; }
+/* Per-day "tasks due" indicator in the timeline header: a little bar + count. */
+.gantt-duecount { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; margin-bottom: 2px; }
+.gantt-duebar { width: 8px; border-radius: 3px; background: var(--accent, #4f46e5); opacity: 0.85; }
+.gantt-duenum { font-size: 10px; font-weight: 800; line-height: 1; color: var(--accent, #4f46e5); }
+.gantt-tick.today .gantt-duebar, .gantt-tick.today .gantt-duenum { color: var(--accent, #4f46e5); }
+.gantt-month { order: -1; }
 .gantt-tick.weekend { background: color-mix(in srgb, var(--muted, #8a8f98) 8%, transparent); }
 .gantt-tick.today { background: color-mix(in srgb, var(--accent, #4f46e5) 14%, transparent); }
 .gantt-month { display: block; font-weight: 700; color: var(--text, #1f2430); font-size: 11px; }
