@@ -155,73 +155,10 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
       ) : tab === 'matrix' ? (
         <ComplianceMatrix onOpenClient={(id) => { setTab('clients'); selectClient(id); }} />
       ) : (
-        <div className={`messenger ${showDetail ? 'show-detail' : ''}`}>
-      <div className="msgr-list">
-        <div className="msgr-search collab-search">
-          <input placeholder="Find a client" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <button className="collab-new" title="New client" onClick={() => { setCreating(true); setSelectedId(null); }}>＋</button>
-        </div>
-        <div className="client-toolbar">
-          <select className="client-status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} title="Filter by status">
-            <option value="all">All statuses</option>
-            <option value="active">Active</option>
-            <option value="prospect">Prospect</option>
-            <option value="inactive">Inactive</option>
-          </select>
-          {allTags.length > 0 && (
-            <select className="client-status-filter" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} title="Filter by tag / compliance segment">
-              <option value="">All tags</option>
-              {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          )}
-          <button className="btn btn-sm" onClick={() => setShowImport(true)}>⬆ Import list</button>
-          <button className="btn btn-sm" onClick={() => setShowBulk(true)}>🗓 Bulk deadlines</button>
-        </div>
-        {tagFilter && (
-          <div className="client-filter-note">
-            Showing <strong>{visible.length}</strong> {tagFilter} client{visible.length === 1 ? '' : 's'}
-            <button className="link-btn" onClick={() => setTagFilter('')}>clear</button>
-          </div>
-        )}
-        <div className="az-rail">
-          <button className={`az-key ${letter === '' ? 'on' : ''}`} onClick={() => setLetter('')}>All</button>
-          {'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((L) => (
-            <button key={L} disabled={!activeLetters.has(L)} className={`az-key ${letter === L ? 'on' : ''}`} onClick={() => setLetter(L === letter ? '' : L)}>{L}</button>
-          ))}
-        </div>
+        <div className="messenger clients-single">
+      <div className="msgr-pane clients-single-pane">
+        {showDetail && <button className="mobile-back" onClick={backToList}>← Back to clients</button>}
         {flash && <div className="client-flash">{flash}</div>}
-
-        {visible.map((c) => (
-          <button key={c.id} className={`msgr-row client-row ${selectedId === c.id ? 'active' : ''}`} onClick={() => selectClient(c.id)}>
-            <span className={`client-avatar ${c.type}`}>{c.type === 'individual' ? '👤' : '🏢'}</span>
-            <div className="msgr-row-body">
-              <div className="msgr-row-top">
-                <span className="msgr-name">{c.name}</span>
-                <span className={`client-status s-${c.status}`}>{STATUS[c.status]}</span>
-              </div>
-              <div className="msgr-preview">
-                {c.next_deadline
-                  ? <span className={overdue(c.next_deadline.due_date) ? 'due-warn' : ''}>⏳ {c.next_deadline.title} · {fmtDate(c.next_deadline.due_date)}</span>
-                  : `${c.open_task_count} open task${c.open_task_count === 1 ? '' : 's'}`}
-              </div>
-              {(c.tags || []).length > 0 && (
-                <div className="client-row-tags">
-                  {c.tags.slice(0, 4).map((t) => (
-                    <span key={t} className={`client-row-tag ${tagFilter && t.toLowerCase() === tagFilter.toLowerCase() ? 'on' : ''}`}>{t}</span>
-                  ))}
-                  {c.tags.length > 4 && <span className="client-row-tag more">+{c.tags.length - 4}</span>}
-                </div>
-              )}
-            </div>
-          </button>
-        ))}
-        {clients.length === 0 && (
-          <div className="collab-empty-list"><div className="collab-empty-art">🗂️</div><p>No clients yet</p></div>
-        )}
-      </div>
-
-      <div className="msgr-pane">
-        {showDetail && <button className="mobile-back" onClick={backToList}>← Clients</button>}
         {creating ? (
           <ClientForm user={user} onCancel={() => setCreating(false)} onSaved={(c) => { load(); setCreating(false); setSelectedId(c.id); }} />
         ) : selectedId != null ? (
@@ -231,6 +168,8 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
           <ClientEngagements
             onSelect={(id) => setSelectedId(id)}
             onAdd={() => { setCreating(true); setSelectedId(null); }}
+            onImport={() => setShowImport(true)}
+            onBulk={() => setShowBulk(true)}
           />
         )}
       </div>
