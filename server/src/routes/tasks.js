@@ -71,6 +71,8 @@ function taskWithMeta(task) {
     assignee: publicUser(getUser(task.assignee_id)),
     assignees: assigneesFor(task),
     creator: publicUser(getUser(task.creator_id)),
+    assignor: publicUser(getUser(task.assignor_id || task.creator_id)),
+    pending_approval: db.prepare("SELECT id, kind, requested_by, reason FROM task_approvals WHERE task_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1").get(task.id) || null,
     stage,
     workflow,
     project,
@@ -198,8 +200,10 @@ function loadTask(req, res) {
 // rates themselves and then names a reporting manager who rates it too.
 function openTaskRating(io, task, completerId) {
   if (!task) return;
-  const selfAssigned = !task.creator_id || task.creator_id === completerId;
-  const raterId = selfAssigned ? completerId : task.creator_id;
+  // The assignor (reporting person) rates the work; falls back to the creator.
+  const assignorId = task.assignor_id || task.creator_id;
+  const selfAssigned = !assignorId || assignorId === completerId;
+  const raterId = selfAssigned ? completerId : assignorId;
   const role = selfAssigned ? 'self' : 'assigner';
 
   // Only one open rating per SERIES at a time — keyed on rater/ratee/title/role,
@@ -219,7 +223,7 @@ function openTaskRating(io, task, completerId) {
   createNotification(io, selfAssigned
     ? { user_id: completerId, type: 'rating_self', actor_id: completerId, task_id: task.id,
         text: `Rate your completed task "${task.title}" and choose a reporting manager` }
-    : { user_id: task.creator_id, type: 'rating_request', actor_id: completerId, task_id: task.id,
+    : { user_id: assignorId, type: 'rating_request', actor_id: completerId, task_id: task.id,
         text: `Rate the completed task "${task.title}"` });
   io?.to(`user:${raterId}`).emit('rating:update'); // refresh "For Your Review" live
 }
@@ -610,7 +614,7 @@ router.post('/import', uploadImport.single('file'), async (req, res) => {
 
 router.post('/', (req, res) => {
   const { title, description = '', workflow_id, project_id = null, client_id = null,
-    priority = 'medium', due_date = null, tags = [], checklist = [], recurrence = 'none', reminders = [] } = req.body;
+    priority = 'medium', due_date = null, tags = [], checklist = [], recurrence = 'none', reminders = [], assignor_id = null } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Task title is required' });
   if (!PRIORITIES.includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
   if (!RECURRENCES.includes(recurrence)) return res.status(400).json({ error: 'Invalid recurrence' });
@@ -627,10 +631,12 @@ router.post('/', (req, res) => {
   }
   const firstStage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
   if (!firstStage) return res.status(400).json({ error: 'This board has no stages yet — add a stage before creating tasks.' });
+  // Assignor (reporting person) defaults to the creator; a valid workspace user may be chosen instead.
+  const assignorId = (assignor_id && wsUser(assignor_id, req.workspaceId)) ? assignor_id : req.user.id;
   const info = db.prepare(`
-    INSERT INTO tasks (title, description, workflow_id, project_id, client_id, stage_id, assignee_id, creator_id, priority, due_date, recurrence, workspace_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(title.trim(), description, wf.id, project_id, client_id, firstStage.id, assignee_id, req.user.id, priority, due_date, recurrence, req.workspaceId);
+    INSERT INTO tasks (title, description, workflow_id, project_id, client_id, stage_id, assignee_id, creator_id, assignor_id, priority, due_date, recurrence, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(title.trim(), description, wf.id, project_id, client_id, firstStage.id, assignee_id, req.user.id, assignorId, priority, due_date, recurrence, req.workspaceId);
   const taskId = info.lastInsertRowid;
 
   const insReminder = db.prepare('INSERT INTO task_reminders (task_id, remind_at, created_by) VALUES (?, ?, ?)');
@@ -703,6 +709,11 @@ router.patch('/:id', (req, res) => {
     const creatorFallback = oldAssignees.length === 0 && task.creator_id === req.user.id;
     if (!isAssignee && !creatorFallback) {
       return res.status(403).json({ error: 'Only the assignee can change the task status.' });
+    }
+    // Cancelling needs the assignor's approval — members raise a request instead
+    // of cancelling directly (the assignor and admins may cancel outright).
+    if (status === 'cancelled' && !canActDirectly(req.user, task)) {
+      return res.status(403).json({ error: 'Ask your assignor to approve — use "Request cancellation".' });
     }
   }
 
@@ -890,6 +901,99 @@ router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
   const io = req.app.get('io');
   if (io) for (const uid of recipients) io.to(`user:${uid}`).emit('task:deleted', { task_id: task.id, workflow_id: task.workflow_id });
+  res.json({ ok: true });
+});
+
+// --- Cancel / delete approval workflow ---
+// The approver of a task is its assignor (reporting person); admins can always act.
+const approverOf = (task) => task.assignor_id || task.creator_id;
+const canActDirectly = (user, task) => user.role === 'admin' || approverOf(task) === user.id;
+
+function performTaskAction(req, task, kind) {
+  const io = req.app.get('io');
+  if (kind === 'delete') {
+    notifyWatchers(req, task, 'deleted this task', 'task_deleted');
+    const recipients = recipientsForTask(task);
+    db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
+    if (io) for (const uid of recipients) io.to(`user:${uid}`).emit('task:deleted', { task_id: task.id, workflow_id: task.workflow_id });
+  } else {
+    db.prepare("UPDATE tasks SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?").run(task.id);
+    logActivity(task.id, req.user.id, 'cancelled this task');
+    notifyWatchers(req, task, 'cancelled this task', 'task_status');
+    emitChanged(req, task.id);
+  }
+}
+
+// Request a cancel/delete — or perform it immediately if you're the approver/admin.
+router.post('/:id/request-action', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  const kind = req.body?.kind === 'delete' ? 'delete' : 'cancel';
+  const reason = String(req.body?.reason || '').trim();
+  const io = req.app.get('io');
+  if (canActDirectly(req.user, task)) {
+    performTaskAction(req, task, kind);
+    return res.json({ done: true, kind });
+  }
+  const approver = approverOf(task);
+  if (db.prepare("SELECT 1 FROM task_approvals WHERE task_id = ? AND kind = ? AND status = 'pending'").get(task.id, kind)) {
+    return res.status(409).json({ error: `A ${kind} request is already pending for this task.` });
+  }
+  const info = db.prepare('INSERT INTO task_approvals (task_id, requested_by, approver_id, kind, reason, workspace_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(task.id, req.user.id, approver, kind, reason, req.workspaceId);
+  logActivity(task.id, req.user.id, `requested to ${kind} this task${reason ? ` — ${reason}` : ''}`);
+  createNotification(io, { user_id: approver, type: 'approval_request', actor_id: req.user.id, task_id: task.id,
+    text: `${req.user.name} requests to ${kind} "${task.title}"` });
+  io?.to(`user:${approver}`).emit('approval:update');
+  emitChanged(req, task.id);
+  res.status(201).json({ requested: true, kind, approval_id: info.lastInsertRowid });
+});
+
+// Cancel/delete requests awaiting the current user's decision.
+router.get('/approvals/pending', (req, res) => {
+  const approvals = db.prepare(`
+    SELECT a.id, a.task_id, a.kind, a.reason, a.created_at, t.title,
+           u.name AS requested_by_name, u.avatar_color AS requested_by_color
+    FROM task_approvals a JOIN tasks t ON t.id = a.task_id JOIN users u ON u.id = a.requested_by
+    WHERE a.approver_id = ? AND a.status = 'pending' AND a.workspace_id = ?
+    ORDER BY a.id DESC
+  `).all(req.user.id, req.workspaceId);
+  res.json({ approvals });
+});
+
+function loadApproval(req, res) {
+  const a = db.prepare('SELECT * FROM task_approvals WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
+  if (!a) { res.status(404).json({ error: 'Request not found' }); return null; }
+  if (a.status !== 'pending') { res.status(409).json({ error: 'This request was already decided.' }); return null; }
+  if (a.approver_id !== req.user.id && req.user.role !== 'admin') { res.status(403).json({ error: 'Only the approver can decide this request.' }); return null; }
+  return a;
+}
+
+router.post('/approvals/:id/approve', (req, res) => {
+  const a = loadApproval(req, res);
+  if (!a) return;
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(a.task_id);
+  const io = req.app.get('io');
+  db.prepare("UPDATE task_approvals SET status = 'approved', resolved_at = datetime('now') WHERE id = ?").run(a.id);
+  if (task) performTaskAction(req, task, a.kind);
+  createNotification(io, { user_id: a.requested_by, type: 'approval_result', actor_id: req.user.id, task_id: a.task_id,
+    text: `${req.user.name} approved your request to ${a.kind} "${task?.title || 'a task'}"` });
+  io?.to(`user:${a.requested_by}`).emit('approval:update');
+  io?.to(`user:${req.user.id}`).emit('approval:update');
+  res.json({ ok: true, kind: a.kind });
+});
+
+router.post('/approvals/:id/reject', (req, res) => {
+  const a = loadApproval(req, res);
+  if (!a) return;
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(a.task_id);
+  const io = req.app.get('io');
+  db.prepare("UPDATE task_approvals SET status = 'rejected', resolved_at = datetime('now') WHERE id = ?").run(a.id);
+  createNotification(io, { user_id: a.requested_by, type: 'approval_result', actor_id: req.user.id, task_id: a.task_id,
+    text: `${req.user.name} declined your request to ${a.kind} "${task?.title || 'a task'}"` });
+  io?.to(`user:${a.requested_by}`).emit('approval:update');
+  io?.to(`user:${req.user.id}`).emit('approval:update');
+  if (task) emitChanged(req, task.id);
   res.json({ ok: true });
 });
 

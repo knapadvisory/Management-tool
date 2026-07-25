@@ -147,7 +147,7 @@ export default function DashboardView({ user, users = [], hrEnabled = false, onO
         </div>
       </header>
 
-      <ReviewWidget user={user} users={users} />
+      <ReviewWidget user={user} users={users} onOpenTask={openTask} />
 
       {/* Practice command-centre KPIs */}
       <div className="dash-kpis">

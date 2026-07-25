@@ -130,10 +130,34 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
     setReminders(await api(`/tasks/${taskId}/reminders/${rem.id}`, { method: 'DELETE' }));
   }
 
-  async function remove() {
-    if (!confirm('Delete this task?')) return;
-    await api(`/tasks/${taskId}`, { method: 'DELETE' });
-    onClose();
+  // Cancel/delete now go through the assignor (reporting person). If the
+  // current user IS the approver (or an admin) the action happens straight
+  // away; otherwise it's filed as a request for the assignor to approve.
+  async function requestAction(kind) {
+    const approver = task.assignor?.name || task.creator?.name || 'the assignor';
+    let reason = '';
+    if (kind === 'delete' && (task.assignor?.id === user.id || user.role === 'admin')) {
+      if (!window.confirm('Delete this task? This cannot be undone.')) return;
+    } else if (kind === 'cancel' && (task.assignor?.id === user.id || user.role === 'admin')) {
+      if (!window.confirm('Cancel this task?')) return;
+    } else {
+      reason = window.prompt(`Ask ${approver} to ${kind} this task. Add a reason (optional):`, '');
+      if (reason === null) return; // user backed out
+    }
+    try {
+      const res = await api(`/tasks/${taskId}/request-action`, { method: 'POST', body: { kind, reason } });
+      if (res.done && kind === 'delete') { onClose(); return; }
+      if (res.requested) window.alert(`Request sent to ${approver} for approval.`);
+      load();
+    } catch (e) { window.alert(e.message); }
+  }
+
+  async function decide(approvalId, decision) {
+    try {
+      const res = await api(`/tasks/approvals/${approvalId}/${decision}`, { method: 'POST' });
+      if (decision === 'approve' && res.kind === 'delete') { onClose(); return; }
+      load();
+    } catch (e) { window.alert(e.message); }
   }
 
   async function archive() {
@@ -154,6 +178,12 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   const canChangeStatus = isAssignee || ((task.assignees || []).length === 0 && task.creator?.id === user.id);
   const doneCount = checklist.filter((i) => i.is_done).length;
   const progress = checklist.length ? Math.round((doneCount / checklist.length) * 100) : 0;
+  // The assignor (reporting person) is the approver for cancel/delete. Admins
+  // can always act directly; everyone else must request.
+  const assignor = task.assignor || task.creator;
+  const isApprover = user.role === 'admin' || assignor?.id === user.id;
+  const pending = task.pending_approval; // { id, kind, requested_by, reason } or null
+  const active = !isDone(task.status) && !task.archived_at;
 
   const inner = (
     <div className={inline ? 'task-modal inline' : 'modal task-modal'} onClick={(e) => e.stopPropagation()}>
@@ -364,15 +394,42 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
           </section>
         )}
 
+        {pending && (
+          <div className="approval-banner">
+            <span>
+              ⏳ <strong>{users.find((u) => u.id === pending.requested_by)?.name || 'Someone'}</strong> requested to <strong>{pending.kind}</strong> this task
+              {pending.reason ? <> — “{pending.reason}”</> : null}.
+            </span>
+            {isApprover ? (
+              <span className="approval-actions">
+                <button className="btn btn-sm btn-primary" onClick={() => decide(pending.id, 'approve')}>Approve</button>
+                <button className="btn btn-sm" onClick={() => decide(pending.id, 'reject')}>Reject</button>
+              </span>
+            ) : (
+              <span className="muted">Awaiting {assignor?.name || 'the assignor'}’s decision.</span>
+            )}
+          </div>
+        )}
+
         <div className="modal-footer">
-          <span className="muted">Created by {task.creator?.name}</span>
+          <span className="muted">
+            Created by {task.creator?.name}
+            {assignor && assignor.id !== task.creator?.id && <> · Assignor {assignor.name}</>}
+          </span>
           <div className="footer-actions">
             {canArchive && (task.archived_at
               ? <button className="btn btn-sm" onClick={unarchive}>♻ Restore</button>
               : !!task.completed_at && <button className="btn btn-sm" onClick={archive} title="Move this completed task to the archive">🗄 Archive</button>)}
-            {user.role === 'admin'
-              ? <button className="btn btn-danger" onClick={remove}>Delete task</button>
-              : <span className="muted">Only an admin can delete a task</span>}
+            {active && !pending && (
+              <button className="btn btn-sm" onClick={() => requestAction('cancel')}>
+                {isApprover ? 'Cancel task' : 'Request cancellation'}
+              </button>
+            )}
+            {!pending && (
+              <button className="btn btn-danger" onClick={() => requestAction('delete')}>
+                {isApprover ? 'Delete task' : 'Request deletion'}
+              </button>
+            )}
           </div>
         </div>
     </div>

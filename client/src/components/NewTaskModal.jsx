@@ -18,6 +18,7 @@ export default function NewTaskModal({ workflows, projects, clients = [], users,
     recurrence: 'none',
   });
   const [assigneeIds, setAssigneeIds] = useState([]);
+  const [assignorId, setAssignorId] = useState(''); // reporting person / approver; '' = me
   const [tags, setTags] = useState([]);
   const [steps, setSteps] = useState([]);
   const [reminders, setReminders] = useState([]); // array of ISO strings
@@ -93,6 +94,7 @@ export default function NewTaskModal({ workflows, projects, clients = [], users,
           project_id: form.project_id ? Number(form.project_id) : null,
           client_id: form.client_id ? Number(form.client_id) : null,
           assignee_ids: assigneeIds,
+          assignor_id: assignorId ? Number(assignorId) : null,
           priority: p.priority || form.priority,
           due_date: form.due_date || p.due_date || null,
           recurrence: form.recurrence,
@@ -159,6 +161,13 @@ export default function NewTaskModal({ workflows, projects, clients = [], users,
 
           <label className="field">Assignees
             <AssigneePicker users={users} value={assigneeIds} onChange={setAssigneeIds} />
+          </label>
+
+          <label className="field">Assignor <span className="muted small">(reporting person — approves cancel/delete &amp; rates)</span>
+            <select value={assignorId} onChange={(e) => setAssignorId(e.target.value)}>
+              <option value="">Me (I'm allotting this)</option>
+              {(users || []).filter((u) => u.name && u.role !== 'guest').map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
           </label>
 
           <div className="field-row">

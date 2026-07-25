@@ -5,7 +5,7 @@ import { getSocket, onSocket } from '../socket.js';
 // "For Your Review": completed tasks awaiting your rating (as assigner, as a
 // chosen reporting manager, or your own self-rating). 1-5 stars + a required
 // comment; a self-rating also names the reporting manager.
-export default function ReviewWidget({ user, users = [] }) {
+export default function ReviewWidget({ user, users = [], onOpenTask }) {
   const [items, setItems] = useState([]);
   const [rating, setRating] = useState(null); // the item being rated
 
@@ -28,18 +28,22 @@ export default function ReviewWidget({ user, users = [] }) {
         <strong>⭐ For Your Review</strong>
         <span className="review-count">{items.length}</span>
       </div>
-      <p className="muted review-sub">Completed tasks waiting for your rating.</p>
+      <p className="muted review-sub">Completed tasks waiting for your rating. Open a task to see its full details before rating.</p>
       <div className="review-list">
         {items.map((it) => (
-          <button key={it.id} className="review-item" onClick={() => setRating(it)}>
-            <div className="review-item-main">
+          <div key={it.id} className="review-item">
+            <button
+              className="review-item-main review-item-open"
+              onClick={() => (onOpenTask ? onOpenTask(it.task_id) : setRating(it))}
+              title="Open full task details"
+            >
               <span className="review-item-title">{it.task_title}</span>
               <span className="review-item-sub muted">
                 {it.role === 'self' ? 'Rate your work + pick a manager' : `Rate ${it.ratee_name}’s work`}
               </span>
-            </div>
-            <span className="review-item-cta">Rate →</span>
-          </button>
+            </button>
+            <button className="review-item-cta btn btn-sm btn-primary" onClick={() => setRating(it)}>Rate ★</button>
+          </div>
         ))}
       </div>
 
@@ -48,6 +52,7 @@ export default function ReviewWidget({ user, users = [] }) {
           item={rating}
           user={user}
           users={users}
+          onOpenTask={onOpenTask}
           onClose={() => setRating(null)}
           onDone={() => { setRating(null); load(); }}
         />
@@ -56,7 +61,7 @@ export default function ReviewWidget({ user, users = [] }) {
   );
 }
 
-function RatingModal({ item, user, users, onClose, onDone }) {
+function RatingModal({ item, user, users, onClose, onDone, onOpenTask }) {
   const [stars, setStars] = useState(0);
   const [hover, setHover] = useState(0);
   const [comment, setComment] = useState('');
@@ -88,6 +93,11 @@ function RatingModal({ item, user, users, onClose, onDone }) {
         <div className="modal-header"><strong>Rate task</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div className="rating-body">
           <div className="rating-task">{item.task_title}</div>
+          {onOpenTask && (
+            <button type="button" className="btn btn-sm rating-open-task" onClick={() => { onClose(); onOpenTask(item.task_id); }}>
+              📋 View full task details
+            </button>
+          )}
           <div className="muted rating-who">
             {isSelf ? 'Self-appraisal — then choose who reviews it' : `Work done by ${item.ratee_name}`}
           </div>

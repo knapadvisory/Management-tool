@@ -45,7 +45,10 @@ export default function StatusControl({ task, onUpdate, canEdit = true }) {
       <div className="status-row">
         <span className="status-badge" style={{ background: current.color }}>{current.label}</span>
         <select value={pending || task.status} onChange={(e) => choose(e.target.value)}>
-          {TASK_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          {/* Cancelling goes through the assignor's approval (footer), so it's
+              not a free-form status pick. Keep it listed only if already set. */}
+          {TASK_STATUSES.filter((s) => s.value !== 'cancelled' || task.status === 'cancelled')
+            .map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       </div>
       {!pending && needsReason(task.status) && task.status_reason && (

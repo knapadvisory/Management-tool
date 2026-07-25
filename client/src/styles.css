@@ -577,6 +577,14 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .modal-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 12px; }
 .modal-footer .footer-actions { display: flex; align-items: center; gap: 8px; }
 
+/* Cancel/delete approval request banner */
+.approval-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; margin-top: 12px; padding: 10px 12px; font-size: 13px;
+  background: #fef3c7; border: 1px solid #fcd34d; border-radius: 10px; color: #92400e;
+}
+.approval-banner .approval-actions { display: flex; gap: 6px; }
+
 /* ---------- Workflows ---------- */
 .workflow-form {
   display: flex; flex-direction: column; gap: 10px; padding: 14px;
@@ -2191,12 +2199,14 @@ button.c360-stat:hover { border-color: var(--accent); }
 .review-count { background: var(--accent); color: #fff; border-radius: 999px; font-size: 12px; font-weight: 700; padding: 1px 8px; }
 .review-sub { margin: 2px 0 10px; font-size: 13px; }
 .review-list { display: flex; flex-direction: column; gap: 8px; }
-.review-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; cursor: pointer; }
+.review-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; }
 .review-item:hover { border-color: var(--accent); }
-.review-item-main { display: flex; flex-direction: column; min-width: 0; }
+.review-item-main { display: flex; flex-direction: column; min-width: 0; flex: 1; background: none; border: none; text-align: left; cursor: pointer; padding: 0; color: inherit; }
+.review-item-open:hover .review-item-title { color: var(--accent); text-decoration: underline; }
 .review-item-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .review-item-sub { font-size: 12px; }
-.review-item-cta { color: var(--accent); font-weight: 600; font-size: 13px; white-space: nowrap; }
+.review-item-cta { white-space: nowrap; }
+.rating-open-task { align-self: flex-start; margin: 4px 0 10px; }
 .rating-modal { width: 440px; max-width: 94vw; }
 .rating-body { padding: 16px 18px; }
 .rating-task { font-weight: 700; font-size: 16px; }
