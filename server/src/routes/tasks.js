@@ -848,6 +848,31 @@ router.patch('/:id', (req, res) => {
     }
   }
 
+  // Reverse coupling: when the status is set directly (not via the board), move
+  // the card to match so the board column + STAGE column stay in sync.
+  //  · Completed  → advance to the workflow's done stage (default board: "Done").
+  //  · Reopened   → if it was sitting in a done stage, pull it back to the first
+  //                 open stage so the card doesn't look finished while active.
+  // Only when the caller didn't also move the stage explicitly.
+  if (statusChanged && stage_id === undefined) {
+    const cur = db.prepare('SELECT t.stage_id, s.is_done FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id WHERE t.id = ?').get(task.id);
+    if (status === 'completed' && !cur.is_done) {
+      // Prefer the last stage flagged done; fall back to the final stage.
+      const target = db.prepare('SELECT id, name FROM workflow_stages WHERE workflow_id = ? AND is_done = 1 ORDER BY position DESC, id DESC LIMIT 1').get(task.workflow_id)
+        || db.prepare('SELECT id, name FROM workflow_stages WHERE workflow_id = ? ORDER BY position DESC, id DESC LIMIT 1').get(task.workflow_id);
+      if (target && target.id !== cur.stage_id) {
+        db.prepare('UPDATE tasks SET stage_id = ? WHERE id = ?').run(target.id, task.id);
+        logActivity(task.id, req.user.id, `moved it to "${target.name}"`);
+      }
+    } else if ((status === 'in_progress' || status === 'hold') && cur.is_done) {
+      const target = db.prepare('SELECT id, name FROM workflow_stages WHERE workflow_id = ? AND (is_done = 0 OR is_done IS NULL) ORDER BY position ASC, id ASC LIMIT 1').get(task.workflow_id);
+      if (target && target.id !== cur.stage_id) {
+        db.prepare('UPDATE tasks SET stage_id = ? WHERE id = ?').run(target.id, task.id);
+        logActivity(task.id, req.user.id, `moved it to "${target.name}"`);
+      }
+    }
+  }
+
   // Keep completed_at accurate: stamp it when the task becomes "done"
   // (completed status or a done stage); clear it (and any archive) if reopened.
   const now = db.prepare('SELECT t.status, t.completed_at, s.is_done FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id WHERE t.id = ?').get(task.id);

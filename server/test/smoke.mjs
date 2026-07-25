@@ -538,6 +538,11 @@ async function main() {
   const stId = st.data.id;
   const toCompleted = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'completed' } });
   check('member can change status to Completed', toCompleted.status === 200 && toCompleted.data.status === 'completed');
+  // Marking Completed via status must advance the card to the workflow's done stage.
+  check('completing via status moves the card to the done stage', toCompleted.data.stage_id === wf.data.stages[2].id);
+  // Reopening it (In Progress) pulls it back out of the done stage.
+  const reopenSync = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'in_progress' } });
+  check('reopening via status moves the card out of the done stage', reopenSync.data.stage_id === wf.data.stages[0].id);
   const holdNoReason = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'hold' } });
   check('Hold without a reason is rejected', holdNoReason.status === 400);
   const holdReason = await req('PATCH', `/api/tasks/${stId}`, { token: b, body: { status: 'hold', status_reason: 'Waiting on client documents' } });
