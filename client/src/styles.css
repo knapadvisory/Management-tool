@@ -2508,8 +2508,8 @@ button.c360-stat:hover { border-color: var(--accent); }
 .dep-result:hover { background: var(--hover, #f4f5f7); }
 
 /* ---- Timeline / Gantt view ---- */
-.gantt { display: flex; flex-direction: column; gap: 10px; }
-.gantt-scroll { overflow-x: auto; border: 1px solid var(--border, #e5e7eb); border-radius: 12px; background: var(--card, #fff); }
+.gantt { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
+.gantt-scroll { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--border, #e5e7eb); border-radius: 12px; background: var(--card, #fff); }
 .gantt-inner { min-width: 100%; }
 .gantt-head { display: flex; position: sticky; top: 0; z-index: 3; background: var(--card, #fff); border-bottom: 1px solid var(--border, #e5e7eb); }
 .gantt-gutter { width: 220px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-right: 1px solid var(--border, #e5e7eb); background: var(--card, #fff); position: sticky; left: 0; z-index: 2; }
