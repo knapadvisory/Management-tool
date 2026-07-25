@@ -443,12 +443,13 @@ const METRIC_TITLE = {
   on_time: 'On-time breakdown',
   billable: 'Billable hours',
   overdue: 'Overdue filings',
+  overdue_tasks: 'Overdue tasks',
 };
 function DetailModal({ metric, period, userId, clientId, isAdmin, onOpenTask, onClose }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
-  const [sort, setSort] = useState(metric === 'overdue' ? 'overdue' : 'date');
+  const [sort, setSort] = useState(metric === 'overdue' || metric === 'overdue_tasks' ? 'overdue' : 'date');
   const [ownerF, setOwnerF] = useState('');
   const [timing, setTiming] = useState(''); // completed/on_time: '' | ontime | late
   useEffect(() => {
@@ -556,6 +557,25 @@ function DetailModal({ metric, period, userId, clientId, isAdmin, onOpenTask, on
             )
           )}
 
+          {data && metric === 'overdue_tasks' && (
+            rows.length === 0 ? <div className="an-empty">No overdue tasks 🎉</div> : (
+              <table className="an-table">
+                <thead><tr><th>Task</th><th>Client</th>{!userId && <th>Owner</th>}<th>Due</th><th>Late</th></tr></thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.id} className={onOpenTask ? 'an-row-click' : ''} onClick={() => onOpenTask?.(r.id)}>
+                      <td className="an-t-name">{r.title}</td>
+                      <td>{r.client_name || <span className="muted">—</span>}</td>
+                      {!userId && <td>{r.who ? <span className="an-owner"><span className="an-mini-av" style={{ background: r.who.avatar_color }}>{initials(r.who.name)}</span>{r.who.name}</span> : <span className="muted">Unassigned</span>}</td>}
+                      <td className="muted">{r.due_date}</td>
+                      <td><span className="an-chip c-bad">{r.days_overdue}d</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+
           {data && metric === 'billable' && (
             <div className="an-bill-cols">
               <div>
@@ -579,7 +599,7 @@ function DetailModal({ metric, period, userId, clientId, isAdmin, onOpenTask, on
 }
 
 // ============ Reports tab ============
-function ReportTable({ columns, rows, empty = 'Nothing to show.' }) {
+function ReportTable({ columns, rows, empty = 'Nothing to show.', onRowClick, isRowClickable }) {
   return (
     <div className="an-table-wrap">
       <table className="an-table">
@@ -589,7 +609,9 @@ function ReportTable({ columns, rows, empty = 'Nothing to show.' }) {
         <tbody>
           {rows.length === 0 && <tr><td colSpan={columns.length} className="an-empty">{empty}</td></tr>}
           {rows.map((r, i) => (
-            <tr key={i}>
+            <tr key={i}
+              className={onRowClick && (!isRowClickable || isRowClickable(r)) ? 'an-row-click' : ''}
+              onClick={() => onRowClick && (!isRowClickable || isRowClickable(r)) && onRowClick(r)}>
               {columns.map((c) => {
                 let v = r[c.key];
                 if (c.key === 'status') return <td key={c.key}><span className={`rep-status rep-${String(v).toLowerCase().replace(/[^a-z]/g, '')}`}>{v}</span></td>;
@@ -606,13 +628,14 @@ function ReportTable({ columns, rows, empty = 'Nothing to show.' }) {
   );
 }
 
-function Reports({ isAdmin, userId, period, setPeriod }) {
+function Reports({ isAdmin, userId, period, setPeriod, onDrill, onOpenTask }) {
   const [type, setType] = useState('compliance');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [bucketFilter, setBucketFilter] = useState(null); // aging: filter table to one bucket
   const meta = REPORT_TYPES.find((r) => r.key === type);
 
   const params = useMemo(() => {
@@ -624,7 +647,7 @@ function Reports({ isAdmin, userId, period, setPeriod }) {
 
   useEffect(() => {
     let alive = true;
-    setLoading(true); setErr(''); setQ('');
+    setLoading(true); setErr(''); setQ(''); setBucketFilter(null);
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null)).toString();
     api(`/analytics/reports/${type}${qs ? `?${qs}` : ''}`)
       .then((d) => { if (alive) setData(d); })
@@ -635,10 +658,34 @@ function Reports({ isAdmin, userId, period, setPeriod }) {
 
   const view = useMemo(() => {
     if (!data) return [];
+    let rows = data.rows;
+    if (type === 'aging' && bucketFilter) rows = rows.filter((r) => r.bucket === bucketFilter);
     const needle = q.trim().toLowerCase();
-    if (!needle) return data.rows;
-    return data.rows.filter((r) => Object.values(r).some((v) => String(v).toLowerCase().includes(needle)));
-  }, [data, q]);
+    if (needle) rows = rows.filter((r) => Object.values(r).some((v) => String(v).toLowerCase().includes(needle)));
+    return rows;
+  }, [data, q, type, bucketFilter]);
+
+  // What a summary card does when clicked, per report.
+  const cardAction = (label) => {
+    if (type === 'productivity') {
+      if (label === 'Tasks completed') return () => onDrill?.('completed');
+      if (label === 'Currently overdue') return () => onDrill?.('overdue_tasks');
+      return null; // Hours has no task drill
+    }
+    if (type === 'aging') {
+      const bucket = label.replace(' days', '');
+      return () => setBucketFilter((b) => (b === bucket ? null : bucket));
+    }
+    return null;
+  };
+  const activeCard = (label) => type === 'aging' && bucketFilter && label.replace(' days', '') === bucketFilter;
+
+  // What a table row does when clicked, per report.
+  const onRowClick = (r) => {
+    if (type === 'productivity' && r.user_id) onDrill?.({ metric: 'completed', userId: r.user_id });
+    else if (type === 'aging' && r.task_id) onOpenTask?.(r.task_id);
+  };
+  const isRowClickable = (r) => (type === 'productivity' && r.user_id) || (type === 'aging' && r.task_id);
 
   const onExport = async () => {
     setExporting(true);
@@ -677,18 +724,22 @@ function Reports({ isAdmin, userId, period, setPeriod }) {
 
           {data.summary && (
             <div className="rep-summary">
-              {data.summary.map((s) => (
-                <div key={s.label} className={`rep-kpi ${s.tone ? `rep-${s.tone}` : ''}`}>
-                  <span className="rep-kpi-val">{s.value}</span>
-                  <span className="rep-kpi-lbl">{s.label}</span>
-                </div>
-              ))}
+              {data.summary.map((s) => {
+                const act = cardAction(s.label);
+                const cls = `rep-kpi ${s.tone ? `rep-${s.tone}` : ''} ${act ? 'rep-kpi-btn' : ''} ${activeCard(s.label) ? 'on' : ''}`;
+                return act
+                  ? <button key={s.label} className={cls} onClick={act}><span className="rep-kpi-val">{s.value}</span><span className="rep-kpi-lbl">{s.label}</span></button>
+                  : <div key={s.label} className={cls}><span className="rep-kpi-val">{s.value}</span><span className="rep-kpi-lbl">{s.label}</span></div>;
+              })}
             </div>
           )}
 
           <div className="an-card">
-            <div className="rep-count muted">{view.length} of {data.rows.length} rows</div>
-            <ReportTable columns={data.columns} rows={view} empty="Nothing to report — all clear 🎉" />
+            <div className="rep-count muted">
+              {view.length} of {data.rows.length} rows
+              {type === 'aging' && bucketFilter && <button className="rep-clear" onClick={() => setBucketFilter(null)}>Showing {bucketFilter} days · clear ✕</button>}
+            </div>
+            <ReportTable columns={data.columns} rows={view} empty="Nothing to report — all clear 🎉" onRowClick={onRowClick} isRowClickable={isRowClickable} />
           </div>
 
           {data.ownerBreakdown && (
@@ -710,7 +761,10 @@ export default function AnalyticsView({ user, users = [] }) {
   const [userId, setUserId] = useState('');
   const [clientId, setClientId] = useState('');
   const [chartStyle, setChartStyle] = useState('area');
-  const [drill, setDrill] = useState(null); // metric for the detail modal
+  const [drill, setDrill] = useState(null); // { metric, userId? } for the detail modal
+  // Accept either a bare metric string (Overview KPIs) or a { metric, userId }
+  // object (Reports drill-downs into one person).
+  const openDrill = (d) => setDrill(typeof d === 'string' ? { metric: d } : d);
   const [clients, setClients] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -783,7 +837,7 @@ export default function AnalyticsView({ user, users = [] }) {
               data={data}
               chartStyle={chartStyle}
               setChartStyle={setChartStyle}
-              onDrill={setDrill}
+              onDrill={openDrill}
               onQuality={() => setTab('appraisals')}
             />
           </div>
@@ -798,15 +852,15 @@ export default function AnalyticsView({ user, users = [] }) {
 
       {tab === 'reports' && (
         <div className="an-body">
-          <Reports isAdmin={isAdmin} userId={userId} period={period} setPeriod={setPeriod} />
+          <Reports isAdmin={isAdmin} userId={userId} period={period} setPeriod={setPeriod} onDrill={openDrill} onOpenTask={openTask} />
         </div>
       )}
 
       {drill && (
         <DetailModal
-          metric={drill}
+          metric={drill.metric}
           period={period}
-          userId={userId}
+          userId={drill.userId ?? userId}
           clientId={clientId}
           isAdmin={isAdmin}
           onOpenTask={(id) => { setDrill(null); openTask(id); }}
