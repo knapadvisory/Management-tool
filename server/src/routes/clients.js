@@ -287,6 +287,66 @@ router.get('/matrix', (req, res) => {
   });
 });
 
+// Client engagements overview: one row per client with the services they use
+// (tags), their most recently completed task, and the soonest thing due — plus
+// firm-wide headline stats. Powers the Clients landing view.
+router.get('/engagements', (req, res) => {
+  const ws = req.workspaceId;
+  const today = new Date().toISOString().slice(0, 10);
+  const month = today.slice(0, 7);
+  const clients = db.prepare('SELECT id, name, type, status, contact_person FROM clients WHERE workspace_id = ? ORDER BY name COLLATE NOCASE').all(ws);
+
+  const lastDoneStmt = db.prepare(`
+    SELECT title, completed_at FROM tasks
+    WHERE client_id = ? AND workspace_id = ? AND completed_at IS NOT NULL
+    ORDER BY completed_at DESC LIMIT 1`);
+  // Soonest thing still owed: an open compliance deadline, or failing that the
+  // nearest due date on an open task.
+  const nextDeadlineStmt = db.prepare(`
+    SELECT title, due_date FROM client_deadlines
+    WHERE client_id = ? AND completed = 0 ORDER BY due_date LIMIT 1`);
+  const nextTaskStmt = db.prepare(`
+    SELECT title, due_date FROM tasks
+    WHERE client_id = ? AND workspace_id = ? AND status NOT IN ('completed','cancelled')
+      AND archived_at IS NULL AND due_date IS NOT NULL AND due_date != ''
+    ORDER BY due_date LIMIT 1`);
+
+  const rows = clients.map((c) => {
+    const lastDone = lastDoneStmt.get(c.id, ws) || null;
+    const nd = nextDeadlineStmt.get(c.id) || nextTaskStmt.get(c.id, ws) || null;
+    return {
+      id: c.id, name: c.name, type: c.type, status: c.status,
+      contact_person: c.contact_person || '',
+      tags: tagsFor(c.id),
+      last_completed: lastDone ? { title: lastDone.title, date: String(lastDone.completed_at).slice(0, 10) } : null,
+      next_due: nd ? { title: nd.title, date: nd.due_date, overdue: nd.due_date < today } : null,
+    };
+  });
+
+  // Distinct services (tags) across the book, for the filter chips.
+  const services = db.prepare(`
+    SELECT DISTINCT ct.tag FROM client_tags ct JOIN clients c ON c.id = ct.client_id
+    WHERE c.workspace_id = ? ORDER BY ct.tag COLLATE NOCASE`).all(ws).map((r) => r.tag);
+
+  const activeClients = clients.filter((c) => c.status === 'active').length;
+  const filedTasks = db.prepare(`
+    SELECT COUNT(*) n FROM tasks WHERE workspace_id = ? AND client_id IS NOT NULL
+      AND completed_at IS NOT NULL AND strftime('%Y-%m', completed_at) = ?`).get(ws, month).n;
+  const filedDeadlines = db.prepare(`
+    SELECT COUNT(*) n FROM client_deadlines d JOIN clients c ON c.id = d.client_id
+    WHERE c.workspace_id = ? AND d.completed = 1 AND d.completed_at IS NOT NULL
+      AND strftime('%Y-%m', d.completed_at) = ?`).get(ws, month).n;
+  const pastDue = db.prepare(`
+    SELECT COUNT(*) n FROM client_deadlines d JOIN clients c ON c.id = d.client_id
+    WHERE c.workspace_id = ? AND d.completed = 0 AND d.due_date < ?`).get(ws, today).n;
+
+  res.json({
+    summary: { active_clients: activeClients, filed_this_month: filedTasks + filedDeadlines, past_due: pastDue },
+    services,
+    rows,
+  });
+});
+
 router.get('/:id', (req, res) => {
   const client = load(req, res);
   if (!client) return;

@@ -843,6 +843,11 @@ async function main() {
   const byClientName = await req('GET', `/api/search?q=${encodeURIComponent('Searchable Traders')}`, { token: a });
   check('global search surfaces a client’s tasks by client name', byClientName.data.tasks.some((t) => t.client_id === sc.data.id));
 
+  // Client engagements overview: summary stats + one row per client.
+  const engRep = await req('GET', '/api/clients/engagements', { token: a });
+  check('engagements returns summary stats', engRep.status === 200 && typeof engRep.data.summary.active_clients === 'number' && 'past_due' in engRep.data.summary);
+  check('engagements lists a row for each client', engRep.data.rows.some((r) => r.id === sc.data.id && Array.isArray(r.tags)));
+
   const del = await req('DELETE', `/api/channels/${generalId}/messages/${msgId}`, { token: a });
   check('message soft-deleted, content cleared', del.data.is_deleted && del.data.content === '');
 

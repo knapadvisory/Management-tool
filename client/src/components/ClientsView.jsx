@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api, uploadFiles, fileUrl } from '../api.js';
 import { getSocket } from '../socket.js';
 import Avatar from './Avatar.jsx';
+import ClientEngagements from './ClientEngagements.jsx';
 
 const fmtBytes = (n) => {
   if (!n && n !== 0) return '';
@@ -227,16 +228,10 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
           <ClientDetail key={selectedId} clientId={selectedId} user={user} staff={staff} onChanged={load} onOpenTask={onOpenTask}
             onDeleted={() => { setSelectedId(null); load(); }} />
         ) : (
-          <div className="collab-promo">
-            <div className="collab-promo-badge">🗂️</div>
-            <h2>Your client book</h2>
-            <ul className="collab-promo-points">
-              <li><strong>Everything per client</strong><span>Contacts, notes, linked tasks and compliance deadlines in one place.</span></li>
-              <li><strong>Never miss a filing</strong><span>Recurring deadlines roll forward automatically when you tick them off.</span></li>
-              <li><strong>Tie work to clients</strong><span>Link any task to a client and see the whole engagement at a glance.</span></li>
-            </ul>
-            <button className="btn btn-primary" onClick={() => setCreating(true)}>Add a client</button>
-          </div>
+          <ClientEngagements
+            onSelect={(id) => setSelectedId(id)}
+            onAdd={() => { setCreating(true); setSelectedId(null); }}
+          />
         )}
       </div>
 
