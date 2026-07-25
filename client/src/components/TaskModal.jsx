@@ -21,6 +21,8 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   const [newItem, setNewItem] = useState('');
   const [newTag, setNewTag] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [depQuery, setDepQuery] = useState('');
+  const [depTasks, setDepTasks] = useState(null); // lazy-loaded blocker candidates
   const fileRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -47,6 +49,22 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
     await api(`/tasks/${taskId}`, { method: 'PATCH', body: patch });
     load();
   }
+
+  async function loadDepCandidates() {
+    if (depTasks) return;
+    try { const d = await api('/tasks'); setDepTasks(d.tasks || []); } catch { setDepTasks([]); }
+  }
+  async function addDependency(depId) {
+    try {
+      const { task: t } = await api(`/tasks/${taskId}/dependencies`, { method: 'POST', body: { depends_on_id: depId } });
+      setTask(t); setDepQuery('');
+    } catch (e) { window.alert(e.message); }
+  }
+  async function removeDependency(depId) {
+    const { task: t } = await api(`/tasks/${taskId}/dependencies/${depId}`, { method: 'DELETE' });
+    setTask(t);
+  }
+  const isDone = (s) => s === 'completed' || s === 'cancelled';
 
   async function addComment(e) {
     e.preventDefault();
@@ -179,6 +197,10 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
               <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
             </select>
           </label>
+          <label>Start date
+            <input type="date" value={task.start_date || ''} max={task.due_date || undefined}
+              onChange={(e) => update({ start_date: e.target.value || null })} />
+          </label>
           <label>Due date
             <input type="date" value={task.due_date || ''} onChange={(e) => update({ due_date: e.target.value || null })} />
           </label>
@@ -226,6 +248,49 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
           <form className="checklist-add" onSubmit={addChecklistItem}>
             <input placeholder="+ add a subtask" value={newItem} onChange={(e) => setNewItem(e.target.value)} />
           </form>
+        </div>
+
+        <div className="deps-section">
+          <div className="checklist-head">
+            <h4>Dependencies</h4>
+            {task.is_blocked && <span className="dep-blocked-badge">🔒 Blocked</span>}
+          </div>
+
+          <div className="dep-group">
+            <div className="dep-label">Blocked by</div>
+            {(task.blocked_by || []).length === 0 && <div className="empty-hint">Not waiting on anything.</div>}
+            {(task.blocked_by || []).map((b) => (
+              <div key={b.id} className={`dep-row ${isDone(b.status) ? 'is-done' : 'is-open'}`}>
+                <span className="dep-name">{isDone(b.status) ? '✓' : '⏳'} {b.title}</span>
+                <button className="icon-btn" title="Remove" onClick={() => removeDependency(b.id)}>✕</button>
+              </div>
+            ))}
+            <div className="dep-add">
+              <input placeholder="+ add a blocker (type to search)" value={depQuery}
+                onFocus={loadDepCandidates} onChange={(e) => setDepQuery(e.target.value)} />
+              {depQuery.trim() && depTasks && (
+                <div className="dep-results">
+                  {depTasks
+                    .filter((t) => t.id !== task.id
+                      && !(task.blocked_by || []).some((b) => b.id === t.id)
+                      && (t.title || '').toLowerCase().includes(depQuery.trim().toLowerCase()))
+                    .slice(0, 6)
+                    .map((t) => <button key={t.id} className="dep-result" onClick={() => addDependency(t.id)}>{t.title}</button>)}
+                  {depTasks.filter((t) => (t.title || '').toLowerCase().includes(depQuery.trim().toLowerCase()) && t.id !== task.id).length === 0 &&
+                    <div className="empty-hint" style={{ padding: '6px 8px' }}>No matching task.</div>}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {(task.blocks || []).length > 0 && (
+            <div className="dep-group">
+              <div className="dep-label">This blocks</div>
+              {task.blocks.map((b) => (
+                <div key={b.id} className="dep-row"><span className="dep-name">{isDone(b.status) ? '✓' : '⏳'} {b.title}</span></div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="attachments-section">

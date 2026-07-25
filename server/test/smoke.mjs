@@ -244,6 +244,22 @@ async function main() {
   check('checklist items added', cl.data.length === 2);
   const toggled = await req('PATCH', `/api/tasks/${dtId}/checklist/${cl.data[0].id}`, { token: a, body: { is_done: true } });
   check('checklist item toggled', toggled.data.find((i) => i.id === cl.data[0].id).is_done === 1);
+
+  // Dependencies: make "Ship it" blocked by "Deep task" (still open).
+  const shipId = task.data.id;
+  const addDep = await req('POST', `/api/tasks/${shipId}/dependencies`, { token: a, body: { depends_on_id: dtId } });
+  check('a blocker can be added', addDep.status === 201 && addDep.data.task.blocked_by.some((b) => b.id === dtId));
+  check('the task is flagged blocked while the blocker is open', addDep.data.task.is_blocked === true);
+  const selfDep = await req('POST', `/api/tasks/${shipId}/dependencies`, { token: a, body: { depends_on_id: shipId } });
+  check('a task cannot depend on itself', selfDep.status === 400);
+  const cycleDep = await req('POST', `/api/tasks/${dtId}/dependencies`, { token: a, body: { depends_on_id: shipId } });
+  check('a circular dependency is rejected', cycleDep.status === 400);
+  const startPatch = await req('PATCH', `/api/tasks/${shipId}`, { token: a, body: { start_date: '2026-08-01', due_date: '2026-08-10' } });
+  check('a task start date can be set', startPatch.status === 200);
+  const startCheck = await req('GET', `/api/tasks/${shipId}`, { token: a });
+  check('start date persists for the timeline', startCheck.data.task.start_date === '2026-08-01');
+  const rmDep = await req('DELETE', `/api/tasks/${shipId}/dependencies/${dtId}`, { token: a });
+  check('a blocker can be removed', rmDep.status === 200 && rmDep.data.task.blocked_by.length === 0 && rmDep.data.task.is_blocked === false);
   const dtDetail = await req('GET', `/api/tasks/${dtId}`, { token: a });
   check('task reports checklist progress 1/2', dtDetail.data.task.checklist_done === 1 && dtDetail.data.task.checklist_total === 2);
 
