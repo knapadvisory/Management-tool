@@ -370,7 +370,10 @@ function Appraisals({ user, isAdmin, focusUserId, onFocusUser, onOpenTask }) {
                     </div>
                     <DistBar dist={r.dist} />
                   </div>
-                  <div className="an-rank-score"><b>{Number(r.avg).toFixed(1)}</b><span className="an-rank-n">{r.count}★</span></div>
+                  <div className="an-rank-score">
+                    <span className="an-rank-avg"><b>{Number(r.avg).toFixed(1)}</b><span className="an-rank-outof">/5</span></span>
+                    <span className="an-rank-n">{r.count} {r.count === 1 ? 'rating' : 'ratings'}</span>
+                  </div>
                 </button>
               ))}
             </div>

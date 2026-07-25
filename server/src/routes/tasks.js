@@ -475,6 +475,21 @@ router.post('/import', uploadImport.single('file'), async (req, res) => {
   const users = db.prepare('SELECT id, name, email FROM users WHERE workspace_id = ? AND active = 1').all(req.workspaceId);
   const userByName = new Map(users.map((u) => [u.name.toLowerCase(), u.id]));
   const userByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.id]));
+  // Forgiving assignee lookup: exact email/name first, then a unique match on
+  // first name or a name that starts with what was typed (so "Kunal" resolves to
+  // "Kunal Mehta"). Returns { id } or { error } (ambiguous / not found).
+  const resolveAssignee = (raw) => {
+    const t = String(raw).trim().toLowerCase();
+    if (userByEmail.has(t)) return { id: userByEmail.get(t) };
+    if (userByName.has(t)) return { id: userByName.get(t) };
+    const hits = users.filter((u) => {
+      const n = u.name.toLowerCase();
+      return n.split(/\s+/)[0] === t || n.startsWith(t + ' ');
+    });
+    if (hits.length === 1) return { id: hits[0].id };
+    if (hits.length > 1) return { error: `Assignee "${raw}" is ambiguous — matches ${hits.map((h) => h.name).join(', ')}. Use the full name or email.` };
+    return { error: `Assignee "${raw}" not found` };
+  };
   const projByName = new Map(db.prepare('SELECT id, name FROM projects WHERE workspace_id = ?').all(req.workspaceId).map((p) => [p.name.toLowerCase(), p.id]));
   const clientByName = new Map(db.prepare('SELECT id, name FROM clients WHERE workspace_id = ?').all(req.workspaceId).map((c) => [c.name.toLowerCase(), c.id]));
 
@@ -525,8 +540,9 @@ router.post('/import', uploadImport.single('file'), async (req, res) => {
 
       let assigneeId = null;
       if (r.assignee) {
-        assigneeId = userByEmail.get(r.assignee.toLowerCase()) ?? userByName.get(r.assignee.toLowerCase()) ?? null;
-        if (!assigneeId) throw new Error(`Assignee "${r.assignee}" not found`);
+        const resolved = resolveAssignee(r.assignee);
+        if (resolved.error) throw new Error(resolved.error);
+        assigneeId = resolved.id;
       }
       let projectId = null;
       if (r.project) { projectId = projByName.get(r.project.toLowerCase()); if (!projectId) throw new Error(`Project "${r.project}" not found`); }

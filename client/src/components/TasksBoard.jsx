@@ -111,17 +111,22 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
     const onDeleted = ({ task_id }) => setTasks((ts) => ts.filter((t) => t.id !== task_id));
     const onProjects = () => loadProjects();
     const onTemplates = () => loadTemplates();
+    // If the socket drops and comes back, we may have missed task events — pull a
+    // fresh list so the board/calendar/timeline can't drift out of date.
+    const onReconnect = () => loadTasks(workflowId, archivedView);
     socket.on('task:changed', onChanged);
     socket.on('task:deleted', onDeleted);
     socket.on('projects:changed', onProjects);
     socket.on('templates:changed', onTemplates);
+    socket.on('connect', onReconnect);
     return () => {
       socket.off('task:changed', onChanged);
       socket.off('task:deleted', onDeleted);
       socket.off('projects:changed', onProjects);
       socket.off('templates:changed', onTemplates);
+      socket.off('connect', onReconnect);
     };
-  }, [workflowId, archivedView, loadProjects, loadTags, loadTemplates]);
+  }, [workflowId, archivedView, loadProjects, loadTags, loadTemplates, loadTasks]);
 
   async function archiveAllDone() {
     const done = visibleTasks.filter((t) => t.completed_at);
