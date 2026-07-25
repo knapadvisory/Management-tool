@@ -465,7 +465,15 @@ async function main() {
   // Drill-down support: productivity rows carry a user_id, aging rows a task_id,
   // and the overdue-tasks detail metric resolves.
   const prodRep = await req('GET', '/api/analytics/reports/productivity', { token: a });
-  check('productivity rows expose user_id for drill-down', prodRep.data.rows.every((r) => Number.isInteger(r.user_id)));
+  // Per-person rows carry an integer user_id for drill-down; the optional
+  // "Unassigned" bucket row carries a null user_id (no one to drill into).
+  check('productivity rows expose user_id for drill-down',
+    prodRep.data.rows.every((r) => Number.isInteger(r.user_id) || (r.person === 'Unassigned' && r.user_id === null)));
+  // Reconciliation: the "Tasks completed" headline equals the sum of the per-row
+  // Completed column (each task credited to exactly one owner or Unassigned).
+  const prodCompletedSum = prodRep.data.rows.reduce((n, r) => n + (r.completed || 0), 0);
+  const prodHeadline = prodRep.data.summary.find((s) => s.label === 'Tasks completed')?.value;
+  check('productivity "Tasks completed" reconciles with the row totals', prodHeadline === prodCompletedSum);
   const agingRep = await req('GET', '/api/analytics/reports/aging', { token: a });
   check('aging rows expose task_id (tasks) for drill-down', agingRep.data.rows.every((r) => 'task_id' in r));
   const odTasks = await req('GET', '/api/analytics/detail?metric=overdue_tasks&period=month', { token: a });
