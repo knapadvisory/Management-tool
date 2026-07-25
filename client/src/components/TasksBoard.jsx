@@ -5,6 +5,7 @@ import TaskModal from './TaskModal.jsx';
 import TaskCard from './TaskCard.jsx';
 import TaskListView from './TaskListView.jsx';
 import TaskCalendarView from './TaskCalendarView.jsx';
+import TaskTimelineView from './TaskTimelineView.jsx';
 import ProjectsModal from './ProjectsModal.jsx';
 import TemplatesModal from './TemplatesModal.jsx';
 import NewTaskModal from './NewTaskModal.jsx';
@@ -173,7 +174,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
         </label>
 
         <div className="view-switch">
-          {(allBoards || archivedView ? ['list', 'calendar'] : ['board', 'list', 'calendar']).map((v) => (
+          {(allBoards || archivedView ? ['list', 'calendar', 'timeline'] : ['board', 'list', 'calendar', 'timeline']).map((v) => (
             <button key={v} className={view === v ? 'active' : ''} onClick={() => setView(v)}>
               {v[0].toUpperCase() + v.slice(1)}
             </button>
@@ -249,6 +250,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
 
       {view === 'list' && <TaskListView tasks={visibleTasks} onOpen={setOpenTaskId} />}
       {view === 'calendar' && <TaskCalendarView tasks={visibleTasks} onOpen={setOpenTaskId} />}
+      {view === 'timeline' && <TaskTimelineView tasks={visibleTasks} onOpen={setOpenTaskId} />}
 
       {openTaskId && (
         <TaskModal

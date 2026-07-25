@@ -230,6 +230,16 @@ CREATE TABLE IF NOT EXISTS task_tags (
 );
 CREATE INDEX IF NOT EXISTS idx_task_tags_tag ON task_tags(tag);
 
+-- Task dependencies: "task_id is blocked by depends_on_id" (depends_on_id must
+-- finish first). The pair is unique; both directions cascade-delete with a task.
+CREATE TABLE IF NOT EXISTS task_dependencies (
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  depends_on_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (task_id, depends_on_id)
+);
+CREATE INDEX IF NOT EXISTS idx_task_deps_on ON task_dependencies(depends_on_id);
+
 CREATE TABLE IF NOT EXISTS task_checklist (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -536,6 +546,9 @@ for (const table of ['users', 'channels', 'messages', 'attachments', 'drive_fold
 }
 // Link a task to a client (nullable — most tasks have no client).
 ensureColumn('tasks', 'client_id', 'INTEGER REFERENCES clients(id)');
+// Optional planned start date (YYYY-MM-DD) so the timeline can draw a bar from
+// start → due; when absent the timeline falls back to a marker on the due date.
+ensureColumn('tasks', 'start_date', 'TEXT');
 // A compliance deadline can be assigned to a staff member (who files it) and,
 // once turned into an actionable task, linked to that task.
 ensureColumn('client_deadlines', 'assignee_id', 'INTEGER REFERENCES users(id)');

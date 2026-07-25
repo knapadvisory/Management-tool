@@ -57,6 +57,15 @@ function taskWithMeta(task) {
   const watcherIds = db.prepare('SELECT user_id FROM task_watchers WHERE task_id = ?').all(task.id).map((r) => r.user_id);
   const attachmentCount = db.prepare('SELECT COUNT(*) AS n FROM attachments WHERE task_id = ?').get(task.id).n;
   const reminderCount = db.prepare('SELECT COUNT(*) AS n FROM task_reminders WHERE task_id = ? AND sent = 0').get(task.id).n;
+  // Dependencies: what this task is blocked by, and what it blocks. A task is
+  // "blocked" while any of its blockers is still open.
+  const blockedBy = db.prepare(`
+    SELECT t2.id, t2.title, t2.status, t2.due_date FROM task_dependencies d
+    JOIN tasks t2 ON t2.id = d.depends_on_id WHERE d.task_id = ? ORDER BY t2.due_date IS NULL, t2.due_date`).all(task.id);
+  const blocks = db.prepare(`
+    SELECT t2.id, t2.title, t2.status, t2.due_date FROM task_dependencies d
+    JOIN tasks t2 ON t2.id = d.task_id WHERE d.depends_on_id = ? ORDER BY t2.due_date IS NULL, t2.due_date`).all(task.id);
+  const isBlocked = blockedBy.some((b) => b.status !== 'completed' && b.status !== 'cancelled');
   return {
     ...task,
     assignee: publicUser(getUser(task.assignee_id)),
@@ -73,6 +82,9 @@ function taskWithMeta(task) {
     watcher_ids: watcherIds,
     attachment_count: attachmentCount,
     reminder_count: reminderCount,
+    blocked_by: blockedBy,
+    blocks,
+    is_blocked: isBlocked,
   };
 }
 
@@ -662,7 +674,7 @@ router.get('/:id', (req, res) => {
 router.patch('/:id', (req, res) => {
   const task = loadTask(req, res);
   if (!task) return;
-  const { title, description, stage_id, priority, due_date, project_id, client_id, recurrence, status, status_reason } = req.body;
+  const { title, description, stage_id, priority, due_date, start_date, project_id, client_id, recurrence, status, status_reason } = req.body;
   const newAssignees = incomingAssignees(req.body); // undefined = no change
   const oldAssignees = assigneeIdsFor(task.id);
 
@@ -766,6 +778,7 @@ router.patch('/:id', (req, res) => {
       stage_id = COALESCE(?, stage_id),
       priority = COALESCE(?, priority),
       due_date = CASE WHEN ? THEN ? ELSE due_date END,
+      start_date = CASE WHEN ? THEN ? ELSE start_date END,
       project_id = CASE WHEN ? THEN ? ELSE project_id END,
       client_id = CASE WHEN ? THEN ? ELSE client_id END,
       recurrence = COALESCE(?, recurrence),
@@ -777,6 +790,7 @@ router.patch('/:id', (req, res) => {
     title?.trim() || null, description ?? null, stage_id ?? null,
     priority ?? null,
     due_date !== undefined ? 1 : 0, due_date ?? null,
+    start_date !== undefined ? 1 : 0, start_date ?? null,
     project_id !== undefined ? 1 : 0, project_id ?? null,
     client_id !== undefined ? 1 : 0, client_id ?? null,
     recurrence ?? null,
@@ -980,6 +994,52 @@ router.post('/:id/checklist', (req, res) => {
   db.prepare('INSERT INTO task_checklist (task_id, text, position) VALUES (?, ?, ?)').run(task.id, text, max + 1);
   emitChanged(req, task.id);
   res.status(201).json(db.prepare('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id').all(task.id));
+});
+
+// --- Dependencies: "this task is blocked by <depends_on_id>" ---
+// True if `startId` can reach `targetId` by following depends_on edges — so we
+// can reject a new link that would form a cycle.
+function dependencyReaches(startId, targetId) {
+  const seen = new Set();
+  const stack = [startId];
+  const q = db.prepare('SELECT depends_on_id FROM task_dependencies WHERE task_id = ?');
+  while (stack.length) {
+    const cur = stack.pop();
+    if (cur === targetId) return true;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const r of q.all(cur)) stack.push(r.depends_on_id);
+  }
+  return false;
+}
+
+// Add a blocker: task :id becomes blocked by depends_on_id.
+router.post('/:id/dependencies', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  const dependsOnId = Number(req.body?.depends_on_id);
+  if (!Number.isInteger(dependsOnId)) return res.status(400).json({ error: 'Choose a task this one depends on.' });
+  if (dependsOnId === task.id) return res.status(400).json({ error: 'A task cannot depend on itself.' });
+  const other = db.prepare('SELECT id, title FROM tasks WHERE id = ? AND workspace_id = ?').get(dependsOnId, req.workspaceId);
+  if (!other) return res.status(404).json({ error: 'That task was not found.' });
+  // Adding task→dependsOn is circular if dependsOn already (transitively) depends on task.
+  if (dependencyReaches(dependsOnId, task.id)) return res.status(400).json({ error: 'That would create a circular dependency.' });
+  db.prepare('INSERT OR IGNORE INTO task_dependencies (task_id, depends_on_id) VALUES (?, ?)').run(task.id, dependsOnId);
+  logActivity(task.id, req.user.id, `marked this blocked by "${other.title}"`);
+  emitChanged(req, task.id);
+  emitChanged(req, dependsOnId);
+  res.status(201).json({ task: taskWithMeta(db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id)) });
+});
+
+// Remove a blocker.
+router.delete('/:id/dependencies/:depId', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  const depId = Number(req.params.depId);
+  db.prepare('DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?').run(task.id, depId);
+  emitChanged(req, task.id);
+  emitChanged(req, depId);
+  res.json({ task: taskWithMeta(db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id)) });
 });
 
 router.patch('/:id/checklist/:itemId', (req, res) => {
