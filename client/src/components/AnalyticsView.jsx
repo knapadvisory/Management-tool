@@ -3,6 +3,7 @@ import { api, downloadReport } from '../api.js';
 import Avatar from './Avatar.jsx';
 import TaskModal from './TaskModal.jsx';
 import useDragPosition from '../useDragPosition.js';
+import ScopeInfo from './ScopeInfo.jsx';
 
 // Practice Analytics — three tabs:
 //  • Overview  — firm-wide (or personal) KPIs, throughput, compliance, quality.
@@ -168,7 +169,7 @@ function Overview({ data, chartStyle, setChartStyle, onDrill, onQuality }) {
     <>
       <section className="an-kpis">
         <button className="an-kpi an-kpi-btn" onClick={() => onDrill('completed')}>
-          <div className="an-lab">Tasks completed <span className="an-kpi-go">→</span></div>
+          <div className="an-lab">Tasks completed <ScopeInfo text="Distinct tasks completed within the selected period, counted once each. Matches the Reports → Team Productivity total for the same period. The home page's “Closed this month” uses a monthly window, so it can differ." /> <span className="an-kpi-go">→</span></div>
           <div className="an-val">{s.tasks_completed.value}</div>
           <Delta pct={s.tasks_completed.delta} />
         </button>
@@ -188,7 +189,7 @@ function Overview({ data, chartStyle, setChartStyle, onDrill, onQuality }) {
           <span className="an-delta flat">● {s.billable_hours.billable_pct}% of logged</span>
         </button>
         <button className="an-kpi an-kpi-btn" onClick={() => onDrill('overdue')}>
-          <div className="an-lab">Overdue filings <span className="an-kpi-go">→</span></div>
+          <div className="an-lab">Overdue filings <ScopeInfo text="Open statutory client filings (compliance deadlines) past their due date — NOT tasks. The home page's “Overdue tasks” counts overdue tasks instead, so the two are different." /> <span className="an-kpi-go">→</span></div>
           <div className={`an-val ${s.overdue_filings ? 'an-bad' : ''}`}>{s.overdue_filings}</div>
           <div className="an-note">{s.overdue_filings ? 'need action' : 'all clear'}</div>
         </button>
@@ -733,9 +734,10 @@ function Reports({ isAdmin, userId, period, setPeriod, onDrill, onOpenTask }) {
               {data.summary.map((s) => {
                 const act = cardAction(s.label);
                 const cls = `rep-kpi ${s.tone ? `rep-${s.tone}` : ''} ${act ? 'rep-kpi-btn' : ''} ${activeCard(s.label) ? 'on' : ''}`;
+                const lbl = <span className="rep-kpi-lbl">{s.label}{s.info && <> <ScopeInfo text={s.info} /></>}</span>;
                 return act
-                  ? <button key={s.label} className={cls} onClick={act}><span className="rep-kpi-val">{s.value}</span><span className="rep-kpi-lbl">{s.label}</span></button>
-                  : <div key={s.label} className={cls}><span className="rep-kpi-val">{s.value}</span><span className="rep-kpi-lbl">{s.label}</span></div>;
+                  ? <button key={s.label} className={cls} onClick={act}><span className="rep-kpi-val">{s.value}</span>{lbl}</button>
+                  : <div key={s.label} className={cls}><span className="rep-kpi-val">{s.value}</span>{lbl}</div>;
               })}
             </div>
           )}
