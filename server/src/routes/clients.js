@@ -482,12 +482,14 @@ router.patch('/:id/document-requests/:rid', (req, res) => {
     const resolved = req.body.status === 'done' ? "datetime('now')" : 'resolved_at';
     db.prepare(`UPDATE document_requests SET status = ?, resolved_at = ${resolved} WHERE id = ?`).run(req.body.status, r.id);
   }
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
   res.json({ requests: requestsFor(client.id) });
 });
 
 router.delete('/:id/document-requests/:rid', (req, res) => {
   const client = load(req, res); if (!client) return;
   db.prepare('DELETE FROM document_requests WHERE id = ? AND client_id = ?').run(req.params.rid, client.id);
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
   res.json({ requests: requestsFor(client.id) });
 });
 
