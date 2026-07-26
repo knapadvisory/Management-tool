@@ -2730,6 +2730,10 @@ button.c360-stat:hover { border-color: var(--accent); }
 /* ---- Task modal: dependencies ---- */
 .deps-section { margin-top: 14px; }
 .dep-blocked-badge { font-size: 11px; font-weight: 700; color: #b91c1c; background: #fee2e2; padding: 2px 8px; border-radius: 999px; }
+.card-blocked-badge { font-size: 10px; font-weight: 700; color: #b91c1c; background: #fee2e2; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.wl-flag { font-weight: 600; }
+.wl-flag.wl-overdue { color: #b91c1c; }
+.wl-flag.wl-blocked { color: #92400e; }
 .dep-group { margin-top: 8px; }
 .dep-label { font-size: 12px; font-weight: 600; color: var(--muted, #6b7280); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
 .dep-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }

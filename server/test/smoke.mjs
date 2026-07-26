@@ -254,6 +254,13 @@ async function main() {
   const addDep = await req('POST', `/api/tasks/${shipId}/dependencies`, { token: a, body: { depends_on_id: dtId } });
   check('a blocker can be added', addDep.status === 201 && addDep.data.task.blocked_by.some((b) => b.id === dtId));
   check('the task is flagged blocked while the blocker is open', addDep.data.task.is_blocked === true);
+  // Completion guard: the assignee cannot finish a task while a blocker is open,
+  // but may override with force.
+  const blockedDone = await req('PATCH', `/api/tasks/${shipId}`, { token: b, body: { status: 'completed' } });
+  check('completing a blocked task is refused', blockedDone.status === 409 && blockedDone.data.code === 'blocked');
+  const forcedDone = await req('PATCH', `/api/tasks/${shipId}`, { token: b, body: { status: 'completed', force: true } });
+  check('a blocked task can be force-completed', forcedDone.status === 200);
+  await req('PATCH', `/api/tasks/${shipId}`, { token: b, body: { status: 'in_progress' } }); // reopen for later checks
   const selfDep = await req('POST', `/api/tasks/${shipId}/dependencies`, { token: a, body: { depends_on_id: shipId } });
   check('a task cannot depend on itself', selfDep.status === 400);
   const cycleDep = await req('POST', `/api/tasks/${dtId}/dependencies`, { token: a, body: { depends_on_id: shipId } });
