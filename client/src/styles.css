@@ -51,25 +51,28 @@
 }
 
 /* ========== Editorial skin — warm, minimalist, classy ==========
-   A whole-app reskin selected in Settings → Appearance. Accent + sidebar are
-   set inline by applyTheme(); everything else (surfaces, text, hairlines, type)
-   is themed here. Works in light and dark. */
+   A faithful reskin of the supplied CA-firm design: cream "paper" surfaces,
+   warm charcoal sidebar, muted teal accent, Helvetica-400 titles and — its
+   signature — JetBrains Mono for every label / eyebrow / stat-caption / table
+   header / date / code chip. Accent + sidebar are set inline by applyTheme();
+   the rest is themed here. Works in light and dark. */
 :root[data-skin="editorial"] {
-  --bg: #f0ebe1;
+  --mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --bg: #efece5;
   --surface: #fffdf9;
-  --surface-2: #f6f1e7;
-  --border: #e4dccb;
-  --text: #2a2620;
-  --muted: #8c8271;
-  --shadow: rgba(60, 50, 30, .09);
+  --surface-2: #faf7f1;
+  --border: #e4dfd4;
+  --text: #1f1d1a;
+  --muted: #8a847a;
+  --shadow: rgba(60, 50, 30, .08);
   --card: var(--surface);
-  --hover: #f2ece0;
-  --line: #ece4d5;
-  --accent-soft: color-mix(in srgb, #3f6b74 15%, transparent);
+  --hover: #f6f2ea;
+  --line: #f2eee6;
+  --accent-soft: color-mix(in srgb, #3f6b74 14%, transparent);
   --danger: #b4462f;   --danger-soft: #f6e6df;
   --success: #3f6b4a;  --success-soft: #e6efe4;
   --warning: #a9701a;  --warning-soft: #f6ecd6;
-  --sidebar-text: rgba(244, 238, 226, .74);
+  --sidebar-text: rgba(232, 227, 217, .78);
 }
 :root[data-skin="editorial"][data-theme="dark"] {
   --bg: #1a1815;
@@ -83,20 +86,62 @@
   --line: #322d24;
   --accent-soft: color-mix(in srgb, #6ba0a8 24%, transparent);
 }
-/* Serif page titles give the editorial look its classy, print-like feel. */
+:root[data-skin="editorial"] body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+
+/* Titles: light-weight Helvetica with tight tracking (NOT serif). */
 :root[data-skin="editorial"] h1,
 :root[data-skin="editorial"] h2,
+:root[data-skin="editorial"] h3,
 :root[data-skin="editorial"] .settings-title,
 :root[data-skin="editorial"] .dash-greeting,
 :root[data-skin="editorial"] .ceng-head-main h1,
 :root[data-skin="editorial"] .auth-title {
-  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
-  letter-spacing: -0.2px;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-weight: 400; letter-spacing: -0.02em;
 }
-/* A touch more restraint: flatter shadows, hairline cards. */
+
+/* Metadata in JetBrains Mono — the look's signature. Labels/eyebrows/table
+   headers get uppercase + wide tracking; dates and code chips just get mono. */
+:root[data-skin="editorial"] .ceng-eyebrow,
+:root[data-skin="editorial"] .ceng-table thead th,
+:root[data-skin="editorial"] .dash-kpi-lbl,
+:root[data-skin="editorial"] .an-lab,
+:root[data-skin="editorial"] .rep-kpi-lbl,
+:root[data-skin="editorial"] .board-col-name,
+:root[data-skin="editorial"] .ceng-stat-lbl,
+:root[data-skin="editorial"] .ot-table thead th,
+:root[data-skin="editorial"] .an-th,
+:root[data-skin="editorial"] .client-status,
+:root[data-skin="editorial"] .dash-kpi .dash-kpi-lbl {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: .11em;
+  font-weight: 500; font-size: 10px;
+}
+:root[data-skin="editorial"] .ceng-fy,
+:root[data-skin="editorial"] .ceng-count,
+:root[data-skin="editorial"] .ceng-client-sub,
+:root[data-skin="editorial"] .ceng-last-date,
+:root[data-skin="editorial"] .ceng-due-date,
+:root[data-skin="editorial"] .ceng-chip,
+:root[data-skin="editorial"] .ceng-mgr {
+  font-family: var(--mono);
+}
+/* Sidebar section captions (CHANNELS, etc.) in mono, like the reference. */
+:root[data-skin="editorial"] .section-title {
+  font-family: var(--mono); letter-spacing: .12em;
+}
+
+/* Softer, flatter cards (no drop shadows), 7px controls like the reference. */
 :root[data-skin="editorial"] .dash-kpi,
 :root[data-skin="editorial"] .an-kpi,
 :root[data-skin="editorial"] .rep-kpi { box-shadow: none; }
+:root[data-skin="editorial"] .btn,
+:root[data-skin="editorial"] .ceng-search,
+:root[data-skin="editorial"] .ceng-fy { border-radius: 7px; }
+:root[data-skin="editorial"] .ceng-chip { border-radius: 5px; }
+:root[data-skin="editorial"] .ceng-chip-btn { border-radius: 16px; }
+:root[data-skin="editorial"] .ceng-table thead th { background: var(--surface-2); }
+:root[data-skin="editorial"] .ceng-head-main h1,
+:root[data-skin="editorial"] .ceng-head-main { }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
