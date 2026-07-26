@@ -114,21 +114,61 @@ the database plus all uploaded files, kept in the `teamhub-data` volume at
 `/data/backups` (the last 14 are retained). No setup is needed; the first
 backup runs shortly after the server starts.
 
+Every snapshot is **integrity-checked** the moment it's taken; a corrupt one is
+discarded rather than kept (so a "backup" that wouldn't restore can't quietly
+pile up).
+
 - **See status / run one now / download the database:** sign in as the
   platform owner (the KNAP workspace admin) → **Admin → 💾 Backups**.
-- **Off-site copy (important):** the automatic backups live on the same server,
-  which protects against accidental deletes, bad updates and corruption — but
-  **not** against losing the server itself. Periodically click **Download
-  latest database** and keep the file somewhere off the server.
-- **Restore** from a backup (replaces the current data):
+
+### Off-site copies (do this — it's the real safety net)
+
+On-box backups protect against accidental deletes, bad updates and corruption —
+but **not** against losing the server itself. Two ways to keep copies off the
+box:
+
+- **Manual:** periodically click **Download latest database** in Admin → Backups
+  and keep the file somewhere else.
+- **Automatic (recommended):** set `BACKUP_SYNC_CMD` to a command that pushes
+  each new backup off-box. It runs after every verified snapshot with
+  `BACKUP_PATH` (the backup folder), `BACKUP_NAME` and `BACKUP_ROOT` in its
+  environment. Any tool works — no new dependencies:
   ```bash
-  cd ~/Management-tool
-  bash deploy/restore-backup.sh              # list available backups
-  bash deploy/restore-backup.sh teamhub-YYYYMMDD-HHMMSS
+  # in /root/teamhub.env — pick one
+  BACKUP_SYNC_CMD='rclone copy "$BACKUP_PATH" remote:teamhub/$BACKUP_NAME'
+  BACKUP_SYNC_CMD='aws s3 sync "$BACKUP_PATH" s3://my-bucket/$BACKUP_NAME'
+  BACKUP_SYNC_CMD='rsync -a "$BACKUP_PATH" user@host:/backups/$BACKUP_NAME'
   ```
+  The last off-site result (ok / failed + time) shows in Admin → Backups, so a
+  silently-broken pipeline is visible rather than assumed working.
+
+### Prove the backups restore (recovery drill)
+
+Backups you've never restored are a guess. Run the **non-destructive** drill —
+it opens the newest backup, integrity-checks it and confirms it still holds real
+rows, without touching live data:
+
+```bash
+cd ~/Management-tool
+bash deploy/verify-backup.sh               # drill the newest backup
+bash deploy/verify-backup.sh teamhub-YYYYMMDD-HHMMSS
+```
+
+It exits non-zero on failure, so it's worth adding as a **weekly cron** (and
+alerting if it ever fails). You can also run the same check from the app: Admin →
+Backups → **Verify**.
+
+### Restore for real (replaces current data)
+
+```bash
+cd ~/Management-tool
+bash deploy/restore-backup.sh              # list available backups
+bash deploy/restore-backup.sh teamhub-YYYYMMDD-HHMMSS
+```
 
 Optional environment variables (defaults are fine): `BACKUP_INTERVAL_HOURS`
-(default 24), `BACKUP_KEEP` (default 14), `BACKUP_DIR`, `BACKUP_DISABLED=1`.
+(default 24), `BACKUP_KEEP` (default 14), `BACKUP_DIR`, `BACKUP_SYNC_CMD`
+(off-site push, unset by default), `BACKUP_DISABLED=1`.
 
 ## Free alternative: Cloudflare named tunnel
 

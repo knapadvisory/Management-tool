@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
+import Database from 'better-sqlite3';
 import db from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -9,6 +11,23 @@ const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(DATA_DIR, 'backups');
 const KEEP = Math.max(1, Number(process.env.BACKUP_KEEP || 14));
 const INTERVAL_HOURS = Math.max(1, Number(process.env.BACKUP_INTERVAL_HOURS || 24));
+// A shell command the operator sets to push each new backup OFF the box (the
+// single most important DR gap — on-box backups die with the box). It runs
+// after a verified snapshot with BACKUP_PATH / BACKUP_NAME / BACKUP_ROOT in the
+// environment, e.g. `rclone copy "$BACKUP_PATH" remote:teamhub/$BACKUP_NAME`.
+const SYNC_CMD = process.env.BACKUP_SYNC_CMD || '';
+const OFFSITE_STATE = path.join(BACKUP_DIR, 'offsite-state.json');
+
+// Open a snapshot read-only and confirm SQLite considers it sound. A backup
+// that fails this is worse than useless — it hides the fact that you're
+// unprotected — so we refuse to keep it.
+function integrityOf(dbPath) {
+  const snap = new Database(dbPath, { readonly: true, fileMustExist: true });
+  try {
+    const row = snap.prepare('PRAGMA integrity_check').get();
+    return row?.integrity_check || 'unknown';
+  } finally { snap.close(); }
+}
 
 // Timestamp like 20260713-173042 (local server time). Safe in server code
 // (the Date.now()/new Date() restriction only applies to workflow scripts).
@@ -60,17 +79,81 @@ export async function runBackup() {
   fs.mkdirSync(tmp, { recursive: true });
 
   await db.backup(path.join(tmp, 'app.db'));
+  // Verify the snapshot before we trust it — a corrupt backup is discarded.
+  const integrity = integrityOf(path.join(tmp, 'app.db'));
+  if (integrity !== 'ok') {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    throw new Error(`backup integrity check failed (${integrity})`);
+  }
   const up = mirrorUploads(path.join(tmp, 'uploads'));
   const dbSize = fs.statSync(path.join(tmp, 'app.db')).size;
   fs.writeFileSync(path.join(tmp, 'meta.json'), JSON.stringify({
-    created_at: new Date().toISOString(), db_size: dbSize, files: up.files, upload_bytes: up.bytes,
+    created_at: new Date().toISOString(), db_size: dbSize, files: up.files, upload_bytes: up.bytes, integrity,
   }, null, 2));
 
   fs.renameSync(tmp, dest); // atomic: a backup dir only appears once complete
   prune();
   const total = dirSize(dest);
-  console.log(`[backup] ${name} — db ${(dbSize / 1024).toFixed(0)} KB, ${up.files} files, ${(total / 1048576).toFixed(1)} MB total`);
-  return { name, created_at: new Date().toISOString(), db_size: dbSize, files: up.files, size: total };
+  console.log(`[backup] ${name} — db ${(dbSize / 1024).toFixed(0)} KB, ${up.files} files, ${(total / 1048576).toFixed(1)} MB total, integrity ok`);
+  await syncOffsite(name, dest); // push off-box if configured (best-effort; never fails the backup)
+  return { name, created_at: new Date().toISOString(), db_size: dbSize, files: up.files, size: total, integrity };
+}
+
+// Push a completed backup off the box using the operator's configured command.
+// Best-effort: a sync failure is recorded and logged loudly but never rolls
+// back the (already-safe on-box) backup. The last result feeds the admin status
+// so a silently-failing off-site pipeline is visible, not assumed-working.
+function writeOffsiteState(state) {
+  try { fs.writeFileSync(OFFSITE_STATE, JSON.stringify(state, null, 2)); } catch { /* */ }
+}
+async function syncOffsite(name, dest) {
+  if (!SYNC_CMD) return;
+  await new Promise((resolve) => {
+    execFile('sh', ['-c', SYNC_CMD], {
+      env: { ...process.env, BACKUP_PATH: dest, BACKUP_NAME: name, BACKUP_ROOT: BACKUP_DIR },
+      timeout: 10 * 60 * 1000,
+    }, (err) => {
+      if (err) {
+        console.error(`[backup] off-site sync FAILED for ${name}: ${err.message}`);
+        writeOffsiteState({ last_at: new Date().toISOString(), name, ok: false, error: err.message });
+      } else {
+        console.log(`[backup] off-site sync ok for ${name}`);
+        writeOffsiteState({ last_at: new Date().toISOString(), name, ok: true });
+      }
+      resolve();
+    });
+  });
+}
+
+// A non-destructive restore drill: confirm a stored backup would actually come
+// back — its db passes an integrity check and still holds real rows. Defaults
+// to the newest backup. This is what turns "we have backups" into "we know they
+// restore".
+export function verifyBackup(name) {
+  const target = name || listDirs()[0]?.name;
+  if (!target) return { ok: false, error: 'No backups exist yet.' };
+  const dbPath = path.join(BACKUP_DIR, target, 'app.db');
+  if (!fs.existsSync(dbPath)) return { ok: false, name: target, error: 'Snapshot database is missing.' };
+  try {
+    const integrity = integrityOf(dbPath);
+    const snap = new Database(dbPath, { readonly: true });
+    let counts = {};
+    try {
+      counts = {
+        workspaces: snap.prepare('SELECT COUNT(*) n FROM workspaces').get().n,
+        users: snap.prepare('SELECT COUNT(*) n FROM users').get().n,
+        clients: snap.prepare('SELECT COUNT(*) n FROM clients').get().n,
+        tasks: snap.prepare('SELECT COUNT(*) n FROM tasks').get().n,
+      };
+    } finally { snap.close(); }
+    return { ok: integrity === 'ok', name: target, integrity, counts };
+  } catch (e) {
+    return { ok: false, name: target, error: e.message };
+  }
+}
+
+function offsiteState() {
+  try { return JSON.parse(fs.readFileSync(OFFSITE_STATE, 'utf8')); } catch { return null; }
 }
 
 // Keep only the newest KEEP backups.
@@ -114,6 +197,7 @@ export function backupStatus() {
     dir: BACKUP_DIR,
     count: backups.length,
     latest: backups[0] || null,
+    offsite: { configured: !!SYNC_CMD, last: offsiteState() },
     backups,
   };
 }

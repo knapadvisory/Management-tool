@@ -38,7 +38,7 @@ import feeParserRouter from './routes/feeParser.js';
 import setupSocket from './socket.js';
 import { startReminderScheduler, startAutoArchiveScheduler, startDeadlineReminderScheduler, startWeeklyDigestScheduler, startDocumentRequestChaseScheduler } from './reminders.js';
 import { createNotification } from './notifications.js';
-import { startBackupScheduler, runBackup, backupStatus, latestDbPath } from './backup.js';
+import { startBackupScheduler, runBackup, backupStatus, latestDbPath, verifyBackup } from './backup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -242,6 +242,11 @@ app.get('/api/platform/backups', requireAuth, requirePlatformAdmin, (req, res) =
 app.post('/api/platform/backups', requireAuth, requirePlatformAdmin, async (req, res) => {
   try { res.status(201).json(await runBackup()); }
   catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Restore drill: confirm a stored backup would actually come back (integrity +
+// real row counts), without touching live data. Defaults to the newest.
+app.post('/api/platform/backups/verify', requireAuth, requirePlatformAdmin, (req, res) => {
+  res.json(verifyBackup(req.body?.name));
 });
 // Download the latest database snapshot for safe off-site keeping.
 app.get('/api/platform/backups/latest.db', requireAuth, requirePlatformAdmin, (req, res) => {

@@ -391,6 +391,8 @@ function PlatformBackups() {
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [dl, setDl] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState(null);
 
   const load = useCallback(() => { api('/platform/backups').then(setStatus).catch(() => {}); }, []);
   useEffect(() => {
@@ -417,6 +419,13 @@ function PlatformBackups() {
     setDl(false);
   }
 
+  async function verify() {
+    setVerifying(true); setVerifyResult(null);
+    try { setVerifyResult(await api('/platform/backups/verify', { method: 'POST' })); }
+    catch (e) { setVerifyResult({ ok: false, error: e.message }); }
+    setVerifying(false);
+  }
+
   if (!isPlatform || !status) return null;
   const mb = (b) => (b == null ? '—' : `${(b / 1048576).toFixed(1)} MB`);
   const when = (iso) => (iso ? new Date(iso).toLocaleString() : 'never');
@@ -437,11 +446,28 @@ function PlatformBackups() {
       )}
       <div className="admin-policy-row" style={{ gap: 8 }}>
         <button className="btn btn-sm" disabled={busy} onClick={runNow}>{busy ? 'Backing up…' : 'Run backup now'}</button>
+        <button className="btn btn-sm" disabled={verifying || !status.latest} onClick={verify}>{verifying ? 'Verifying…' : '✓ Verify latest'}</button>
         <button className="btn btn-sm" disabled={dl || !status.latest} onClick={download}>{dl ? 'Preparing…' : '⬇ Download latest database'}</button>
       </div>
+      {verifyResult && (
+        <p className={verifyResult.ok ? 'form-ok' : 'form-error'} style={{ margin: '6px 0', fontSize: '13px' }}>
+          {verifyResult.ok
+            ? `✓ ${verifyResult.name} would restore — integrity ok · ${verifyResult.counts?.workspaces} workspace(s), ${verifyResult.counts?.users} user(s), ${verifyResult.counts?.clients} client(s), ${verifyResult.counts?.tasks} task(s).`
+            : `✗ Verify failed${verifyResult.name ? ` for ${verifyResult.name}` : ''}: ${verifyResult.error || verifyResult.integrity}`}
+        </p>
+      )}
+      {/* Off-site status — a silently-broken pipeline should be visible, not assumed working. */}
       <p className="muted" style={{ fontSize: '12px', marginTop: 8 }}>
-        Backups are kept on the server (safe against accidental deletes, bad updates and corruption). For full disaster recovery,
-        download the database now and then periodically and keep it somewhere off the server.
+        {status.offsite?.configured ? (
+          status.offsite.last
+            ? <>Off-site sync: {status.offsite.last.ok
+                ? <span className="form-ok" style={{ display: 'inline' }}>✓ last copied {when(status.offsite.last.last_at)}</span>
+                : <span className="form-error" style={{ display: 'inline' }}>⚠ last sync FAILED ({when(status.offsite.last.last_at)}) — {status.offsite.last.error}</span>}
+              </>
+            : 'Off-site sync configured — awaiting the next backup.'
+        ) : (
+          <>Backups are kept on the server (safe against accidental deletes, bad updates and corruption). For full disaster recovery, set an off-site copy (see DEPLOY.md → <code>BACKUP_SYNC_CMD</code>) or download the database periodically and keep it off the server.</>
+        )}
       </p>
       {status.backups?.length > 0 && (
         <div className="code-list">
