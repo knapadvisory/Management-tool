@@ -455,6 +455,13 @@ router.get('/:id/document-requests', (req, res) => {
   res.json({ requests: requestsFor(client.id) });
 });
 
+// Email a client's active portal users (best-effort).
+function emailPortalUsers(client, subject, html) {
+  if (!emailEnabled()) return;
+  const users = db.prepare('SELECT email FROM portal_users WHERE client_id = ? AND active = 1').all(client.id);
+  for (const u of users) sendMail({ to: u.email, subject, html }).catch(() => {});
+}
+
 router.post('/:id/document-requests', (req, res) => {
   const client = load(req, res); if (!client) return;
   const title = String(req.body?.title || '').trim();
@@ -462,6 +469,7 @@ router.post('/:id/document-requests', (req, res) => {
   const due = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.due_date || '') ? req.body.due_date : null;
   db.prepare('INSERT INTO document_requests (client_id, workspace_id, title, note, due_date, requested_by) VALUES (?, ?, ?, ?, ?, ?)')
     .run(client.id, req.workspaceId, title, String(req.body?.note || '').trim(), due, req.user.id);
+  emailPortalUsers(client, `Document requested: ${title}`, layout(`<p>Hello,</p><p>${req.user.name} has requested a document on your ${client.name} portal:</p><p style="font-size:16px"><strong>${title}</strong>${due ? ` — due ${due}` : ''}</p><p>Please sign in to upload it.</p>`));
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
   res.status(201).json({ requests: requestsFor(client.id) });
 });
@@ -481,6 +489,25 @@ router.delete('/:id/document-requests/:rid', (req, res) => {
   const client = load(req, res); if (!client) return;
   db.prepare('DELETE FROM document_requests WHERE id = ? AND client_id = ?').run(req.params.rid, client.id);
   res.json({ requests: requestsFor(client.id) });
+});
+
+// --- Portal messages (firm side of the client thread) ---
+const portalMsgs = (clientId) => db.prepare('SELECT id, sender, author_name, body, created_at FROM portal_messages WHERE client_id = ? ORDER BY id').all(clientId);
+
+router.get('/:id/portal-messages', (req, res) => {
+  const client = load(req, res); if (!client) return;
+  res.json({ messages: portalMsgs(client.id) });
+});
+
+router.post('/:id/portal-messages', (req, res) => {
+  const client = load(req, res); if (!client) return;
+  const body = String(req.body?.body || '').trim();
+  if (!body) return res.status(400).json({ error: 'Message cannot be empty.' });
+  db.prepare('INSERT INTO portal_messages (client_id, workspace_id, sender, staff_id, author_name, body) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(client.id, req.workspaceId, 'staff', req.user.id, req.user.name, body);
+  emailPortalUsers(client, `New message from ${req.user.name}`, layout(`<p>You have a new message on your ${client.name} portal:</p><blockquote style="border-left:3px solid #3f6b74;padding-left:12px;color:#333">${body.replace(/</g, '&lt;')}</blockquote><p>Sign in to reply.</p>`));
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
+  res.status(201).json({ messages: portalMsgs(client.id) });
 });
 
 router.patch('/:id', (req, res) => {

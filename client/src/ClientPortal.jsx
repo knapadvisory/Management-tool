@@ -24,8 +24,8 @@ const fmtBytes = (n) => (n == null ? '' : n < 1024 ? `${n} B` : n < 1048576 ? `$
 const fmtDate = (s) => { if (!s) return ''; const d = new Date(String(s).replace(' ', 'T') + 'Z'); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }); };
 
 export default function ClientPortal() {
-  const [session, setSession] = useState(getPToken() ? {} : null); // {} = have token, loading me
   const [user, setUser] = useState(null);
+  const [firm, setFirm] = useState('Client Portal');
   const [booting, setBooting] = useState(true);
 
   // Consume a magic-link token if we arrived via one, else validate the session.
@@ -36,31 +36,32 @@ export default function ClientPortal() {
       try {
         if (magic) {
           const r = await papi('/login', { method: 'POST', body: { token: magic } });
-          setPToken(r.token); setUser(r.user); setSession({});
+          setPToken(r.token); setUser(r.user); if (r.firm) setFirm(r.firm);
           url.searchParams.delete('token');
           window.history.replaceState({}, '', url.pathname);
         } else if (getPToken()) {
           const r = await papi('/me');
-          setUser(r.user); setSession({});
+          setUser(r.user); if (r.firm) setFirm(r.firm);
         }
-      } catch {
-        clearPToken(); setSession(null);
-      } finally { setBooting(false); }
+      } catch { clearPToken(); }
+      finally { setBooting(false); }
     })();
   }, []);
 
-  function signOut() { clearPToken(); setUser(null); setSession(null); }
+  function signOut() { clearPToken(); setUser(null); }
 
   if (booting) return <div className="pt-boot">Loading your portal…</div>;
-  if (!user) return <PortalLogin onedIn={(tok, u) => { setPToken(tok); setUser(u); setSession({}); }} />;
-  return <PortalHome user={user} onSignOut={signOut} />;
+  if (!user) return <PortalLogin />;
+  return <PortalHome user={user} firm={firm} onSignOut={signOut} />;
 }
 
-function PortalLogin({ onedIn }) {
+function PortalLogin() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [firm, setFirm] = useState('Client Portal');
+  useEffect(() => { papi('/branding').then((b) => b.firm && setFirm(b.firm)).catch(() => {}); }, []);
 
   async function submit(e) {
     e.preventDefault();
@@ -73,8 +74,8 @@ function PortalLogin({ onedIn }) {
   return (
     <div className="pt-auth">
       <form className="pt-auth-card" onSubmit={submit}>
-        <div className="pt-logo">K</div>
-        <div className="pt-eyebrow">KNAP Advisory</div>
+        <div className="pt-logo">{(firm[0] || 'K').toUpperCase()}</div>
+        <div className="pt-eyebrow">{firm}</div>
         <h1>Client Portal</h1>
         {sent ? (
           <>
@@ -98,22 +99,24 @@ function PortalLogin({ onedIn }) {
   );
 }
 
-const NAV = [['overview', 'Overview'], ['documents', 'Documents'], ['requests', 'Requests'], ['filings', 'Filings']];
+const NAV = [['overview', 'Overview'], ['documents', 'Documents'], ['requests', 'Requests'], ['filings', 'Filings'], ['messages', 'Messages']];
 const fmtDue = (d) => (d ? fmtDate(d) : 'No date');
 const CH = { filed: 'pt-c-good', due: 'pt-c-warn', overdue: 'pt-c-bad', received: 'pt-c-good', pending: 'pt-c-bad', done: 'pt-c-good' };
 
-function PortalHome({ user, onSignOut }) {
+function PortalHome({ user, firm, onSignOut }) {
   const [view, setView] = useState('overview');
   const [docs, setDocs] = useState(null);
   const [requests, setRequests] = useState(null);
   const [filings, setFilings] = useState(null);
+  const [messages, setMessages] = useState(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
   const loadDocs = useCallback(() => papi('/documents').then((d) => setDocs(d.documents)).catch((e) => setErr(e.message)), []);
   const loadReq = useCallback(() => papi('/requests').then((d) => setRequests(d.requests)).catch(() => setRequests([])), []);
   const loadFil = useCallback(() => papi('/filings').then((d) => setFilings(d.filings)).catch(() => setFilings([])), []);
-  useEffect(() => { loadDocs(); loadReq(); loadFil(); }, [loadDocs, loadReq, loadFil]);
+  const loadMsg = useCallback(() => papi('/messages').then((d) => setMessages(d.messages)).catch(() => setMessages([])), []);
+  useEffect(() => { loadDocs(); loadReq(); loadFil(); loadMsg(); }, [loadDocs, loadReq, loadFil, loadMsg]);
 
   // Upload files, optionally answering a specific request. Updates both lists.
   async function upload(files, requestId) {
@@ -207,9 +210,51 @@ function PortalHome({ user, onSignOut }) {
         {view === 'filings' && (
           <FilingsView filings={filings} />
         )}
+
+        {view === 'messages' && (
+          <MessagesView messages={messages} firm={firm} onSend={async (body) => {
+            const d = await papi('/messages', { method: 'POST', body: { body } });
+            setMessages(d.messages);
+          }} />
+        )}
       </main>
-      <footer className="pt-appfoot">Secure client portal · Powered by TeamHub</footer>
+      <footer className="pt-appfoot">Secure client portal · {firm}</footer>
     </div>
+  );
+}
+
+function MessagesView({ messages, firm, onSend }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const endRef = useRef(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [messages]);
+  async function send(e) {
+    e.preventDefault();
+    const body = text.trim();
+    if (!body) return;
+    setBusy(true);
+    try { await onSend(body); setText(''); } finally { setBusy(false); }
+  }
+  return (
+    <>
+      <div className="pt-head"><div className="pt-eyebrow">Client portal</div><h1>Messages</h1>
+        <p className="pt-muted">A direct line to your accountant at {firm}.</p></div>
+      <div className="pt-thread">
+        {messages == null ? <div className="pt-muted">Loading…</div>
+          : messages.length === 0 ? <div className="pt-empty">No messages yet. Say hello 👋</div>
+          : messages.map((m) => (
+            <div key={m.id} className={`pt-msg ${m.sender === 'client' ? 'mine' : 'firm'}`}>
+              <div className="pt-msg-bubble">{m.body}</div>
+              <div className="pt-msg-meta">{m.sender === 'client' ? 'You' : (m.author_name || firm)} · {fmtDate(m.created_at)}</div>
+            </div>
+          ))}
+        <div ref={endRef} />
+      </div>
+      <form className="pt-composer" onSubmit={send}>
+        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a message…" />
+        <button className="pt-btn pt-sm" disabled={busy || !text.trim()}>{busy ? 'Sending…' : 'Send'}</button>
+      </form>
+    </>
   );
 }
 

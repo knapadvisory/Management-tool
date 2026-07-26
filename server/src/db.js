@@ -513,6 +513,22 @@ db.exec(`
 `);
 // A portal upload can answer a specific document request.
 ensureColumn('attachments', 'request_id', 'INTEGER REFERENCES document_requests(id)');
+
+// A two-way message thread between the firm and a client (via the portal).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS portal_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    workspace_id INTEGER REFERENCES workspaces(id),
+    sender TEXT NOT NULL,                 -- 'client' | 'staff'
+    staff_id INTEGER REFERENCES users(id),
+    portal_id INTEGER REFERENCES portal_users(id),
+    author_name TEXT DEFAULT '',
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_portal_messages_client ON portal_messages(client_id, id);
+`);
 ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
 // Repeat rule: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'. When a
 // recurring task is completed, the next occurrence is generated automatically.
