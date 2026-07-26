@@ -51,6 +51,25 @@ function clientWithMeta(c) {
   return { ...c, open_task_count: openTasks, next_deadline: nextDeadline, contact_count: contactCount, document_count: documentCount, tags: tagsFor(c.id) };
 }
 
+// Documents filed against a client. They're also mirrored into the Drive, so a
+// file archived in the Drive drops off the client list too (archived_at guard).
+const docsFor = (clientId) => db.prepare(`
+  SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, u.name AS uploaded_by
+  FROM attachments a LEFT JOIN users u ON u.id = a.uploader_id
+  WHERE a.client_id = ? AND a.archived_at IS NULL ORDER BY a.id DESC`).all(clientId);
+
+// The Drive folder that holds a client's documents, under a top-level "Clients"
+// folder — created on first use, keyed to the client so a rename doesn't spawn
+// a duplicate.
+function clientDriveFolderId(client, ws, userId) {
+  const existing = db.prepare('SELECT id FROM drive_folders WHERE client_id = ? AND workspace_id = ?').get(client.id, ws);
+  if (existing) return existing.id;
+  let parent = db.prepare("SELECT id FROM drive_folders WHERE name = 'Clients' AND parent_id IS NULL AND client_id IS NULL AND workspace_id = ?").get(ws);
+  if (!parent) parent = { id: db.prepare('INSERT INTO drive_folders (name, parent_id, created_by, workspace_id) VALUES (?, NULL, ?, ?)').run('Clients', userId, ws).lastInsertRowid };
+  return db.prepare('INSERT INTO drive_folders (name, parent_id, created_by, workspace_id, client_id) VALUES (?, ?, ?, ?, ?)')
+    .run(client.name, parent.id, userId, ws, client.id).lastInsertRowid;
+}
+
 const load = (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!client) { res.status(404).json({ error: 'Client not found' }); return null; }
@@ -356,11 +375,7 @@ router.get('/:id', (req, res) => {
     SELECT n.*, u.name AS user_name, u.avatar_color FROM client_notes n
     JOIN users u ON u.id = n.user_id WHERE n.client_id = ? ORDER BY n.id DESC
   `).all(client.id);
-  const documents = db.prepare(`
-    SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, u.name AS uploaded_by
-    FROM attachments a LEFT JOIN users u ON u.id = a.uploader_id
-    WHERE a.client_id = ? ORDER BY a.id DESC
-  `).all(client.id);
+  const documents = docsFor(client.id);
   res.json({ client: clientWithMeta(client), contacts, notes, deadlines: deadlinesFor(client.id), documents, time: timeForClient(client.id) });
 });
 
@@ -369,25 +384,23 @@ router.post('/:id/documents', (req, res) => {
   const client = load(req, res);
   if (!client) return;
   const ids = Array.isArray(req.body.attachment_ids) ? req.body.attachment_ids : [];
-  const link = db.prepare('UPDATE attachments SET client_id = ? WHERE id = ? AND uploader_id = ? AND client_id IS NULL AND task_id IS NULL AND message_id IS NULL AND task_message_id IS NULL');
-  for (const aid of ids) link.run(client.id, aid, req.user.id);
+  // File each document under the client AND into its Drive folder, so it shows
+  // in both the client's Documents tab and the Drive (Files → Clients → name).
+  const folderId = clientDriveFolderId(client, req.workspaceId, req.user.id);
+  const link = db.prepare('UPDATE attachments SET client_id = ?, is_drive = 1, drive_folder_id = ? WHERE id = ? AND uploader_id = ? AND client_id IS NULL AND task_id IS NULL AND message_id IS NULL AND task_message_id IS NULL');
+  for (const aid of ids) link.run(client.id, folderId, aid, req.user.id);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
-  res.status(201).json(db.prepare(`
-    SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, u.name AS uploaded_by
-    FROM attachments a LEFT JOIN users u ON u.id = a.uploader_id
-    WHERE a.client_id = ? ORDER BY a.id DESC
-  `).all(client.id));
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('drive:changed');
+  res.status(201).json(docsFor(client.id));
 });
 
 router.delete('/:id/documents/:attId', (req, res) => {
   const client = load(req, res);
   if (!client) return;
+  // Removing from the client removes it from the Drive too (single file).
   db.prepare('DELETE FROM attachments WHERE id = ? AND client_id = ?').run(req.params.attId, client.id);
-  res.json(db.prepare(`
-    SELECT a.id, a.original_name, a.mime_type, a.size, a.created_at, u.name AS uploaded_by
-    FROM attachments a LEFT JOIN users u ON u.id = a.uploader_id
-    WHERE a.client_id = ? ORDER BY a.id DESC
-  `).all(client.id));
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('drive:changed');
+  res.json(docsFor(client.id));
 });
 
 router.patch('/:id', (req, res) => {
@@ -399,6 +412,10 @@ router.patch('/:id', (req, res) => {
   const sets = ['name', 'type', 'status', ...TEXT_FIELDS].map((c) => `${c}=@${c}`).join(', ');
   db.prepare(`UPDATE clients SET ${sets} WHERE id=@id`).run(merged);
   if (req.body.tags !== undefined) setTags(client.id, req.body.tags);
+  // Keep the client's Drive folder name in step with the client name.
+  if (f.name && f.name !== client.name) {
+    db.prepare('UPDATE drive_folders SET name = ? WHERE client_id = ? AND workspace_id = ?').run(f.name, client.id, req.workspaceId);
+  }
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
   res.json(clientWithMeta(db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id)));
 });

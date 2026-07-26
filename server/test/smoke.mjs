@@ -847,6 +847,17 @@ async function main() {
   const byClientName = await req('GET', `/api/search?q=${encodeURIComponent('Searchable Traders')}`, { token: a });
   check('global search surfaces a client’s tasks by client name', byClientName.data.tasks.some((t) => t.client_id === sc.data.id));
 
+  // A client document is filed under the client AND mirrored into the Drive
+  // inside an auto-created folder named after the client.
+  const cdFd = new FormData();
+  cdFd.append('files', new Blob(['engagement letter'], { type: 'application/pdf' }), 'engagement.pdf');
+  const cdUp = await (await fetch(BASE + '/api/uploads', { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: cdFd })).json();
+  const cdDoc = await req('POST', `/api/clients/${sc.data.id}/documents`, { token: a, body: { attachment_ids: [cdUp.attachments[0].id] } });
+  check('a client document is filed', cdDoc.status === 201 && cdDoc.data.some((d) => d.id === cdUp.attachments[0].id));
+  const dfolders = await req('GET', '/api/drive/folders', { token: a });
+  check('uploading a client document creates its Drive folder', dfolders.data.folders.some((f) => f.name === sc.data.name));
+  check('a "Clients" parent folder is created in the Drive', dfolders.data.folders.some((f) => f.name === 'Clients' && f.parent_id === null));
+
   // Client engagements overview: summary stats + one row per client.
   const engRep = await req('GET', '/api/clients/engagements', { token: a });
   check('engagements returns summary stats', engRep.status === 200 && typeof engRep.data.summary.active_clients === 'number' && 'past_due' in engRep.data.summary);
