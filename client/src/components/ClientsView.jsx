@@ -951,12 +951,71 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
         {tab === 'contacts' && (
           <Contacts clientId={clientId} contacts={data.contacts} onChange={(c2) => setData((x) => ({ ...x, contacts: c2 }))} />
         )}
-        {tab === 'portal' && <PortalAccess clientId={clientId} contacts={data.contacts} />}
+        {tab === 'portal' && (<>
+          <PortalAccess clientId={clientId} contacts={data.contacts} />
+          <DocumentRequests clientId={clientId} />
+        </>)}
         {tab === 'notes' && (
           <Notes clientId={clientId} notes={data.notes} user={user} onChange={(n) => setData((x) => ({ ...x, notes: n }))} />
         )}
       </div>
     </div>
+  );
+}
+
+// Staff-side: request documents from the client. They appear on the client's
+// portal as a checklist and flip to "received" when the client uploads.
+function DocumentRequests({ clientId }) {
+  const [requests, setRequests] = useState(null);
+  const [title, setTitle] = useState('');
+  const [due, setDue] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api(`/clients/${clientId}/document-requests`).then((d) => setRequests(d.requests)).catch(() => setRequests([]));
+  useEffect(() => { load(); }, [clientId]);
+
+  async function add(e) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    setBusy(true);
+    try {
+      const d = await api(`/clients/${clientId}/document-requests`, { method: 'POST', body: { title: title.trim(), due_date: due || null } });
+      setRequests(d.requests); setTitle(''); setDue('');
+    } finally { setBusy(false); }
+  }
+  async function setStatus(rid, status) {
+    const d = await api(`/clients/${clientId}/document-requests/${rid}`, { method: 'PATCH', body: { status } });
+    setRequests(d.requests);
+  }
+  async function del(rid) {
+    if (!confirm('Delete this request?')) return;
+    const d = await api(`/clients/${clientId}/document-requests/${rid}`, { method: 'DELETE' });
+    setRequests(d.requests);
+  }
+  const chip = { pending: 'due-warn', received: 'ok-badge', done: 'ok-badge' };
+
+  return (
+    <section className="client-section">
+      <h3>Document requests</h3>
+      <p className="muted small" style={{ margin: '0 0 12px' }}>Ask the client for a file. It shows on their portal and turns “received” when they upload.</p>
+      <form className="portal-invite" onSubmit={add}>
+        <input type="text" placeholder="e.g. July sales invoices" value={title} onChange={(e) => setTitle(e.target.value)} required />
+        <input type="date" value={due} onChange={(e) => setDue(e.target.value)} title="Due date (optional)" style={{ flex: '0 0 auto' }} />
+        <button className="btn btn-primary btn-sm" disabled={busy}>{busy ? 'Adding…' : 'Request'}</button>
+      </form>
+      {requests == null ? <div className="empty-hint">Loading…</div>
+        : requests.length === 0 ? <div className="empty-hint">No document requests yet.</div>
+        : requests.map((r) => (
+          <div key={r.id} className="portal-user">
+            <div className="grow">
+              <div>{r.title} <span className={`req-chip req-${r.status}`}>{r.status}</span></div>
+              <div className="pu-sub">{r.due_date ? `Due ${fmtDate(r.due_date)}` : 'No due date'}{r.file_count ? ` · ${r.file_count} file${r.file_count === 1 ? '' : 's'}` : ''}</div>
+            </div>
+            {r.status !== 'done' && <button className="btn btn-sm" onClick={() => setStatus(r.id, 'done')} title="Mark complete">✓ Done</button>}
+            <button className="icon-btn" title="Delete" onClick={() => del(r.id)}>✕</button>
+          </div>
+        ))}
+    </section>
   );
 }
 

@@ -494,6 +494,25 @@ db.exec(`
 // A document uploaded by a client (via the portal) records which portal user
 // sent it; uploader_id still points at the inviting staff so existing joins hold.
 ensureColumn('attachments', 'portal_uploader_id', 'INTEGER REFERENCES portal_users(id)');
+
+// Document requests the firm raises against a client, answered from the portal.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS document_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    workspace_id INTEGER REFERENCES workspaces(id),
+    title TEXT NOT NULL,
+    note TEXT DEFAULT '',
+    due_date TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',   -- pending | received | done
+    requested_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_document_requests_client ON document_requests(client_id, status);
+`);
+// A portal upload can answer a specific document request.
+ensureColumn('attachments', 'request_id', 'INTEGER REFERENCES document_requests(id)');
 ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
 // Repeat rule: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'. When a
 // recurring task is completed, the next occurrence is generated automatically.
