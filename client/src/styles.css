@@ -1171,7 +1171,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 
 /* Clients page is now a single full-width panel (the left list was removed). */
 .clients-single { display: flex; }
-.clients-single .clients-single-pane { flex: 1; min-width: 0; border-left: none; }
+.clients-single .clients-single-pane { flex: 1; min-width: 0; border-left: none; flex-direction: column; }
 
 /* ---------- Client engagements (Clients landing) ---------- */
 .ceng { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
@@ -1187,10 +1187,6 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .ceng-seg-btn:last-child { border-right: none; }
 .ceng-seg-btn:hover { color: var(--text); }
 .ceng-seg-btn.on { background: var(--accent); color: #fff; }
-
-/* Visible back button on the client detail (full-width single pane) */
-.clients-back { align-self: flex-start; margin: 14px 0 0 22px; padding: 7px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
-.clients-back:hover { border-color: var(--accent); color: var(--accent); }
 .ceng-loading { padding: 40px; color: var(--muted); }
 .ceng-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; padding: 26px 30px 20px; }
 .ceng-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
