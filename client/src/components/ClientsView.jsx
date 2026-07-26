@@ -1010,11 +1010,10 @@ function Deadlines({ clientId, deadlines, staff = [], onOpenTask, onChange }) {
 function Documents({ clientId, documents, onChange }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef(null);
 
-  async function onFiles(e) {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
+  async function upload(files) {
     if (!files.length) return;
     setBusy(true); setError(null);
     try {
@@ -1023,8 +1022,13 @@ function Documents({ clientId, documents, onChange }) {
       onChange(docs);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
+  function onFiles(e) { const files = Array.from(e.target.files || []); e.target.value = ''; upload(files); }
+  function onDrop(e) {
+    e.preventDefault(); setDragOver(false);
+    upload(Array.from(e.dataTransfer?.files || []));
+  }
   async function del(id) {
-    if (!confirm('Remove this document?')) return;
+    if (!confirm('Remove this document? It is also removed from the Drive.')) return;
     onChange(await api(`/clients/${clientId}/documents/${id}`, { method: 'DELETE' }));
   }
 
@@ -1035,6 +1039,16 @@ function Documents({ clientId, documents, onChange }) {
         <input ref={fileRef} type="file" multiple hidden onChange={onFiles} />
       </h3>
       {error && <div className="form-error">{error}</div>}
+      <div
+        className={`doc-dropzone ${dragOver ? 'over' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        onClick={() => fileRef.current?.click()}
+      >
+        {busy ? 'Uploading…' : '⬆ Drag files here or click to upload'}
+        <span className="doc-drop-note muted">Saved to the client’s folder in Drive too</span>
+      </div>
       {documents.length === 0 && !busy && <div className="empty-hint">No documents filed for this client yet.</div>}
       {documents.map((d) => (
         <div key={d.id} className="doc-row">

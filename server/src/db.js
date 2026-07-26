@@ -471,6 +471,8 @@ ensureColumn('attachments', 'archived_by', 'INTEGER REFERENCES users(id)');
 ensureColumn('attachments', 'is_drive', 'INTEGER NOT NULL DEFAULT 0');
 // Which Drive folder a file lives in (NULL = the Drive root).
 ensureColumn('attachments', 'drive_folder_id', 'INTEGER REFERENCES drive_folders(id)');
+// A Drive folder can be auto-owned by a client (its documents land here).
+ensureColumn('drive_folders', 'client_id', 'INTEGER REFERENCES clients(id)');
 ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
 // Repeat rule: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'. When a
 // recurring task is completed, the next occurrence is generated automatically.
@@ -777,6 +779,32 @@ export function seedWorkspace(workspaceId) {
 // existed, and the backfill above stamped them; nothing to do if already set.
 const legacyWs = db.prepare('SELECT id FROM workspaces ORDER BY id LIMIT 1').get();
 if (legacyWs) seedWorkspace(legacyWs.id);
+
+// Backfill: file existing client documents into the Drive. Older client docs
+// were linked only to the client (is_drive = 0); put each into its client's
+// Drive folder (creating a top-level "Clients" folder + a per-client subfolder
+// as needed) so they now show in the Drive too. Idempotent — once a doc is
+// filed (is_drive = 1) it's skipped on the next boot.
+function ensureClientDriveFolder(clientId, clientName, ws, userId) {
+  const existing = db.prepare('SELECT id FROM drive_folders WHERE client_id = ? AND workspace_id = ?').get(clientId, ws);
+  if (existing) return existing.id;
+  let parent = db.prepare("SELECT id FROM drive_folders WHERE name = 'Clients' AND parent_id IS NULL AND client_id IS NULL AND workspace_id = ?").get(ws);
+  if (!parent) {
+    parent = { id: db.prepare('INSERT INTO drive_folders (name, parent_id, created_by, workspace_id) VALUES (?, NULL, ?, ?)').run('Clients', userId, ws).lastInsertRowid };
+  }
+  return db.prepare('INSERT INTO drive_folders (name, parent_id, created_by, workspace_id, client_id) VALUES (?, ?, ?, ?, ?)')
+    .run(clientName, parent.id, userId, ws, clientId).lastInsertRowid;
+}
+const unfiledClientDocs = db.prepare(`
+  SELECT a.id, a.client_id, a.workspace_id, a.uploader_id, c.name AS client_name
+  FROM attachments a JOIN clients c ON c.id = a.client_id
+  WHERE a.client_id IS NOT NULL AND (a.is_drive = 0 OR a.is_drive IS NULL)
+    AND a.task_id IS NULL AND a.message_id IS NULL AND a.task_message_id IS NULL AND a.archived_at IS NULL
+`).all();
+for (const d of unfiledClientDocs) {
+  const fid = ensureClientDriveFolder(d.client_id, d.client_name, d.workspace_id, d.uploader_id);
+  db.prepare('UPDATE attachments SET is_drive = 1, drive_folder_id = ? WHERE id = ?').run(fid, d.id);
+}
 
 // --- Global platform settings (key/value) — not per-workspace ---
 export function getSetting(key, fallback = null) {
