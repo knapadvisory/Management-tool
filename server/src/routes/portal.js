@@ -8,9 +8,25 @@ import db from '../db.js';
 import { signPortalMagic, signPortalSession, requirePortal, JWT_SECRET } from '../auth.js';
 import { clientDriveFolderId } from './clients.js';
 import { emailEnabled, sendMail, layout, button } from '../email.js';
+import { createNotification } from '../notifications.js';
+import { getSetting } from '../db.js';
 import jwt from 'jsonwebtoken';
 
 const router = Router();
+
+// The firm name shown on the portal (single-tenant: the sole workspace's name).
+const firmName = () => getSetting('portal_firm_name')
+  || db.prepare('SELECT name FROM workspaces ORDER BY id LIMIT 1').get()?.name
+  || 'Client Portal';
+
+// Let the firm know a client did something — notify the account manager who
+// invited them (or, failing that, the workspace admins).
+function notifyFirm(io, pu, text) {
+  let ids = [];
+  if (pu.created_by) ids = [pu.created_by];
+  else ids = db.prepare("SELECT id FROM users WHERE workspace_id = ? AND role = 'admin' AND active = 1").all(pu.workspace_id).map((r) => r.id);
+  for (const uid of ids) createNotification(io, { user_id: uid, type: 'portal', text });
+}
 
 // Files land in the same store as staff uploads.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -57,14 +73,17 @@ router.post('/login', (req, res) => {
   if (!pu) return res.status(401).json({ error: 'This portal access is no longer active.' });
   db.prepare("UPDATE portal_users SET last_login = datetime('now') WHERE id = ?").run(pu.id);
   const client = db.prepare('SELECT name FROM clients WHERE id = ?').get(pu.client_id);
-  res.json({ token: signPortalSession(pu), user: publicPortalUser(pu, client?.name || '') });
+  res.json({ token: signPortalSession(pu), user: publicPortalUser(pu, client?.name || ''), firm: firmName() });
 });
+
+// Public branding for the sign-in screen (no session yet).
+router.get('/branding', (req, res) => res.json({ firm: firmName() }));
 
 // --- Authenticated portal (scoped to one client) ---
 
 router.get('/me', requirePortal, (req, res) => {
   const client = db.prepare('SELECT name FROM clients WHERE id = ?').get(req.portal.client_id);
-  res.json({ user: publicPortalUser(req.portal, client?.name || '') });
+  res.json({ user: publicPortalUser(req.portal, client?.name || ''), firm: firmName() });
 });
 
 const docsFor = (clientId) => db.prepare(`
@@ -100,8 +119,11 @@ router.post('/documents', requirePortal, upload.array('files', 10), (req, res) =
   if (request && (req.files || []).length) {
     db.prepare("UPDATE document_requests SET status = 'received' WHERE id = ?").run(request.id);
   }
-  req.app.get('io')?.to(`workspace:${pu.workspace_id}`).emit('clients:changed');
-  req.app.get('io')?.to(`workspace:${pu.workspace_id}`).emit('drive:changed');
+  const io = req.app.get('io');
+  io?.to(`workspace:${pu.workspace_id}`).emit('clients:changed');
+  io?.to(`workspace:${pu.workspace_id}`).emit('drive:changed');
+  const n = (req.files || []).length;
+  if (n) notifyFirm(io, pu, `${pu.name || pu.email} (${client.name}) uploaded ${n} document${n === 1 ? '' : 's'}${request ? ` for "${request.title}"` : ''}`);
   res.status(201).json({ documents: docsFor(client.id), requests: requestsForPortal(client.id) });
 });
 
@@ -125,6 +147,28 @@ router.get('/filings', requirePortal, (req, res) => {
       filed_on: d.completed_at ? String(d.completed_at).slice(0, 10) : null,
     }));
   res.json({ filings: rows });
+});
+
+// --- Messages (two-way thread with the firm) ---
+const msgsFor = (clientId) => db.prepare(`
+  SELECT id, sender, author_name, body, created_at FROM portal_messages
+  WHERE client_id = ? ORDER BY id`).all(clientId);
+
+router.get('/messages', requirePortal, (req, res) => {
+  res.json({ messages: msgsFor(req.portal.client_id) });
+});
+
+router.post('/messages', requirePortal, (req, res) => {
+  const pu = req.portal;
+  const body = String(req.body?.body || '').trim();
+  if (!body) return res.status(400).json({ error: 'Message cannot be empty.' });
+  db.prepare('INSERT INTO portal_messages (client_id, workspace_id, sender, portal_id, author_name, body) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(pu.client_id, pu.workspace_id, 'client', pu.id, pu.name || pu.email, body);
+  const io = req.app.get('io');
+  const client = db.prepare('SELECT name FROM clients WHERE id = ?').get(pu.client_id);
+  notifyFirm(io, pu, `${pu.name || pu.email} (${client?.name || 'a client'}) sent a portal message`);
+  io?.to(`workspace:${pu.workspace_id}`).emit('clients:changed');
+  res.status(201).json({ messages: msgsFor(pu.client_id) });
 });
 
 // Stream a document the client is allowed to see (their own client's files).

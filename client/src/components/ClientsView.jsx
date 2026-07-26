@@ -954,12 +954,50 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
         {tab === 'portal' && (<>
           <PortalAccess clientId={clientId} contacts={data.contacts} />
           <DocumentRequests clientId={clientId} />
+          <PortalThread clientId={clientId} user={user} />
         </>)}
         {tab === 'notes' && (
           <Notes clientId={clientId} notes={data.notes} user={user} onChange={(n) => setData((x) => ({ ...x, notes: n }))} />
         )}
       </div>
     </div>
+  );
+}
+
+// Staff-side of the client's portal message thread.
+function PortalThread({ clientId }) {
+  const [messages, setMessages] = useState(null);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = () => api(`/clients/${clientId}/portal-messages`).then((d) => setMessages(d.messages)).catch(() => setMessages([]));
+  useEffect(() => { load(); }, [clientId]);
+  async function send(e) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setBusy(true);
+    try { const d = await api(`/clients/${clientId}/portal-messages`, { method: 'POST', body: { body: text.trim() } }); setMessages(d.messages); setText(''); }
+    finally { setBusy(false); }
+  }
+  return (
+    <section className="client-section">
+      <h3>Portal messages</h3>
+      <p className="muted small" style={{ margin: '0 0 10px' }}>A direct thread with the client on their portal. They're emailed when you reply.</p>
+      {messages == null ? <div className="empty-hint">Loading…</div> : (
+        <div className="pmsg-thread">
+          {messages.length === 0 && <div className="empty-hint">No messages yet.</div>}
+          {messages.map((m) => (
+            <div key={m.id} className={`pmsg ${m.sender}`}>
+              <div>{m.body}</div>
+              <div className="pmsg-meta">{m.sender === 'staff' ? (m.author_name || 'You') : m.author_name || 'Client'} · {fmtDate(String(m.created_at).slice(0, 10))}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <form className="pmsg-form" onSubmit={send}>
+        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Reply to the client…" />
+        <button className="btn btn-primary btn-sm" disabled={busy || !text.trim()}>Send</button>
+      </form>
+    </section>
   );
 }
 

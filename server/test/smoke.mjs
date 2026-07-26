@@ -888,6 +888,16 @@ async function main() {
   const pfil = await req('GET', '/api/portal/filings', { token: pTok });
   check('portal exposes read-only filing status', pfil.status === 200 && pfil.data.filings.some((f) => f.title === 'GSTR-3B' && f.status === 'due'));
 
+  // Phase 3: two-way messaging + branding
+  const brand = await req('GET', '/api/portal/branding', {});
+  check('the portal exposes firm branding on the sign-in screen', brand.status === 200 && typeof brand.data.firm === 'string' && brand.data.firm.length > 0);
+  const cmsg = await req('POST', '/api/portal/messages', { token: pTok, body: { body: 'Hi, sending the invoices now.' } });
+  check('a client can post a portal message', cmsg.status === 201 && cmsg.data.messages.some((m) => m.sender === 'client' && m.body.includes('invoices')));
+  const smsg = await req('POST', `/api/clients/${sc.data.id}/portal-messages`, { token: a, body: { body: 'Thanks, received!' } });
+  check('staff can reply on the portal thread', smsg.status === 201 && smsg.data.messages.some((m) => m.sender === 'staff'));
+  const cthread = await req('GET', '/api/portal/messages', { token: pTok });
+  check('the client sees both sides of the thread', cthread.data.messages.some((m) => m.sender === 'client') && cthread.data.messages.some((m) => m.sender === 'staff'));
+
   const portalNoAuth = await req('GET', '/api/portal/documents', {});
   check('the portal rejects a request with no session', portalNoAuth.status === 401);
   const badMagic = await req('POST', '/api/portal/login', { body: { token: 'not-a-real-token' } });
