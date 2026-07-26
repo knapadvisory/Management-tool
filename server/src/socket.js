@@ -92,8 +92,17 @@ function emitPresence(io, workspaceId) {
 
 export default function setupSocket(io) {
   io.use((socket, next) => {
+    const token = socket.handshake.auth?.token;
     try {
-      const payload = verifyToken(socket.handshake.auth?.token);
+      const payload = verifyToken(token);
+      // A client-portal session token: authenticate it as a portal socket,
+      // scoped to its one client. Portal sockets get none of the staff wiring.
+      if (payload.purpose === 'portal') {
+        const pu = db.prepare('SELECT * FROM portal_users WHERE id = ? AND active = 1').get(payload.pid);
+        if (!pu) return next(new Error('Portal access revoked'));
+        socket.portal = pu;
+        return next();
+      }
       const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.id);
       if (!user) return next(new Error('Unknown user'));
       if (!user.active) return next(new Error('Account deactivated'));
@@ -105,6 +114,14 @@ export default function setupSocket(io) {
   });
 
   io.on('connection', (socket) => {
+    // Portal sockets are read-only listeners scoped to their client. They only
+    // join their per-client room to receive `portal:changed`, then bail out
+    // before any of the staff presence/chat/call handlers are attached.
+    if (socket.portal) {
+      socket.join(`portal:client:${socket.portal.client_id}`);
+      return;
+    }
+
     const userId = socket.user.id;
 
     socket.join(`user:${userId}`);

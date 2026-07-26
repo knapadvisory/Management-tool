@@ -9,6 +9,7 @@ import { signPortalMagic, signPortalSession, requirePortal, JWT_SECRET } from '.
 import { clientDriveFolderId } from './clients.js';
 import { emailEnabled, sendMail, layout, button } from '../email.js';
 import { createNotification } from '../notifications.js';
+import { emitClientChanged } from '../realtime.js';
 import { getSetting } from '../db.js';
 import jwt from 'jsonwebtoken';
 
@@ -120,7 +121,7 @@ router.post('/documents', requirePortal, upload.array('files', 10), (req, res) =
     db.prepare("UPDATE document_requests SET status = 'received' WHERE id = ?").run(request.id);
   }
   const io = req.app.get('io');
-  io?.to(`workspace:${pu.workspace_id}`).emit('clients:changed');
+  emitClientChanged(io, pu.workspace_id, client.id);
   io?.to(`workspace:${pu.workspace_id}`).emit('drive:changed');
   const n = (req.files || []).length;
   if (n) notifyFirm(io, pu, `${pu.name || pu.email} (${client.name}) uploaded ${n} document${n === 1 ? '' : 's'}${request ? ` for "${request.title}"` : ''}`);
@@ -167,7 +168,7 @@ router.post('/messages', requirePortal, (req, res) => {
   const io = req.app.get('io');
   const client = db.prepare('SELECT name FROM clients WHERE id = ?').get(pu.client_id);
   notifyFirm(io, pu, `${pu.name || pu.email} (${client?.name || 'a client'}) sent a portal message`);
-  io?.to(`workspace:${pu.workspace_id}`).emit('clients:changed');
+  emitClientChanged(io, pu.workspace_id, pu.client_id);
   res.status(201).json({ messages: msgsFor(pu.client_id) });
 });
 

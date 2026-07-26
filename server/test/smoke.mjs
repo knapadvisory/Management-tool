@@ -898,6 +898,19 @@ async function main() {
   const cthread = await req('GET', '/api/portal/messages', { token: pTok });
   check('the client sees both sides of the thread', cthread.data.messages.some((m) => m.sender === 'client') && cthread.data.messages.some((m) => m.sender === 'staff'));
 
+  // A dedicated portal socket authenticates with the session token and receives
+  // a live `portal:changed` push whenever the firm touches this client.
+  const pSock = io(BASE, { auth: { token: pTok } });
+  await new Promise((resolve) => { pSock.on('connect', resolve); setTimeout(resolve, 3000); });
+  check('portal socket authenticates with a session token', pSock.connected);
+  const gotPush = new Promise((resolve) => {
+    pSock.on('portal:changed', () => resolve(true));
+    setTimeout(() => resolve(false), 3000);
+  });
+  await req('POST', `/api/clients/${sc.data.id}/portal-messages`, { token: a, body: { body: 'Live push test.' } });
+  check('portal socket receives a live push on a firm change', await gotPush);
+  pSock.disconnect();
+
   const portalNoAuth = await req('GET', '/api/portal/documents', {});
   check('the portal rejects a request with no session', portalNoAuth.status === 401);
   const badMagic = await req('POST', '/api/portal/login', { body: { token: 'not-a-real-token' } });

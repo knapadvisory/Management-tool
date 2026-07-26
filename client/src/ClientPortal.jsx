@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { io } from 'socket.io-client';
 
 // Client Portal — a separate, tightly-scoped app your clients sign into. It
 // shares the bundle with the staff app but runs entirely on its own portal
@@ -118,16 +119,27 @@ function PortalHome({ user, firm, onSignOut }) {
   const loadMsg = useCallback(() => papi('/messages').then((d) => setMessages(d.messages)).catch(() => setMessages([])), []);
   useEffect(() => { loadDocs(); loadReq(); loadFil(); loadMsg(); }, [loadDocs, loadReq, loadFil, loadMsg]);
 
-  // The portal has no socket (it's a separate, externally-facing app), so keep
-  // it fresh by polling and refreshing whenever the tab regains focus — new
-  // requests, shared files and replies then appear without a manual reload.
+  // Live updates over a dedicated portal socket. The server authenticates the
+  // portal session token and joins this connection to its client's room, then
+  // pushes a `portal:changed` whenever the firm (or a co-contact) touches this
+  // client — a new message, document request, shared file or filing. We refresh
+  // on that event, on (re)connect (to close any gap while disconnected), and on
+  // tab focus as a belt-and-braces fallback. No polling.
   useEffect(() => {
     const refresh = () => { loadDocs(); loadReq(); loadFil(); loadMsg(); };
-    const iv = setInterval(() => { if (!document.hidden) refresh(); }, 12000);
-    const onFocus = () => refresh();
+    const socket = io('/', { auth: { token: getPToken() } });
+    socket.on('connect', refresh);
+    socket.on('portal:changed', refresh);
+    const onFocus = () => { if (!document.hidden) refresh(); };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
-    return () => { clearInterval(iv); window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus); };
+    return () => {
+      socket.off('connect', refresh);
+      socket.off('portal:changed', refresh);
+      socket.disconnect();
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
   }, [loadDocs, loadReq, loadFil, loadMsg]);
 
   // Upload files, optionally answering a specific request. Updates both lists.
