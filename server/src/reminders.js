@@ -1,4 +1,5 @@
 import db from './db.js';
+import { getSetting } from './db.js';
 import { createNotification } from './notifications.js';
 import { emailEnabled, sendMail, layout } from './email.js';
 
@@ -164,6 +165,91 @@ export function startDeadlineReminderScheduler(io) {
   // catch anything due, then hourly.
   processDeadlineReminders(io);
   const timer = setInterval(() => processDeadlineReminders(io), 60 * 60 * 1000);
+  timer.unref?.();
+  return timer;
+}
+
+// --- Document-request auto-chase --------------------------------------------
+// The firm's compliance-automation rule: when a document requested from a
+// client goes unfulfilled, chase the client automatically instead of a partner
+// remembering to. A pending request with a due date is nudged to the client
+// (email) as the date nears (T-2, day-of) and then repeatedly once overdue
+// (every 3rd day), with an FYI to the requesting staff each time. Auto-chase is
+// on by default per workspace and can be switched off in Settings.
+
+function autochaseEnabled(ws) {
+  return getSetting(`autochase_enabled:${ws}`) !== '0';
+}
+
+// Email a client's active portal contacts (best-effort; the actual "chase").
+function chaseEmailClient(clientId, subject, html) {
+  if (!emailEnabled()) return;
+  for (const u of db.prepare('SELECT email FROM portal_users WHERE client_id = ? AND active = 1').all(clientId)) {
+    if (u.email && !String(u.email).endsWith('@teamhub.guest')) sendMail({ to: u.email, subject, html }).catch(() => {});
+  }
+}
+
+// Who at the firm hears that a chase went out: the requester, else the admins.
+function requestFirmAudience(r) {
+  if (r.requested_by) return [r.requested_by];
+  return db.prepare(
+    `SELECT id FROM users WHERE workspace_id = ? AND role = 'admin' AND active = 1 AND approved = 1 AND deleted = 0`,
+  ).all(r.workspace_id).map((x) => x.id);
+}
+
+// Which chase (if any) a pending request `days` from its due date should fire:
+// a gentle nudge 2 days out and on the day, then a firmer chase every 3rd day
+// once overdue (days -1, -4, -7 …). The day number in the overdue kind keeps
+// each repeat unique so the idempotency table lets it re-send.
+function chaseKind(days) {
+  if (days === 2) return 'due_2d';
+  if (days === 0) return 'due_0d';
+  if (days < 0 && (-days) % 3 === 1) return `overdue_${-days}`;
+  return null;
+}
+
+export function processDocumentRequestChases(io) {
+  const rows = db.prepare(`
+    SELECT dr.id, dr.title, dr.due_date, dr.requested_by, dr.workspace_id,
+           c.id AS client_id, c.name AS client_name
+    FROM document_requests dr JOIN clients c ON c.id = dr.client_id
+    WHERE dr.status = 'pending' AND dr.due_date IS NOT NULL AND dr.due_date != ''
+  `).all();
+
+  const markSent = db.prepare('INSERT OR IGNORE INTO request_reminders_sent (request_id, due_date, kind) VALUES (?, ?, ?)');
+  let sent = 0;
+  for (const r of rows) {
+    if (!autochaseEnabled(r.workspace_id)) continue;
+    const days = daysUntilDue(r.due_date);
+    const kind = chaseKind(days);
+    if (!kind) continue;
+    if (markSent.run(r.id, r.due_date, kind).changes === 0) continue; // already chased for this milestone
+
+    const overdue = kind.startsWith('overdue');
+    const phrase = kind === 'due_2d' ? 'is due in 2 days'
+      : kind === 'due_0d' ? 'is due today'
+        : `is ${-days} day${-days === 1 ? '' : 's'} overdue`;
+
+    chaseEmailClient(
+      r.client_id,
+      overdue ? `Overdue: please upload “${r.title}”` : `Reminder: please upload “${r.title}”`,
+      layout('Document reminder', `<p>Hello,</p><p>A quick reminder that <strong>${r.title}</strong> ${phrase}. Please sign in to your ${r.client_name} client portal to upload it.</p><p>Thank you.</p>`),
+    );
+
+    const text = overdue
+      ? `⚠ Auto-chased ${r.client_name}: “${r.title}” ${phrase}`
+      : `⏳ Reminder sent to ${r.client_name}: “${r.title}” ${phrase}`;
+    for (const uid of requestFirmAudience(r)) {
+      createNotification(io, { user_id: uid, type: 'doc_request_chase', actor_id: null, text });
+      sent += 1;
+    }
+  }
+  return sent;
+}
+
+export function startDocumentRequestChaseScheduler(io) {
+  processDocumentRequestChases(io);
+  const timer = setInterval(() => processDocumentRequestChases(io), 60 * 60 * 1000);
   timer.unref?.();
   return timer;
 }

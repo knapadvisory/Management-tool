@@ -192,6 +192,7 @@ function InviteCodes() {
   const [codes, setCodes] = useState([]);
   const [slug, setSlug] = useState('');
   const [required, setRequired] = useState(false);
+  const [autochase, setAutochase] = useState(true);
   const [label, setLabel] = useState('');
   const [email, setEmail] = useState('');
   const [emailEnabled, setEmailEnabled] = useState(false);
@@ -201,13 +202,17 @@ function InviteCodes() {
 
   const load = useCallback(() => {
     api('/admin/invite-codes').then((d) => { setCodes(d.codes); setSlug(d.slug); }).catch(() => {});
-    api('/admin/settings').then((d) => setRequired(!!d.require_invite_code)).catch(() => {});
+    api('/admin/settings').then((d) => { setRequired(!!d.require_invite_code); setAutochase(d.autochase_enabled !== false); }).catch(() => {});
   }, []);
   useEffect(() => { load(); api('/config').then((c) => setEmailEnabled(!!c.email_enabled)).catch(() => {}); }, [load]);
 
   async function toggleRequire() {
     const next = !required; setRequired(next);
     await api('/admin/settings', { method: 'PATCH', body: { require_invite_code: next } }).catch(() => setRequired(!next));
+  }
+  async function toggleAutochase() {
+    const next = !autochase; setAutochase(next);
+    await api('/admin/settings', { method: 'PATCH', body: { autochase_enabled: next } }).catch(() => setAutochase(!next));
   }
   async function generate() {
     setBusy(true); setSent(false);
@@ -260,6 +265,16 @@ function InviteCodes() {
           ))}
         </div>
       )}
+
+      <div className="admin-policy-head" style={{ marginTop: 22 }}>
+        <strong>⚙️ Compliance automation</strong>
+        <label className="code-toggle"><input type="checkbox" checked={autochase} onChange={toggleAutochase} /> Auto-chase clients</label>
+      </div>
+      <p className="muted">
+        {autochase
+          ? 'On — clients are automatically reminded to upload a requested document as its due date nears (2 days before, on the day) and again every 3 days once it’s overdue. You’re notified each time a chase goes out.'
+          : 'Off — document requests are never chased automatically; you’ll follow up with clients yourself.'}
+      </p>
     </div>
   );
 }

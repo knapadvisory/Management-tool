@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import db from '../db.js';
+import db, { getSetting, setSetting } from '../db.js';
 import { publicUser, joinGeneral, emailDomainAllowed, allowedSignupDomains } from '../auth.js';
 import { createNotification } from '../notifications.js';
 import { createInviteCode, listInviteCodes, revokeInviteCode } from '../codes.js';
@@ -254,6 +254,7 @@ router.get('/settings', (req, res) => {
     workspace: { id: ws.id, name: ws.name, slug: ws.slug },
     allowed_signup_domains: ws.allowed_signup_domains || '',
     require_invite_code: !!ws.require_invite_code,
+    autochase_enabled: getSetting(`autochase_enabled:${req.workspaceId}`) !== '0',
     guest_count: db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'guest' AND workspace_id = ?`).get(req.workspaceId).n,
   });
 });
@@ -272,8 +273,16 @@ router.patch('/settings', (req, res) => {
   if (require_invite_code !== undefined) {
     db.prepare('UPDATE workspaces SET require_invite_code = ? WHERE id = ?').run(require_invite_code ? 1 : 0, req.workspaceId);
   }
+  if (req.body.autochase_enabled !== undefined) {
+    setSetting(`autochase_enabled:${req.workspaceId}`, req.body.autochase_enabled ? '1' : '0');
+  }
   const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.workspaceId);
-  res.json({ workspace: { id: ws.id, name: ws.name, slug: ws.slug }, allowed_signup_domains: ws.allowed_signup_domains || '', require_invite_code: !!ws.require_invite_code });
+  res.json({
+    workspace: { id: ws.id, name: ws.name, slug: ws.slug },
+    allowed_signup_domains: ws.allowed_signup_domains || '',
+    require_invite_code: !!ws.require_invite_code,
+    autochase_enabled: getSetting(`autochase_enabled:${req.workspaceId}`) !== '0',
+  });
 });
 
 // --- Employee invite codes (single-use, one per joinee) ---
