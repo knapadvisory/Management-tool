@@ -36,6 +36,30 @@ export function verifyToken(token) {
   return jwt.verify(token, JWT_SECRET);
 }
 
+// --- Client Portal tokens ---
+// A short-lived magic-link token (emailed / shared) exchanged for a session.
+export function signPortalMagic(pu) {
+  return jwt.sign({ pid: pu.id, purpose: 'portal-magic' }, JWT_SECRET, { expiresIn: '45m' });
+}
+// The portal session token — scoped to one client, held by the portal app.
+export function signPortalSession(pu) {
+  return jwt.sign({ pid: pu.id, cid: pu.client_id, ws: pu.workspace_id, purpose: 'portal' }, JWT_SECRET, { expiresIn: '30d' });
+}
+// Guard portal routes: resolve the (still-active) portal user from the session
+// token and attach it as req.portal. Every portal query scopes to its client.
+export function requirePortal(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : req.query.token;
+  try {
+    const p = jwt.verify(token, JWT_SECRET);
+    if (p.purpose !== 'portal') throw new Error('not a portal token');
+    const pu = db.prepare('SELECT * FROM portal_users WHERE id = ? AND active = 1').get(p.pid);
+    if (!pu) throw new Error('portal access revoked');
+    req.portal = pu;
+    next();
+  } catch { res.status(401).json({ error: 'Please sign in to the client portal.' }); }
+}
+
 export function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
