@@ -844,6 +844,16 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
   }, [clientId]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setTab('overview'); }, [clientId]);
+  // Live-refresh when anything client-side changes elsewhere (e.g. a portal
+  // upload or message), so the Documents/Portal tabs stay current without a
+  // manual reload.
+  useEffect(() => {
+    const s = getSocket();
+    if (!s) return undefined;
+    s.on('clients:changed', load);
+    s.on('drive:changed', load);
+    return () => { s.off('clients:changed', load); s.off('drive:changed', load); };
+  }, [load]);
 
   if (!data) return <div className="boot">Loading…</div>;
   const c = data.client;
@@ -969,8 +979,14 @@ function PortalThread({ clientId }) {
   const [messages, setMessages] = useState(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const load = () => api(`/clients/${clientId}/portal-messages`).then((d) => setMessages(d.messages)).catch(() => setMessages([]));
-  useEffect(() => { load(); }, [clientId]);
+  const load = useCallback(() => api(`/clients/${clientId}/portal-messages`).then((d) => setMessages(d.messages)).catch(() => setMessages([])), [clientId]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const s = getSocket();
+    if (!s) return undefined;
+    s.on('clients:changed', load);
+    return () => s.off('clients:changed', load);
+  }, [load]);
   async function send(e) {
     e.preventDefault();
     if (!text.trim()) return;
@@ -1009,8 +1025,14 @@ function DocumentRequests({ clientId }) {
   const [due, setDue] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const load = () => api(`/clients/${clientId}/document-requests`).then((d) => setRequests(d.requests)).catch(() => setRequests([]));
-  useEffect(() => { load(); }, [clientId]);
+  const load = useCallback(() => api(`/clients/${clientId}/document-requests`).then((d) => setRequests(d.requests)).catch(() => setRequests([])), [clientId]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const s = getSocket();
+    if (!s) return undefined;
+    s.on('clients:changed', load);
+    return () => s.off('clients:changed', load);
+  }, [load]);
 
   async function add(e) {
     e.preventDefault();
@@ -1068,8 +1090,14 @@ function PortalAccess({ clientId, contacts = [] }) {
   const [err, setErr] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const load = () => api(`/clients/${clientId}/portal-users`).then((d) => setUsers(d.portal_users)).catch(() => setUsers([]));
-  useEffect(() => { load(); }, [clientId]);
+  const load = useCallback(() => api(`/clients/${clientId}/portal-users`).then((d) => setUsers(d.portal_users)).catch(() => setUsers([])), [clientId]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const s = getSocket();
+    if (!s) return undefined;
+    s.on('clients:changed', load);
+    return () => s.off('clients:changed', load);
+  }, [load]);
 
   async function invite(e) {
     e.preventDefault();

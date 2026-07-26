@@ -118,6 +118,18 @@ function PortalHome({ user, firm, onSignOut }) {
   const loadMsg = useCallback(() => papi('/messages').then((d) => setMessages(d.messages)).catch(() => setMessages([])), []);
   useEffect(() => { loadDocs(); loadReq(); loadFil(); loadMsg(); }, [loadDocs, loadReq, loadFil, loadMsg]);
 
+  // The portal has no socket (it's a separate, externally-facing app), so keep
+  // it fresh by polling and refreshing whenever the tab regains focus — new
+  // requests, shared files and replies then appear without a manual reload.
+  useEffect(() => {
+    const refresh = () => { loadDocs(); loadReq(); loadFil(); loadMsg(); };
+    const iv = setInterval(() => { if (!document.hidden) refresh(); }, 12000);
+    const onFocus = () => refresh();
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => { clearInterval(iv); window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus); };
+  }, [loadDocs, loadReq, loadFil, loadMsg]);
+
   // Upload files, optionally answering a specific request. Updates both lists.
   async function upload(files, requestId) {
     if (!files.length) return;
@@ -227,7 +239,15 @@ function MessagesView({ messages, firm, onSend }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const endRef = useRef(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [messages]);
+  const seen = useRef(0);
+  // Only jump to the newest message when the count actually grows — polling
+  // hands us a fresh array every 12s, and scrolling on each poll would yank
+  // the reader away from whatever they're looking at.
+  useEffect(() => {
+    const n = messages?.length || 0;
+    if (n > seen.current) endRef.current?.scrollIntoView({ block: 'end' });
+    seen.current = n;
+  }, [messages]);
   async function send(e) {
     e.preventDefault();
     const body = text.trim();
