@@ -161,13 +161,12 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
       ) : (
         <div className="messenger clients-single">
       <div className="msgr-pane clients-single-pane">
-        {showDetail && <button className="clients-back" onClick={backToList}>← All clients</button>}
         {flash && <div className="client-flash">{flash}</div>}
         {creating ? (
           <ClientForm user={user} onCancel={backToList} onSaved={(c) => { load(); selectClient(c.id); }} />
         ) : selectedId != null ? (
           <ClientDetail key={selectedId} clientId={selectedId} user={user} staff={staff} onChanged={load} onOpenTask={onOpenTask}
-            onDeleted={() => { load(); backToList(); }} />
+            onBack={backToList} onDeleted={() => { load(); backToList(); }} />
         ) : (
           <ClientEngagements
             onSelect={selectClient}
@@ -831,7 +830,7 @@ function LinkedTasks({ tasks, onOpenTask }) {
   );
 }
 
-function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpenTask }) {
+function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpenTask, onBack }) {
   const [data, setData] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [editing, setEditing] = useState(false);
@@ -887,6 +886,7 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
           </div>
         </div>
         <div className="client-head-actions">
+          {onBack && <button className="btn btn-sm" onClick={onBack}>← All clients</button>}
           <button className="btn btn-sm" onClick={() => setEditing(true)}>✏ Edit</button>
           {user.role === 'admin' && <button className="btn btn-sm btn-danger" onClick={remove}>Delete</button>}
         </div>
