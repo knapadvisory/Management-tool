@@ -139,7 +139,11 @@ async function main() {
   check('an invalid theme mode is rejected', badTheme.status === 400);
   const badAccent = await req('PATCH', '/api/auth/me', { token: b, body: { accent: 'red' } });
   check('a non-hex accent is rejected', badAccent.status === 400);
-  await req('PATCH', '/api/auth/me', { token: b, body: { theme: 'light' } }); // restore
+  const skin = await req('PATCH', '/api/auth/me', { token: b, body: { skin: 'editorial' } });
+  check('user can save the editorial skin', skin.status === 200 && skin.data.user.skin === 'editorial');
+  const badSkin = await req('PATCH', '/api/auth/me', { token: b, body: { skin: 'fancy' } });
+  check('an invalid skin is rejected', badSkin.status === 400);
+  await req('PATCH', '/api/auth/me', { token: b, body: { theme: 'light', skin: 'original' } }); // restore
   const okPw = await req('POST', '/api/auth/password', { token: b, body: { current_password: 'secret123', new_password: 'newsecret1' } });
   check('user can change their own password', okPw.status === 200);
   const reLogin = await req('POST', '/api/auth/login', { body: { email: 'bob@smoke.test', password: 'newsecret1' } });

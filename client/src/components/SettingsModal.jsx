@@ -134,26 +134,45 @@ function ProfilePanel({ user, colors, onSaved }) {
 function AppearancePanel({ user, onSaved }) {
   const [mode, setMode] = useState(user.theme || 'light');
   const [accent, setAccent] = useState(user.accent || ACCENTS[0].accent);
-  function applyAndSave(nextMode, nextAccent) {
-    setMode(nextMode); setAccent(nextAccent);
-    const t = { mode: nextMode, accent: nextAccent };
+  const [skin, setSkin] = useState(user.skin || 'original');
+  function applyAndSave(next) {
+    const t = { mode, accent, skin, ...next };
+    setMode(t.mode); setAccent(t.accent); setSkin(t.skin);
     applyTheme(t); saveLocalTheme(t);
-    api('/auth/me', { method: 'PATCH', body: { theme: nextMode, accent: nextAccent } }).then(({ user: u }) => onSaved(u)).catch(() => {});
+    api('/auth/me', { method: 'PATCH', body: { theme: t.mode, accent: t.accent, skin: t.skin } }).then(({ user: u }) => onSaved(u)).catch(() => {});
   }
+  const editorial = skin === 'editorial';
   return (
     <div>
       <h3 className="settings-title">Appearance</h3>
-      <p className="muted settings-hint">Choose light or dark, then a colour that recolours the whole app — sidebar, buttons and highlights. Saved to your account.</p>
+      <p className="muted settings-hint">Pick a design style, then light or dark. Your choice recolours the whole app and is saved to your account.</p>
+
+      <label className="profile-label">Design style</label>
+      <div className="skin-grid">
+        <button type="button" className={`skin-card ${skin === 'original' ? 'sel' : ''}`} onClick={() => applyAndSave({ skin: 'original' })}>
+          <span className="skin-preview skin-preview-original"><span className="skin-side" /><span className="skin-body"><i /><i /></span></span>
+          <span className="skin-name">Original</span>
+          <span className="skin-desc muted">The standard TeamHub look</span>
+        </button>
+        <button type="button" className={`skin-card ${skin === 'editorial' ? 'sel' : ''}`} onClick={() => applyAndSave({ skin: 'editorial' })}>
+          <span className="skin-preview skin-preview-editorial"><span className="skin-side" /><span className="skin-body"><i /><i /></span></span>
+          <span className="skin-name">Editorial</span>
+          <span className="skin-desc muted">Warm, minimalist &amp; classy</span>
+        </button>
+      </div>
+
       <label className="profile-label">Colour mode</label>
       <div className="mode-toggle">
         {[['light', '☀️ Light'], ['dark', '🌙 Dark'], ['system', '🖥 System']].map(([m, lbl]) => (
-          <button key={m} type="button" className={`mode-btn ${mode === m ? 'sel' : ''}`} onClick={() => applyAndSave(m, accent)}>{lbl}</button>
+          <button key={m} type="button" className={`mode-btn ${mode === m ? 'sel' : ''}`} onClick={() => applyAndSave({ mode: m })}>{lbl}</button>
         ))}
       </div>
+
       <label className="profile-label">Theme colour</label>
-      <div className="theme-grid">
+      {editorial && <p className="muted settings-hint" style={{ marginTop: 0 }}>Editorial uses its own warm palette — switch to Original to pick a colour.</p>}
+      <div className={`theme-grid ${editorial ? 'is-disabled' : ''}`}>
         {ACCENTS.map((a) => (
-          <button key={a.accent} type="button" className={`theme-card ${a.accent === accent ? 'sel' : ''}`} onClick={() => applyAndSave(mode, a.accent)}>
+          <button key={a.accent} type="button" disabled={editorial} className={`theme-card ${a.accent === accent ? 'sel' : ''}`} onClick={() => applyAndSave({ accent: a.accent })}>
             <span className="theme-swatch" style={{ background: a.sidebar }}><span style={{ background: a.accent }} /></span>
             <span className="theme-name">{a.name}</span>
           </button>

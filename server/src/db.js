@@ -501,6 +501,8 @@ ensureColumn('users', 'approved', 'INTEGER NOT NULL DEFAULT 1');
 // Per-user appearance: colour mode ('light'|'dark'|'system') and accent hex.
 ensureColumn('users', 'theme', "TEXT NOT NULL DEFAULT 'light'");
 ensureColumn('users', 'accent', "TEXT NOT NULL DEFAULT '#4f46e5'");
+// Visual skin: 'original' (default look) or 'editorial' (warm minimalist).
+ensureColumn('users', 'skin', "TEXT NOT NULL DEFAULT 'original'");
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
 // Marks an attachment as a profile photo so it is viewable workspace-wide
