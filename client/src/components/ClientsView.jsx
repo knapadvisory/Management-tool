@@ -96,7 +96,7 @@ function mapClientMaster(rows) {
   return out;
 }
 
-export default function ClientsView({ user, users = [], onOpenTask, initialClientId = null }) {
+export default function ClientsView({ user, users = [], onOpenTask, initialClientId = null, onNavigateClient }) {
   const [tab, setTab] = useState('clients');
   const [clients, setClients] = useState([]);
   const [selectedId, setSelectedId] = useState(initialClientId);
@@ -123,9 +123,12 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
     return () => socket?.off('clients:changed', onChanged);
   }, [load]);
 
-  // Open a specific client when arrived at via global search.
+  // The selected client is driven by the view (initialClientId). Following it
+  // here means re-clicking "Clients" in the sidebar — which clears the view's
+  // clientId — snaps back to the full list, and a client picked from global
+  // search opens directly. A null id shows the list.
   useEffect(() => {
-    if (initialClientId != null) { setTab('clients'); setCreating(false); setSelectedId(initialClientId); }
+    setTab('clients'); setCreating(false); setSelectedId(initialClientId ?? null);
   }, [initialClientId]);
 
   const q = query.trim().toLowerCase();
@@ -140,8 +143,9 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
   const activeLetters = new Set(clients.map((c) => (c.name.trim()[0] || '').toUpperCase()));
   const showDetail = creating || selectedId != null;
 
-  function selectClient(id) { setCreating(false); setSelectedId(id); }
-  function backToList() { setCreating(false); setSelectedId(null); }
+  // Route selection through the view so the sidebar and back button stay in sync.
+  function selectClient(id) { setCreating(false); setSelectedId(id); onNavigateClient?.(id); }
+  function backToList() { setCreating(false); setSelectedId(null); onNavigateClient?.(null); }
 
   return (
     <div className="clients-page">
@@ -157,16 +161,16 @@ export default function ClientsView({ user, users = [], onOpenTask, initialClien
       ) : (
         <div className="messenger clients-single">
       <div className="msgr-pane clients-single-pane">
-        {showDetail && <button className="mobile-back" onClick={backToList}>← Back to clients</button>}
+        {showDetail && <button className="clients-back" onClick={backToList}>← All clients</button>}
         {flash && <div className="client-flash">{flash}</div>}
         {creating ? (
-          <ClientForm user={user} onCancel={() => setCreating(false)} onSaved={(c) => { load(); setCreating(false); setSelectedId(c.id); }} />
+          <ClientForm user={user} onCancel={backToList} onSaved={(c) => { load(); selectClient(c.id); }} />
         ) : selectedId != null ? (
           <ClientDetail key={selectedId} clientId={selectedId} user={user} staff={staff} onChanged={load} onOpenTask={onOpenTask}
-            onDeleted={() => { setSelectedId(null); load(); }} />
+            onDeleted={() => { load(); backToList(); }} />
         ) : (
           <ClientEngagements
-            onSelect={(id) => setSelectedId(id)}
+            onSelect={selectClient}
             onAdd={() => { setCreating(true); setSelectedId(null); }}
             onImport={() => setShowImport(true)}
             onBulk={() => setShowBulk(true)}

@@ -29,10 +29,13 @@ function fyLabel() {
   return `FY ${startY}-${String((startY + 1) % 100).padStart(2, '0')}`;
 }
 
+const STATUSES = [['', 'All'], ['active', 'Active'], ['prospect', 'Prospect'], ['inactive', 'Inactive']];
+
 export default function ClientEngagements({ onSelect, onAdd, onImport, onBulk }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [service, setService] = useState('');
+  const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
 
   useEffect(() => {
@@ -43,6 +46,7 @@ export default function ClientEngagements({ onSelect, onAdd, onImport, onBulk })
     if (!data) return [];
     const needle = q.trim().toLowerCase();
     return data.rows.filter((r) => {
+      if (status && r.status !== status) return false;
       if (service && !r.tags.includes(service)) return false;
       if (needle && !(
         r.name.toLowerCase().includes(needle) ||
@@ -51,7 +55,7 @@ export default function ClientEngagements({ onSelect, onAdd, onImport, onBulk })
       )) return false;
       return true;
     });
-  }, [data, service, q]);
+  }, [data, service, status, q]);
 
   if (err) return <div className="ceng"><div className="empty-hint">Couldn’t load clients: {err}</div></div>;
   if (!data) return <div className="ceng"><div className="ceng-loading">Loading clients…</div></div>;
@@ -75,10 +79,9 @@ export default function ClientEngagements({ onSelect, onAdd, onImport, onBulk })
 
       <div className="ceng-toolbar">
         <input className="ceng-search" placeholder="Search clients, GSTIN, PAN…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <div className="ceng-filters">
-          <button className={`ceng-chip-btn ${service === '' ? 'on' : ''}`} onClick={() => setService('')}>All services</button>
-          {data.services.map((t) => (
-            <button key={t} className={`ceng-chip-btn ${service === t ? 'on' : ''}`} onClick={() => setService(service === t ? '' : t)}>{t}</button>
+        <div className="ceng-seg">
+          {STATUSES.map(([v, l]) => (
+            <button key={v} className={`ceng-seg-btn ${status === v ? 'on' : ''}`} onClick={() => setStatus(v)}>{l}</button>
           ))}
         </div>
         <span className="ceng-count">
@@ -86,6 +89,15 @@ export default function ClientEngagements({ onSelect, onAdd, onImport, onBulk })
           {(s.filed_this_month || s.past_due) ? <> · <span className="ceng-accent">{s.filed_this_month} filed</span>{s.past_due ? <> · <span className="ceng-danger">{s.past_due} past due</span></> : null}</> : null}
         </span>
       </div>
+
+      {data.services.length > 0 && (
+        <div className="ceng-filters ceng-filters-row">
+          <button className={`ceng-chip-btn ${service === '' ? 'on' : ''}`} onClick={() => setService('')}>All services</button>
+          {data.services.map((t) => (
+            <button key={t} className={`ceng-chip-btn ${service === t ? 'on' : ''}`} onClick={() => setService(service === t ? '' : t)}>{t}</button>
+          ))}
+        </div>
+      )}
 
       <div className="ceng-tablewrap">
         {rows.length === 0 ? (
@@ -102,7 +114,6 @@ export default function ClientEngagements({ onSelect, onAdd, onImport, onBulk })
                 <th>Services engaged</th>
                 <th>Last task completed</th>
                 <th className="ceng-r">Next due</th>
-                <th>Manager</th>
               </tr>
             </thead>
             <tbody>
@@ -141,7 +152,6 @@ export default function ClientEngagements({ onSelect, onAdd, onImport, onBulk })
                       </>
                     ) : <span className="ceng-chip-none">—</span>}
                   </td>
-                  <td className="ceng-mgr">{r.contact_person || <span className="ceng-chip-none">—</span>}</td>
                 </tr>
               ))}
             </tbody>
