@@ -4,6 +4,7 @@ import { publicUser, signPortalMagic } from '../auth.js';
 import { completeDeadline } from '../compliance.js';
 import { timeForClient } from './time.js';
 import { emailEnabled, sendMail, layout, button } from '../email.js';
+import { emitClientChanged, emitPortalChanged } from '../realtime.js';
 
 // Custom compliance filing names, per workspace (on top of the built-in ones
 // the client offers). Stored as a JSON array in app_settings.
@@ -390,7 +391,7 @@ router.post('/:id/documents', (req, res) => {
   const folderId = clientDriveFolderId(client, req.workspaceId, req.user.id);
   const link = db.prepare('UPDATE attachments SET client_id = ?, is_drive = 1, drive_folder_id = ? WHERE id = ? AND uploader_id = ? AND client_id IS NULL AND task_id IS NULL AND message_id IS NULL AND task_message_id IS NULL');
   for (const aid of ids) link.run(client.id, folderId, aid, req.user.id);
-  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
+  emitClientChanged(req.app.get('io'), req.workspaceId, client.id);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('drive:changed');
   res.status(201).json(docsFor(client.id));
 });
@@ -470,7 +471,7 @@ router.post('/:id/document-requests', (req, res) => {
   db.prepare('INSERT INTO document_requests (client_id, workspace_id, title, note, due_date, requested_by) VALUES (?, ?, ?, ?, ?, ?)')
     .run(client.id, req.workspaceId, title, String(req.body?.note || '').trim(), due, req.user.id);
   emailPortalUsers(client, `Document requested: ${title}`, layout(`<p>Hello,</p><p>${req.user.name} has requested a document on your ${client.name} portal:</p><p style="font-size:16px"><strong>${title}</strong>${due ? ` — due ${due}` : ''}</p><p>Please sign in to upload it.</p>`));
-  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
+  emitClientChanged(req.app.get('io'), req.workspaceId, client.id);
   res.status(201).json({ requests: requestsFor(client.id) });
 });
 
@@ -482,14 +483,14 @@ router.patch('/:id/document-requests/:rid', (req, res) => {
     const resolved = req.body.status === 'done' ? "datetime('now')" : 'resolved_at';
     db.prepare(`UPDATE document_requests SET status = ?, resolved_at = ${resolved} WHERE id = ?`).run(req.body.status, r.id);
   }
-  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
+  emitClientChanged(req.app.get('io'), req.workspaceId, client.id);
   res.json({ requests: requestsFor(client.id) });
 });
 
 router.delete('/:id/document-requests/:rid', (req, res) => {
   const client = load(req, res); if (!client) return;
   db.prepare('DELETE FROM document_requests WHERE id = ? AND client_id = ?').run(req.params.rid, client.id);
-  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
+  emitClientChanged(req.app.get('io'), req.workspaceId, client.id);
   res.json({ requests: requestsFor(client.id) });
 });
 
@@ -508,7 +509,7 @@ router.post('/:id/portal-messages', (req, res) => {
   db.prepare('INSERT INTO portal_messages (client_id, workspace_id, sender, staff_id, author_name, body) VALUES (?, ?, ?, ?, ?, ?)')
     .run(client.id, req.workspaceId, 'staff', req.user.id, req.user.name, body);
   emailPortalUsers(client, `New message from ${req.user.name}`, layout(`<p>You have a new message on your ${client.name} portal:</p><blockquote style="border-left:3px solid #3f6b74;padding-left:12px;color:#333">${body.replace(/</g, '&lt;')}</blockquote><p>Sign in to reply.</p>`));
-  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
+  emitClientChanged(req.app.get('io'), req.workspaceId, client.id);
   res.status(201).json({ messages: portalMsgs(client.id) });
 });
 
@@ -627,6 +628,7 @@ router.post('/:id/deadlines', (req, res) => {
   const assignee_id = isWsUser(req.body.assignee_id, req.workspaceId) ? req.body.assignee_id : null;
   db.prepare('INSERT INTO client_deadlines (client_id, title, due_date, recurrence, assignee_id, created_by) VALUES (?, ?, ?, ?, ?, ?)')
     .run(client.id, title, due_date, recurrence, assignee_id, req.user.id);
+  emitPortalChanged(req.app.get('io'), client.id);
   res.status(201).json(deadlinesFor(client.id));
 });
 
@@ -649,6 +651,7 @@ router.patch('/:id/deadlines/:did', (req, res) => {
     db.prepare('UPDATE client_deadlines SET title = COALESCE(?, title), due_date = COALESCE(?, due_date), recurrence = COALESCE(?, recurrence) WHERE id = ?')
       .run(req.body.title?.trim() || null, req.body.due_date || null, RECURRENCES.includes(req.body.recurrence) ? req.body.recurrence : null, dl.id);
   }
+  emitPortalChanged(req.app.get('io'), client.id);
   res.json(deadlinesFor(client.id));
 });
 
@@ -656,6 +659,7 @@ router.delete('/:id/deadlines/:did', (req, res) => {
   const client = load(req, res);
   if (!client) return;
   db.prepare('DELETE FROM client_deadlines WHERE id = ? AND client_id = ?').run(req.params.did, client.id);
+  emitPortalChanged(req.app.get('io'), client.id);
   res.json(deadlinesFor(client.id));
 });
 
