@@ -21,6 +21,29 @@ function fmtDate(d) {
 }
 const overdue = (d) => d && d < new Date().toISOString().slice(0, 10);
 
+// Match a service tag to the tasks/filings that belong to it. Tasks and
+// deadlines aren't formally linked to a service, so we widen the tag into the
+// title keywords a CA firm actually uses (GST → GSTR, ITR → advance tax, …) and
+// match on those. Best-effort, but good enough to give each service line a
+// live picture.
+const SERVICE_KEYWORDS = {
+  gst: ['GST', 'GSTR', 'RCM', 'ITC', 'E-WAY', 'EWAY'],
+  itr: ['ITR', 'INCOME TAX', 'ADVANCE TAX', 'CAPITAL GAIN', 'ASSESSMENT'],
+  tds: ['TDS', '26Q', '24Q', '27Q', '27EQ', 'TCS', 'FORM 16'],
+  bookkeeping: ['BOOK', 'RECO', 'LEDGER', 'FINALIS', 'ACCOUNT', 'BALANCE SHEET', 'BOOKS'],
+  audit: ['AUDIT', 'STATUTORY', '3CD', '3CA', '3CB', 'TAX AUDIT'],
+  payroll: ['PAYROLL', 'SALARY', ' PF', 'EPFO', 'ESI', 'PROFESSIONAL TAX', ' PT '],
+  roc: ['ROC', 'MCA', 'DIR-3', 'DIR3', 'DPT', 'AOC', 'MGT', 'KYC', 'INCORPORAT'],
+  advisory: ['ADVISORY', 'CONSULT', 'ADVICE', 'PROJECTION', 'MIS'],
+};
+function serviceKeywords(tag) {
+  const key = tag.toLowerCase().replace(/[^a-z]/g, '');
+  const mapped = Object.entries(SERVICE_KEYWORDS).find(([k]) => key.includes(k));
+  const extra = mapped ? mapped[1] : [];
+  return [tag.toUpperCase(), ...extra];
+}
+const titleMatches = (title, kws) => { const T = (title || '').toUpperCase(); return kws.some((k) => T.includes(k)); };
+
 // --- Client-master workbook import -----------------------------------------
 // A firm's "Client Master" sheet (e.g. KNAP's) carries far more than name/email:
 // identity fields plus a block of Yes/No service columns (GST, TDS, ITR …).
@@ -830,6 +853,75 @@ function LinkedTasks({ tasks, onOpenTask }) {
   );
 }
 
+// Per-service engagement panel: one card per service the client is engaged for,
+// showing that line's live picture — open tasks, open/overdue filings, the next
+// thing due and the last thing done — derived by matching the service against
+// the client's tasks and compliance deadlines.
+function ServiceLines({ client, tasks, deadlines, onOpenTask }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const tags = client.tags || [];
+  if (tags.length === 0) {
+    return <section className="client-section"><div className="empty-hint">No services tagged. Use ✏ Edit to tick the services you handle for this client.</div></section>;
+  }
+  const lines = tags.map((tag) => {
+    const kws = serviceKeywords(tag);
+    const myTasks = tasks.filter((t) => !t.archived && titleMatches(t.title, kws));
+    const openTasks = myTasks.filter((t) => !t.is_done);
+    const lastDone = myTasks.find((t) => t.is_done); // list is newest-first
+    const myDls = deadlines.filter((d) => titleMatches(d.title, kws));
+    const openDls = myDls.filter((d) => !d.completed);
+    const overdueDls = openDls.filter((d) => d.due_date < today);
+    const nextDl = [...openDls].sort((a, b) => a.due_date.localeCompare(b.due_date))[0] || null;
+    const nextTask = [...openTasks].filter((t) => t.due_date).sort((a, b) => a.due_date.localeCompare(b.due_date))[0] || null;
+    const next = nextDl || nextTask;
+    // Per-service facts we happen to store.
+    const fact = tag.toUpperCase().includes('GST') && client.gst_frequency ? `${client.gst_frequency} filing` : null;
+    return { tag, openTasks, lastDone, openDls, overdueDls, next, nextIsDeadline: !!nextDl, fact };
+  });
+  return (
+    <section>
+      <div className="svc-grid">
+        {lines.map((L) => (
+          <div key={L.tag} className="svc-card">
+            <div className="svc-card-head">
+              <span className="svc-title">{L.tag}</span>
+              {L.overdueDls.length > 0 && <span className="svc-flag svc-flag-bad">{L.overdueDls.length} overdue</span>}
+            </div>
+            <div className="svc-metrics">
+              <button className="svc-metric" disabled={!L.openTasks.length} onClick={() => L.openTasks[0] && onOpenTask?.(L.openTasks[0].id)}>
+                <span className="svc-metric-num">{L.openTasks.length}</span><span className="svc-metric-lbl">open tasks</span>
+              </button>
+              <div className="svc-metric">
+                <span className="svc-metric-num">{L.openDls.length}</span><span className="svc-metric-lbl">open filings</span>
+              </div>
+            </div>
+            <div className="svc-line">
+              <span className="svc-line-lbl">Next due</span>
+              {L.next
+                ? <span className={overdue(L.next.due_date) ? 'due-warn' : ''}>{L.next.title} · {fmtDate(L.next.due_date)}{L.nextIsDeadline ? '' : ' (task)'}</span>
+                : <span className="muted">Nothing scheduled</span>}
+            </div>
+            <div className="svc-line">
+              <span className="svc-line-lbl">Last done</span>
+              {L.lastDone
+                ? <button className="svc-link" onClick={() => onOpenTask?.(L.lastDone.id)}>{L.lastDone.title}</button>
+                : <span className="muted">—</span>}
+            </div>
+            {L.fact && <div className="svc-fact">{L.fact}</div>}
+          </div>
+        ))}
+      </div>
+      {(client.fee_model || client.turnover_band || client.risk_rating) && (
+        <div className="client-facts" style={{ marginTop: 16 }}>
+          {client.fee_model && <div><span className="muted">Fee model</span> {client.fee_model}{client.fee_amount ? ` · ₹${client.fee_amount}` : ''}</div>}
+          {client.turnover_band && <div><span className="muted">Turnover band</span> {client.turnover_band}</div>}
+          {client.risk_rating && <div><span className="muted">Risk rating</span> {client.risk_rating}</div>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpenTask, onBack }) {
   const [data, setData] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -941,27 +1033,7 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
           </>
         )}
         {tab === 'services' && (
-          <section className="client-section">
-            <h3>Services & engagement</h3>
-            {(c.tags || []).length === 0 && <div className="empty-hint">No services tagged. Use ✏ Edit to tick the services you handle for this client.</div>}
-            <div className="service-list">
-              {(c.tags || []).map((t) => {
-                const open = (data.deadlines || []).filter((d) => !d.completed && d.title.toUpperCase().includes(t.toUpperCase())).length;
-                return (
-                  <div key={t} className="service-item">
-                    <span className="service-name">✔ {t}</span>
-                    {open > 0 && <span className="muted small">{open} open filing{open === 1 ? '' : 's'}</span>}
-                  </div>
-                );
-              })}
-            </div>
-            {(c.gst_frequency || c.fee_model) && (
-              <div className="client-facts" style={{ marginTop: 12 }}>
-                {c.gst_frequency && <div><span className="muted">GST frequency</span> {c.gst_frequency}</div>}
-                {c.fee_model && <div><span className="muted">Fee model</span> {c.fee_model}{c.fee_amount ? ` · ₹${c.fee_amount}` : ''}</div>}
-              </div>
-            )}
-          </section>
+          <ServiceLines client={c} tasks={tasks} deadlines={data.deadlines || []} onOpenTask={onOpenTask} />
         )}
         {tab === 'tasks' && <LinkedTasks tasks={tasks} onOpenTask={onOpenTask} />}
         {tab === 'deadlines' && (

@@ -2173,6 +2173,29 @@ button.c360-stat:hover { border-color: var(--accent); }
 .service-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 2px; border-bottom: 1px solid var(--surface-2); font-size: 14px; }
 .service-name { font-weight: 600; }
 
+/* Per-service engagement cards (client → Services tab) */
+.svc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.svc-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface); display: flex; flex-direction: column; gap: 10px; }
+.svc-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.svc-title { font-weight: 700; font-size: 15px; }
+.svc-flag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.svc-flag-bad { background: var(--danger-soft); color: var(--danger); }
+.svc-metrics { display: flex; gap: 10px; }
+.svc-metric { flex: 1; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); cursor: default; }
+.svc-metric:not(:disabled) { cursor: pointer; }
+.svc-metric:not(:disabled):hover { border-color: var(--accent); }
+.svc-metric-num { font-size: 20px; font-weight: 700; line-height: 1; }
+.svc-metric-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.svc-line { display: flex; gap: 8px; font-size: 13px; align-items: baseline; }
+.svc-line-lbl { flex: none; width: 66px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.svc-link { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 13px; text-align: left; }
+.svc-link:hover { text-decoration: underline; }
+.svc-fact { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+:root[data-skin="editorial"] .svc-title,
+:root[data-skin="editorial"] .svc-metric-lbl,
+:root[data-skin="editorial"] .svc-line-lbl,
+:root[data-skin="editorial"] .svc-flag { font-family: var(--mono); }
+
 /* Compliance matrix */
 .matrix-view { padding: 12px 16px; }
 .matrix-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-left: auto; }
