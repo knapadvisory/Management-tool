@@ -578,7 +578,9 @@ export default function App() {
           <FilesView user={user} users={users} initialMode={view.type === 'drive' ? 'drive' : 'files'} />
         )}
         {view?.type === 'clients' && (
-          <ClientsView user={user} users={users} initialClientId={view.clientId} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
+          <ClientsView user={user} users={users} initialClientId={view.clientId}
+            onNavigateClient={(id) => setView({ type: 'clients', clientId: id ?? undefined })}
+            onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
         )}
         {view?.type === 'timesheet' && <TimesheetView user={user} />}
         {view?.type === 'analytics' && user.role !== 'guest' && <AnalyticsView user={user} users={users} />}
