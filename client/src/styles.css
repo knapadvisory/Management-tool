@@ -50,6 +50,54 @@
   --warning: #fbbf24;  --warning-soft: rgba(251, 191, 36, .16);
 }
 
+/* ========== Editorial skin — warm, minimalist, classy ==========
+   A whole-app reskin selected in Settings → Appearance. Accent + sidebar are
+   set inline by applyTheme(); everything else (surfaces, text, hairlines, type)
+   is themed here. Works in light and dark. */
+:root[data-skin="editorial"] {
+  --bg: #f0ebe1;
+  --surface: #fffdf9;
+  --surface-2: #f6f1e7;
+  --border: #e4dccb;
+  --text: #2a2620;
+  --muted: #8c8271;
+  --shadow: rgba(60, 50, 30, .09);
+  --card: var(--surface);
+  --hover: #f2ece0;
+  --line: #ece4d5;
+  --accent-soft: color-mix(in srgb, #3f6b74 15%, transparent);
+  --danger: #b4462f;   --danger-soft: #f6e6df;
+  --success: #3f6b4a;  --success-soft: #e6efe4;
+  --warning: #a9701a;  --warning-soft: #f6ecd6;
+  --sidebar-text: rgba(244, 238, 226, .74);
+}
+:root[data-skin="editorial"][data-theme="dark"] {
+  --bg: #1a1815;
+  --surface: #232019;
+  --surface-2: #2b2720;
+  --border: #3a352b;
+  --text: #ece6da;
+  --muted: #a89e8b;
+  --card: var(--surface);
+  --hover: #2f2a21;
+  --line: #322d24;
+  --accent-soft: color-mix(in srgb, #6ba0a8 24%, transparent);
+}
+/* Serif page titles give the editorial look its classy, print-like feel. */
+:root[data-skin="editorial"] h1,
+:root[data-skin="editorial"] h2,
+:root[data-skin="editorial"] .settings-title,
+:root[data-skin="editorial"] .dash-greeting,
+:root[data-skin="editorial"] .ceng-head-main h1,
+:root[data-skin="editorial"] .auth-title {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+  letter-spacing: -0.2px;
+}
+/* A touch more restraint: flatter shadows, hairline cards. */
+:root[data-skin="editorial"] .dash-kpi,
+:root[data-skin="editorial"] .an-kpi,
+:root[data-skin="editorial"] .rep-kpi { box-shadow: none; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   color: var(--text);
@@ -1664,6 +1712,29 @@ button.closed-row:hover { background: var(--surface-2); }
 .settings-hint { font-size: 13px; margin-bottom: 14px; }
 
 /* Theme cards (appearance) */
+/* Design-style (skin) picker */
+.skin-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 4px 0 6px; }
+.skin-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; border: 1px solid var(--border); background: var(--surface); border-radius: 12px; cursor: pointer; color: var(--text); text-align: left; }
+.skin-card:hover { border-color: var(--accent); }
+.skin-card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.skin-preview { width: 100%; height: 58px; border-radius: 8px; overflow: hidden; display: flex; border: 1px solid var(--border); margin-bottom: 6px; }
+.skin-preview .skin-side { width: 30%; }
+.skin-preview .skin-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 0 10px; }
+.skin-preview .skin-body i { height: 6px; border-radius: 3px; display: block; }
+.skin-preview .skin-body i:first-child { width: 70%; }
+.skin-preview .skin-body i:last-child { width: 45%; }
+.skin-preview-original { background: #fff; }
+.skin-preview-original .skin-side { background: #1e1b4b; }
+.skin-preview-original .skin-body i { background: #c7cbe8; }
+.skin-preview-original .skin-body i:first-child { background: #4f46e5; }
+.skin-preview-editorial { background: #fffdf9; }
+.skin-preview-editorial .skin-side { background: #211f1b; }
+.skin-preview-editorial .skin-body i { background: #dcd6ca; }
+.skin-preview-editorial .skin-body i:first-child { background: #3f6b74; }
+.skin-name { font-weight: 600; font-size: 14px; }
+.skin-desc { font-size: 12px; }
+.theme-grid.is-disabled { opacity: .5; pointer-events: none; }
+
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 4px; }
 .theme-card { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--border); background: var(--surface); border-radius: 10px; cursor: pointer; color: var(--text); }
 .theme-card:hover { border-color: var(--accent); }

@@ -246,10 +246,10 @@ export default function App() {
   // Apply (and remember) the signed-in user's saved theme.
   useEffect(() => {
     if (!user) return;
-    const t = { mode: user.theme || 'light', accent: user.accent || '#4f46e5' };
+    const t = { mode: user.theme || 'light', accent: user.accent || '#4f46e5', skin: user.skin || 'original' };
     applyTheme(t);
     saveLocalTheme(t);
-  }, [user?.theme, user?.accent]);
+  }, [user?.theme, user?.accent, user?.skin]);
 
   // Re-render the whole app when the interface language changes.
   const [, setLangTick] = useState(0);

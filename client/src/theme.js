@@ -22,25 +22,46 @@ export const ACCENTS = [
 ];
 
 export const MODES = ['light', 'dark', 'system'];
+
+// Visual "skins" — a whole different look, not just an accent. 'original' is the
+// default TeamHub palette; 'editorial' is a warm, minimalist, classy look
+// (cream paper, muted teal, serif headings) with its own accent + sidebar.
+export const SKINS = ['original', 'editorial'];
+const EDITORIAL = { accent: '#3f6b74', hover: '#345a62', sidebar: '#211f1b' };
+
 const KEY = 'teamhub_theme';
 
 export function loadLocalTheme() {
   try {
     const t = JSON.parse(localStorage.getItem(KEY) || '{}');
-    return { mode: MODES.includes(t.mode) ? t.mode : 'light', accent: t.accent || ACCENTS[0].accent };
-  } catch { return { mode: 'light', accent: ACCENTS[0].accent }; }
+    return {
+      mode: MODES.includes(t.mode) ? t.mode : 'light',
+      accent: t.accent || ACCENTS[0].accent,
+      skin: SKINS.includes(t.skin) ? t.skin : 'original',
+    };
+  } catch { return { mode: 'light', accent: ACCENTS[0].accent, skin: 'original' }; }
 }
 
 export function saveLocalTheme(theme) {
   try { localStorage.setItem(KEY, JSON.stringify(theme)); } catch { /* ignore */ }
 }
 
-export function applyTheme({ mode = 'light', accent } = {}) {
+export function applyTheme({ mode = 'light', accent, skin = 'original' } = {}) {
   const root = document.documentElement;
   const dark = mode === 'dark' || (mode === 'system' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
   root.setAttribute('data-theme', dark ? 'dark' : 'light');
-  const a = ACCENTS.find((x) => x.accent.toLowerCase() === String(accent).toLowerCase()) || ACCENTS[0];
-  root.style.setProperty('--accent', a.accent);
-  root.style.setProperty('--accent-hover', a.hover);
-  root.style.setProperty('--sidebar-bg', a.sidebar);
+  const editorial = skin === 'editorial';
+  root.setAttribute('data-skin', editorial ? 'editorial' : 'original');
+  // The editorial skin ships its own accent + sidebar so it reads as one
+  // cohesive palette; the accent picker only applies to the original skin.
+  if (editorial) {
+    root.style.setProperty('--accent', EDITORIAL.accent);
+    root.style.setProperty('--accent-hover', EDITORIAL.hover);
+    root.style.setProperty('--sidebar-bg', EDITORIAL.sidebar);
+  } else {
+    const a = ACCENTS.find((x) => x.accent.toLowerCase() === String(accent).toLowerCase()) || ACCENTS[0];
+    root.style.setProperty('--accent', a.accent);
+    root.style.setProperty('--accent-hover', a.hover);
+    root.style.setProperty('--sidebar-bg', a.sidebar);
+  }
 }

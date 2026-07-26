@@ -8,11 +8,11 @@ export const AVATAR_COLORS = ['#e01e5a', '#36c5f0', '#2eb67d', '#ecb22e', '#7c3a
 
 export function publicUser(u) {
   if (!u) return null;
-  const { id, name, email, avatar_color, avatar_url, title, role, active, approved, deleted, deactivated_at, theme, accent, workspace_id } = u;
+  const { id, name, email, avatar_color, avatar_url, title, role, active, approved, deleted, deactivated_at, theme, accent, skin, workspace_id } = u;
   return {
     id, name, email, avatar_color, avatar_url: avatar_url || '', title, role: role || 'member', active: active ?? 1, approved: approved ?? 1,
     deleted: deleted ?? 0, deactivated_at: deactivated_at || null,
-    theme: theme || 'light', accent: accent || '#4f46e5', workspace_id,
+    theme: theme || 'light', accent: accent || '#4f46e5', skin: skin || 'original', workspace_id,
   };
 }
 
@@ -115,7 +115,7 @@ export function joinGeneral(workspaceId, userId) {
 
 // Self-service profile edit: a user updates their own name, title and avatar
 // colour. Only the provided fields change.
-export function updateOwnProfile(userId, { name, title, avatar_color, theme, accent, avatar_url }) {
+export function updateOwnProfile(userId, { name, title, avatar_color, theme, accent, skin, avatar_url }) {
   const sets = [], vals = [];
   // Profile photo: the id of an is_avatar attachment, or '' to remove it.
   if (avatar_url !== undefined) { sets.push('avatar_url = ?'); vals.push(String(avatar_url || '').slice(0, 100)); }
@@ -135,6 +135,10 @@ export function updateOwnProfile(userId, { name, title, avatar_color, theme, acc
   if (accent !== undefined) {
     if (!/^#[0-9a-fA-F]{6}$/.test(accent)) throw Object.assign(new Error('Invalid accent colour'), { status: 400 });
     sets.push('accent = ?'); vals.push(accent);
+  }
+  if (skin !== undefined) {
+    if (!['original', 'editorial'].includes(skin)) throw Object.assign(new Error('Invalid skin'), { status: 400 });
+    sets.push('skin = ?'); vals.push(skin);
   }
   if (sets.length) db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals, userId);
   return db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
