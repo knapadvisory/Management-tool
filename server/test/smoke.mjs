@@ -858,6 +858,27 @@ async function main() {
   check('uploading a client document creates its Drive folder', dfolders.data.folders.some((f) => f.name === sc.data.name));
   check('a "Clients" parent folder is created in the Drive', dfolders.data.folders.some((f) => f.name === 'Clients' && f.parent_id === null));
 
+  // --- Client Portal (Phase 1) ---
+  const inv = await req('POST', `/api/clients/${sc.data.id}/portal-invite`, { token: a, body: { email: 'owner@searchable.example', name: 'Owner' } });
+  check('staff can invite a client to the portal', inv.status === 201 && /\/portal\?token=/.test(inv.data.link || ''));
+  const magic = new URL(inv.data.link).searchParams.get('token');
+  const plog = await req('POST', '/api/portal/login', { body: { token: magic } });
+  check('a magic link exchanges for a portal session', plog.status === 200 && !!plog.data.token && plog.data.user.client === sc.data.name);
+  const pTok = plog.data.token;
+  const pdocs = await req('GET', '/api/portal/documents', { token: pTok });
+  check('portal lists the client’s documents', pdocs.status === 200 && pdocs.data.documents.some((d) => d.id === cdUp.attachments[0].id));
+  const pfd = new FormData();
+  pfd.append('files', new Blob(['bank statement'], { type: 'text/plain' }), 'my-statement.txt');
+  const pup = await (await fetch(BASE + '/api/portal/documents', { method: 'POST', headers: { Authorization: `Bearer ${pTok}` }, body: pfd })).json();
+  check('a client can upload a document via the portal', pup.documents?.some((d) => d.original_name === 'my-statement.txt' && d.source === 'you'));
+  const portalNoAuth = await req('GET', '/api/portal/documents', {});
+  check('the portal rejects a request with no session', portalNoAuth.status === 401);
+  const badMagic = await req('POST', '/api/portal/login', { body: { token: 'not-a-real-token' } });
+  check('an invalid magic link is rejected', badMagic.status === 401);
+  await req('POST', `/api/clients/${sc.data.id}/portal-users/${inv.data.portal_user.id}/revoke`, { token: a });
+  const afterRevoke = await req('GET', '/api/portal/documents', { token: pTok });
+  check('revoked portal access is rejected', afterRevoke.status === 401);
+
   // Client engagements overview: summary stats + one row per client.
   const engRep = await req('GET', '/api/clients/engagements', { token: a });
   check('engagements returns summary stats', engRep.status === 200 && typeof engRep.data.summary.active_clients === 'number' && 'past_due' in engRep.data.summary);

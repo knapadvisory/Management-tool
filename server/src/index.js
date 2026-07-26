@@ -22,6 +22,7 @@ import tasksRouter from './routes/tasks.js';
 import workflowsRouter from './routes/workflows.js';
 import projectsRouter from './routes/projects.js';
 import clientsRouter from './routes/clients.js';
+import portalRouter from './routes/portal.js';
 import analyticsRouter from './routes/analytics.js';
 import hrRouter from './routes/hr.js';
 import templatesRouter from './routes/templates.js';
@@ -395,6 +396,7 @@ app.use('/api/time', requireAuth, blockGuests, timeRouter);
 app.use('/api/tools/fee-parser', requireAuth, blockGuests, feeParserRouter); // staff-only marketplace fee parser
 app.use('/api/push', requireAuth, pushRouter);
 app.use('/api/clients', requireAuth, blockGuests, clientsRouter);
+app.use('/api/portal', portalRouter); // client portal — its own auth inside
 app.use('/api/analytics', requireAuth, blockGuests, analyticsRouter); // staff-only practice analytics
 // Bridge to KNAP-HRMS. Any member can open HR (they land in their own
 // self-service portal); /summary is gated to admins inside the router.

@@ -473,6 +473,27 @@ ensureColumn('attachments', 'is_drive', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('attachments', 'drive_folder_id', 'INTEGER REFERENCES drive_folders(id)');
 // A Drive folder can be auto-owned by a client (its documents land here).
 ensureColumn('drive_folders', 'client_id', 'INTEGER REFERENCES clients(id)');
+
+// --- Client Portal (external, per-client logins) ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS portal_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    workspace_id INTEGER REFERENCES workspaces(id),
+    contact_id INTEGER REFERENCES client_contacts(id),
+    name TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    last_login TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_portal_users_email ON portal_users(email);
+  CREATE INDEX IF NOT EXISTS idx_portal_users_client ON portal_users(client_id);
+`);
+// A document uploaded by a client (via the portal) records which portal user
+// sent it; uploader_id still points at the inviting staff so existing joins hold.
+ensureColumn('attachments', 'portal_uploader_id', 'INTEGER REFERENCES portal_users(id)');
 ensureColumn('tasks', 'project_id', 'INTEGER REFERENCES projects(id)');
 // Repeat rule: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'. When a
 // recurring task is completed, the next occurrence is generated automatically.

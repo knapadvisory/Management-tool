@@ -868,6 +868,7 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
     ['deadlines', `Compliance${data.deadlines?.length ? ` (${data.deadlines.length})` : ''}`],
     ['documents', `Documents${documents.length ? ` (${documents.length})` : ''}`],
     ['contacts', `Contacts${data.contacts?.length ? ` (${data.contacts.length})` : ''}`],
+    ['portal', '🔑 Portal'],
     ['notes', 'Discussion'],
   ];
 
@@ -950,11 +951,81 @@ function ClientDetail({ clientId, user, staff = [], onChanged, onDeleted, onOpen
         {tab === 'contacts' && (
           <Contacts clientId={clientId} contacts={data.contacts} onChange={(c2) => setData((x) => ({ ...x, contacts: c2 }))} />
         )}
+        {tab === 'portal' && <PortalAccess clientId={clientId} contacts={data.contacts} />}
         {tab === 'notes' && (
           <Notes clientId={clientId} notes={data.notes} user={user} onChange={(n) => setData((x) => ({ ...x, notes: n }))} />
         )}
       </div>
     </div>
+  );
+}
+
+// Staff-side control for a client's portal access: invite a contact (get a
+// magic sign-in link to share), see who has access, and revoke it.
+function PortalAccess({ clientId, contacts = [] }) {
+  const [users, setUsers] = useState(null);
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [link, setLink] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const load = () => api(`/clients/${clientId}/portal-users`).then((d) => setUsers(d.portal_users)).catch(() => setUsers([]));
+  useEffect(() => { load(); }, [clientId]);
+
+  async function invite(e) {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setBusy(true); setErr(''); setLink(''); setCopied(false);
+    try {
+      const r = await api(`/clients/${clientId}/portal-invite`, { method: 'POST', body: { email: email.trim(), name: name.trim() } });
+      setLink(r.link); setEmail(''); setName(''); load();
+    } catch (e2) { setErr(e2.message); } finally { setBusy(false); }
+  }
+  async function revoke(pid) {
+    if (!confirm('Revoke this portal access?')) return;
+    await api(`/clients/${clientId}/portal-users/${pid}/revoke`, { method: 'POST' });
+    load();
+  }
+  function copyLink() { navigator.clipboard?.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }
+
+  return (
+    <section className="client-section">
+      <h3>Client portal access</h3>
+      <p className="muted small" style={{ margin: '0 0 12px' }}>Invite a contact to the secure portal where they can upload documents and (soon) track filings. They sign in with a one-time email link — no password.</p>
+      <form className="portal-invite" onSubmit={invite}>
+        <input type="email" placeholder="contact@company.com" value={email} onChange={(e) => setEmail(e.target.value)} required
+          list={contacts.length ? 'portal-contact-emails' : undefined} />
+        {contacts.length > 0 && (
+          <datalist id="portal-contact-emails">
+            {contacts.filter((c) => c.email).map((c) => <option key={c.id} value={c.email}>{c.name}</option>)}
+          </datalist>
+        )}
+        <input type="text" placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
+        <button className="btn btn-primary btn-sm" disabled={busy}>{busy ? 'Inviting…' : 'Invite'}</button>
+      </form>
+      {err && <div className="form-error">{err}</div>}
+      {link && (
+        <div className="portal-link">
+          <code title={link}>{link}</code>
+          <button className="btn btn-sm" onClick={copyLink}>{copied ? '✓ Copied' : 'Copy link'}</button>
+        </div>
+      )}
+      {link && <p className="muted small" style={{ marginTop: -6 }}>Share this sign-in link with the contact (valid 45 min). If email is configured, it was also sent to them.</p>}
+
+      {users == null ? <div className="empty-hint">Loading…</div>
+        : users.length === 0 ? <div className="empty-hint">No portal access yet.</div>
+        : users.map((u) => (
+          <div key={u.id} className="portal-user">
+            <div className="grow">
+              <div>{u.name || u.email} {u.active ? '' : <span className="muted small">· revoked</span>}</div>
+              <div className="pu-sub">{u.email} · {u.last_login ? `last signed in ${fmtDate(u.last_login)}` : 'not signed in yet'}</div>
+            </div>
+            {u.active ? <button className="btn btn-sm btn-danger" onClick={() => revoke(u.id)}>Revoke</button> : <span className="muted small">Inactive</span>}
+          </div>
+        ))}
+    </section>
   );
 }
 

@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import db, { getSetting, setSetting } from '../db.js';
-import { publicUser } from '../auth.js';
+import { publicUser, signPortalMagic } from '../auth.js';
 import { completeDeadline } from '../compliance.js';
 import { timeForClient } from './time.js';
+import { emailEnabled, sendMail, layout, button } from '../email.js';
 
 // Custom compliance filing names, per workspace (on top of the built-in ones
 // the client offers). Stored as a JSON array in app_settings.
@@ -61,7 +62,7 @@ const docsFor = (clientId) => db.prepare(`
 // The Drive folder that holds a client's documents, under a top-level "Clients"
 // folder — created on first use, keyed to the client so a rename doesn't spawn
 // a duplicate.
-function clientDriveFolderId(client, ws, userId) {
+export function clientDriveFolderId(client, ws, userId) {
   const existing = db.prepare('SELECT id FROM drive_folders WHERE client_id = ? AND workspace_id = ?').get(client.id, ws);
   if (existing) return existing.id;
   let parent = db.prepare("SELECT id FROM drive_folders WHERE name = 'Clients' AND parent_id IS NULL AND client_id IS NULL AND workspace_id = ?").get(ws);
@@ -401,6 +402,45 @@ router.delete('/:id/documents/:attId', (req, res) => {
   db.prepare('DELETE FROM attachments WHERE id = ? AND client_id = ?').run(req.params.attId, client.id);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('drive:changed');
   res.json(docsFor(client.id));
+});
+
+// --- Client Portal invitations (staff side) ---
+router.get('/:id/portal-users', (req, res) => {
+  const client = load(req, res);
+  if (!client) return;
+  const portal_users = db.prepare('SELECT id, name, email, active, last_login, created_at FROM portal_users WHERE client_id = ? ORDER BY id DESC').all(client.id);
+  res.json({ portal_users });
+});
+
+router.post('/:id/portal-invite', (req, res) => {
+  const client = load(req, res);
+  if (!client) return;
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const name = String(req.body?.name || '').trim();
+  const contactId = req.body?.contact_id ? Number(req.body.contact_id) : null;
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
+  let pu = db.prepare('SELECT * FROM portal_users WHERE client_id = ? AND lower(email) = ?').get(client.id, email);
+  if (pu) {
+    db.prepare("UPDATE portal_users SET active = 1, name = CASE WHEN ? <> '' THEN ? ELSE name END WHERE id = ?").run(name, name, pu.id);
+    pu = db.prepare('SELECT * FROM portal_users WHERE id = ?').get(pu.id);
+  } else {
+    const info = db.prepare('INSERT INTO portal_users (client_id, workspace_id, contact_id, name, email, created_by) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(client.id, req.workspaceId, contactId, name, email, req.user.id);
+    pu = db.prepare('SELECT * FROM portal_users WHERE id = ?').get(info.lastInsertRowid);
+  }
+  const base = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, '') : `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers.host}`;
+  const link = `${base}/portal?token=${signPortalMagic(pu)}`;
+  if (emailEnabled()) {
+    sendMail({ to: email, subject: `Your ${client.name} client portal`, html: layout(`<p>Hello${name ? ` ${name}` : ''},</p><p>${req.user.name} has invited you to <strong>${client.name}</strong>'s secure client portal, where you can share documents and follow your filings. The sign-in link is valid for 45 minutes.</p>${button('Open my portal', link)}`) }).catch(() => {});
+  }
+  res.status(201).json({ portal_user: { id: pu.id, name: pu.name, email: pu.email, active: 1, last_login: pu.last_login }, link, emailed: emailEnabled() });
+});
+
+router.post('/:id/portal-users/:pid/revoke', (req, res) => {
+  const client = load(req, res);
+  if (!client) return;
+  db.prepare('UPDATE portal_users SET active = 0 WHERE id = ? AND client_id = ?').run(req.params.pid, client.id);
+  res.json({ ok: true });
 });
 
 router.patch('/:id', (req, res) => {
