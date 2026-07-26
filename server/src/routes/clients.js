@@ -443,6 +443,46 @@ router.post('/:id/portal-users/:pid/revoke', (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Document requests (firm asks the client for a file) ---
+const requestsFor = (clientId) => db.prepare(`
+  SELECT r.id, r.title, r.note, r.due_date, r.status, r.created_at, r.resolved_at, u.name AS requested_by,
+    (SELECT COUNT(*) FROM attachments a WHERE a.request_id = r.id AND a.archived_at IS NULL) AS file_count
+  FROM document_requests r LEFT JOIN users u ON u.id = r.requested_by
+  WHERE r.client_id = ? ORDER BY (r.status = 'done'), r.due_date IS NULL, r.due_date, r.id DESC`).all(clientId);
+
+router.get('/:id/document-requests', (req, res) => {
+  const client = load(req, res); if (!client) return;
+  res.json({ requests: requestsFor(client.id) });
+});
+
+router.post('/:id/document-requests', (req, res) => {
+  const client = load(req, res); if (!client) return;
+  const title = String(req.body?.title || '').trim();
+  if (!title) return res.status(400).json({ error: 'A request title is required.' });
+  const due = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.due_date || '') ? req.body.due_date : null;
+  db.prepare('INSERT INTO document_requests (client_id, workspace_id, title, note, due_date, requested_by) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(client.id, req.workspaceId, title, String(req.body?.note || '').trim(), due, req.user.id);
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('clients:changed');
+  res.status(201).json({ requests: requestsFor(client.id) });
+});
+
+router.patch('/:id/document-requests/:rid', (req, res) => {
+  const client = load(req, res); if (!client) return;
+  const r = db.prepare('SELECT * FROM document_requests WHERE id = ? AND client_id = ?').get(req.params.rid, client.id);
+  if (!r) return res.status(404).json({ error: 'Request not found' });
+  if (req.body?.status && ['pending', 'received', 'done'].includes(req.body.status)) {
+    const resolved = req.body.status === 'done' ? "datetime('now')" : 'resolved_at';
+    db.prepare(`UPDATE document_requests SET status = ?, resolved_at = ${resolved} WHERE id = ?`).run(req.body.status, r.id);
+  }
+  res.json({ requests: requestsFor(client.id) });
+});
+
+router.delete('/:id/document-requests/:rid', (req, res) => {
+  const client = load(req, res); if (!client) return;
+  db.prepare('DELETE FROM document_requests WHERE id = ? AND client_id = ?').run(req.params.rid, client.id);
+  res.json({ requests: requestsFor(client.id) });
+});
+
 router.patch('/:id', (req, res) => {
   const client = load(req, res);
   if (!client) return;

@@ -2964,3 +2964,31 @@ button.c360-stat:hover { border-color: var(--accent); }
 .portal-user { display: flex; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--surface-2); font-size: 14px; }
 .portal-user .grow { flex: 1; min-width: 0; }
 .portal-user .pu-sub { font-size: 12px; color: var(--muted); }
+
+/* ---- portal Phase 2: nav, overview, chips ---- */
+.pt-nav { display: flex; gap: 4px; padding: 0 22px; background: #211f1b; border-top: 1px solid #332f2a; overflow-x: auto; }
+.pt-navb { position: relative; background: none; border: 0; color: #a49a86; font: inherit; font-size: 13.5px; padding: 12px 14px;
+  cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+.pt-navb:hover { color: #e8e3d9; }
+.pt-navb.on { color: #fffdf9; border-bottom-color: var(--p-teal); }
+.pt-navbadge { margin-left: 7px; font-family: var(--p-mono); font-size: 10px; background: #b4462f; color: #fff; border-radius: 9px; padding: 1px 6px; }
+.pt-banner { display: flex; align-items: center; gap: 12px; background: #f6ecd6; border: 1px solid #e6cf9a; color: #7a5510;
+  border-radius: 13px; padding: 12px 15px; margin-bottom: 20px; font-size: 14px; }
+.pt-banner-ic { width: 26px; height: 26px; border-radius: 7px; background: #a9701a; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
+.pt-banner .pt-mini { margin-left: auto; }
+.pt-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+.pt-kpi { background: var(--p-card); border: 1px solid var(--p-line); border-radius: 13px; padding: 14px 16px; }
+.pt-kpi-num { font-size: 24px; font-weight: 700; letter-spacing: -.02em; }
+.pt-kpi-num.warn { color: #a9701a; }
+.pt-kpi-cap { font-family: var(--p-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--p-muted); margin-top: 4px; }
+.pt-chip { font-family: var(--p-mono); font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 6px; white-space: nowrap; }
+.pt-c-good { background: #e7efe5; color: #3f6b4a; }
+.pt-c-warn { background: #f6ecd6; color: #a9701a; }
+.pt-c-bad  { background: #f6e6df; color: #b4462f; }
+@media (max-width: 520px) { .pt-kpis { grid-template-columns: 1fr; } }
+
+/* staff-side document-request status chips */
+.req-chip { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 6px; margin-left: 6px; }
+.req-pending { background: var(--warning-soft); color: var(--warning); }
+.req-received, .req-done { background: var(--success-soft); color: var(--success); }

@@ -871,6 +871,23 @@ async function main() {
   pfd.append('files', new Blob(['bank statement'], { type: 'text/plain' }), 'my-statement.txt');
   const pup = await (await fetch(BASE + '/api/portal/documents', { method: 'POST', headers: { Authorization: `Bearer ${pTok}` }, body: pfd })).json();
   check('a client can upload a document via the portal', pup.documents?.some((d) => d.original_name === 'my-statement.txt' && d.source === 'you'));
+  // Phase 2: document requests + filing status
+  const dreq = await req('POST', `/api/clients/${sc.data.id}/document-requests`, { token: a, body: { title: 'July sales invoices', due_date: '2026-08-18' } });
+  check('staff can raise a document request', dreq.status === 201 && dreq.data.requests.some((r) => r.title === 'July sales invoices' && r.status === 'pending'));
+  const reqId = dreq.data.requests.find((r) => r.title === 'July sales invoices').id;
+  const preqs = await req('GET', '/api/portal/requests', { token: pTok });
+  check('portal shows the open document request', preqs.data.requests.some((r) => r.id === reqId && r.status === 'pending'));
+  // Client answers the request with an upload → it flips to "received".
+  const rfd = new FormData();
+  rfd.append('files', new Blob(['invoices'], { type: 'text/plain' }), 'invoices.txt');
+  rfd.append('request_id', String(reqId));
+  const rup = await (await fetch(BASE + '/api/portal/documents', { method: 'POST', headers: { Authorization: `Bearer ${pTok}` }, body: rfd })).json();
+  check('answering a request marks it received', rup.requests?.some((r) => r.id === reqId && r.status === 'received'));
+  // Filing status is read-only from the client's compliance deadlines.
+  await req('POST', `/api/clients/${sc.data.id}/deadlines`, { token: a, body: { title: 'GSTR-3B', due_date: '2026-08-20' } });
+  const pfil = await req('GET', '/api/portal/filings', { token: pTok });
+  check('portal exposes read-only filing status', pfil.status === 200 && pfil.data.filings.some((f) => f.title === 'GSTR-3B' && f.status === 'due'));
+
   const portalNoAuth = await req('GET', '/api/portal/documents', {});
   check('the portal rejects a request with no session', portalNoAuth.status === 401);
   const badMagic = await req('POST', '/api/portal/login', { body: { token: 'not-a-real-token' } });

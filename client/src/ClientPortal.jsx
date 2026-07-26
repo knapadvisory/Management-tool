@@ -98,34 +98,42 @@ function PortalLogin({ onedIn }) {
   );
 }
 
+const NAV = [['overview', 'Overview'], ['documents', 'Documents'], ['requests', 'Requests'], ['filings', 'Filings']];
+const fmtDue = (d) => (d ? fmtDate(d) : 'No date');
+const CH = { filed: 'pt-c-good', due: 'pt-c-warn', overdue: 'pt-c-bad', received: 'pt-c-good', pending: 'pt-c-bad', done: 'pt-c-good' };
+
 function PortalHome({ user, onSignOut }) {
+  const [view, setView] = useState('overview');
   const [docs, setDocs] = useState(null);
+  const [requests, setRequests] = useState(null);
+  const [filings, setFilings] = useState(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
-  const fileRef = useRef(null);
 
-  const load = useCallback(() => { papi('/documents').then((d) => setDocs(d.documents)).catch((e) => setErr(e.message)); }, []);
-  useEffect(() => { load(); }, [load]);
+  const loadDocs = useCallback(() => papi('/documents').then((d) => setDocs(d.documents)).catch((e) => setErr(e.message)), []);
+  const loadReq = useCallback(() => papi('/requests').then((d) => setRequests(d.requests)).catch(() => setRequests([])), []);
+  const loadFil = useCallback(() => papi('/filings').then((d) => setFilings(d.filings)).catch(() => setFilings([])), []);
+  useEffect(() => { loadDocs(); loadReq(); loadFil(); }, [loadDocs, loadReq, loadFil]);
 
-  async function upload(files) {
+  // Upload files, optionally answering a specific request. Updates both lists.
+  async function upload(files, requestId) {
     if (!files.length) return;
     setBusy(true); setErr('');
     try {
       const fd = new FormData();
       for (const f of files) fd.append('files', f);
+      if (requestId) fd.append('request_id', String(requestId));
       const res = await fetch('/api/portal/documents', { method: 'POST', headers: { Authorization: `Bearer ${getPToken()}` }, body: fd });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Upload failed');
       setDocs(data.documents);
+      if (data.requests) setRequests(data.requests);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
-  function download(d) {
-    window.open(`/api/portal/documents/${d.id}/download?token=${encodeURIComponent(getPToken())}`, '_blank');
-  }
+  function download(d) { window.open(`/api/portal/documents/${d.id}/download?token=${encodeURIComponent(getPToken())}`, '_blank'); }
 
-  const fromFirm = (docs || []).filter((d) => d.source === 'firm');
-  const fromYou = (docs || []).filter((d) => d.source === 'you');
+  const openReqs = (requests || []).filter((r) => r.status !== 'done');
+  const nextFiling = (filings || []).filter((f) => f.status !== 'filed' && f.due_date).sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
 
   return (
     <div className="pt-app">
@@ -137,36 +145,164 @@ function PortalHome({ user, onSignOut }) {
         </div>
       </header>
 
-      <main className="pt-main">
-        <div className="pt-head">
-          <div className="pt-eyebrow">Client portal</div>
-          <h1>Documents</h1>
-          <p className="pt-muted">Download what {`we've`} shared, and upload anything we've asked for. Files are stored securely with your engagement.</p>
-        </div>
+      <nav className="pt-nav">
+        {NAV.map(([k, label]) => (
+          <button key={k} className={`pt-navb ${view === k ? 'on' : ''}`} onClick={() => setView(k)}>
+            {label}{k === 'requests' && openReqs.length > 0 && <span className="pt-navbadge">{openReqs.length}</span>}
+          </button>
+        ))}
+      </nav>
 
+      <main className="pt-main">
         {err && <div className="pt-err">{err}</div>}
 
-        <div
-          className={`pt-drop ${dragOver ? 'over' : ''}`}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); upload(Array.from(e.dataTransfer.files || [])); }}
-          onClick={() => fileRef.current?.click()}
-        >
-          <div className="pt-drop-big">{busy ? 'Uploading…' : '⬆ Drag files here or click to upload'}</div>
-          <div className="pt-muted pt-fine">PDF, images, Excel — up to 25 MB each</div>
-          <input ref={fileRef} type="file" multiple hidden onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ''; upload(f); }} />
-        </div>
-
-        {docs == null ? <div className="pt-muted">Loading…</div> : (
+        {view === 'overview' && (
           <>
-            <DocGroup title="Shared with you" empty="Nothing shared yet." docs={fromFirm} onDownload={download} />
-            <DocGroup title="Your uploads" empty="You haven't uploaded anything yet." docs={fromYou} onDownload={download} />
+            <div className="pt-head"><div className="pt-eyebrow">Client portal</div><h1>Welcome, {user.name}</h1></div>
+            {openReqs.length > 0 && (
+              <div className="pt-banner">
+                <span className="pt-banner-ic">!</span>
+                <div><strong>{openReqs.length} document{openReqs.length === 1 ? '' : 's'} needed.</strong> Your accountant has requested files to progress your filings.</div>
+                <button className="pt-mini" onClick={() => setView('requests')}>View</button>
+              </div>
+            )}
+            <div className="pt-kpis">
+              <div className="pt-kpi"><div className={`pt-kpi-num ${openReqs.length ? 'warn' : ''}`}>{requests ? openReqs.length : '—'}</div><div className="pt-kpi-cap">Open requests</div></div>
+              <div className="pt-kpi"><div className="pt-kpi-num">{nextFiling ? fmtDate(nextFiling.due_date) : '—'}</div><div className="pt-kpi-cap">{nextFiling ? `Next · ${nextFiling.title}` : 'No filing due'}</div></div>
+              <div className="pt-kpi"><div className="pt-kpi-num">{docs ? docs.length : '—'}</div><div className="pt-kpi-cap">Documents</div></div>
+            </div>
+            {openReqs.length > 0 && (
+              <section className="pt-block">
+                <div className="pt-block-h"><span>Requests from your accountant</span><span>{openReqs.length} open</span></div>
+                {openReqs.slice(0, 4).map((r) => (
+                  <div key={r.id} className="pt-row">
+                    <span className="pt-file">▤</span>
+                    <div className="pt-row-main"><div className="pt-row-name">{r.title}</div><div className="pt-row-sub">Due {fmtDue(r.due_date)}</div></div>
+                    <button className="pt-mini" onClick={() => setView('requests')}>Upload</button>
+                  </div>
+                ))}
+              </section>
+            )}
+            <section className="pt-block">
+              <div className="pt-block-h"><span>Your filings</span><span>{(filings || []).length} total</span></div>
+              {(filings || []).slice(0, 5).map((f) => (
+                <div key={f.id} className="pt-row">
+                  <div className="pt-row-main"><div className="pt-row-name">{f.title}</div><div className="pt-row-sub">{f.status === 'filed' ? `Filed ${f.filed_on ? fmtDate(f.filed_on) : ''}` : `Due ${fmtDue(f.due_date)}`}</div></div>
+                  <span className={`pt-chip ${CH[f.status]}`}>{f.status}</span>
+                </div>
+              ))}
+              {filings && filings.length === 0 && <div className="pt-empty">No filings on record yet.</div>}
+            </section>
           </>
+        )}
+
+        {view === 'documents' && (
+          <DocumentsView docs={docs} busy={busy} onUpload={(f) => upload(f)} onDownload={download} />
+        )}
+
+        {view === 'requests' && (
+          <RequestsView requests={requests} busy={busy} onUpload={(f, rid) => upload(f, rid)} />
+        )}
+
+        {view === 'filings' && (
+          <FilingsView filings={filings} />
         )}
       </main>
       <footer className="pt-appfoot">Secure client portal · Powered by TeamHub</footer>
     </div>
+  );
+}
+
+function DocumentsView({ docs, busy, onUpload, onDownload }) {
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef(null);
+  const fromFirm = (docs || []).filter((d) => d.source === 'firm');
+  const fromYou = (docs || []).filter((d) => d.source === 'you');
+  return (
+    <>
+      <div className="pt-head"><div className="pt-eyebrow">Client portal</div><h1>Documents</h1>
+        <p className="pt-muted">Download what we've shared, and upload anything we've asked for.</p></div>
+      <div className={`pt-drop ${dragOver ? 'over' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); onUpload(Array.from(e.dataTransfer.files || [])); }}
+        onClick={() => fileRef.current?.click()}>
+        <div className="pt-drop-big">{busy ? 'Uploading…' : '⬆ Drag files here or click to upload'}</div>
+        <div className="pt-muted pt-fine">PDF, images, Excel — up to 25 MB each</div>
+        <input ref={fileRef} type="file" multiple hidden onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ''; onUpload(f); }} />
+      </div>
+      {docs == null ? <div className="pt-muted">Loading…</div> : (
+        <>
+          <DocGroup title="Shared with you" empty="Nothing shared yet." docs={fromFirm} onDownload={onDownload} />
+          <DocGroup title="Your uploads" empty="You haven't uploaded anything yet." docs={fromYou} onDownload={onDownload} />
+        </>
+      )}
+    </>
+  );
+}
+
+function RequestsView({ requests, busy, onUpload }) {
+  const fileRefs = useRef({});
+  if (requests == null) return <div className="pt-muted">Loading…</div>;
+  const open = requests.filter((r) => r.status !== 'done');
+  const done = requests.filter((r) => r.status === 'done');
+  return (
+    <>
+      <div className="pt-head"><div className="pt-eyebrow">Client portal</div><h1>Document requests</h1>
+        <p className="pt-muted">Everything your accountant needs from you, in one checklist.</p></div>
+      {requests.length === 0 && <div className="pt-block"><div className="pt-empty">Nothing requested right now — you're all caught up. 🎉</div></div>}
+      {open.length > 0 && (
+        <section className="pt-block">
+          <div className="pt-block-h"><span>Open</span><span>{open.length}</span></div>
+          {open.map((r) => (
+            <div key={r.id} className="pt-row">
+              <span className="pt-file">▤</span>
+              <div className="pt-row-main"><div className="pt-row-name">{r.title}</div>
+                <div className="pt-row-sub">Due {fmtDue(r.due_date)}{r.note ? ` · ${r.note}` : ''}</div></div>
+              {r.status === 'received'
+                ? <span className="pt-chip pt-c-good">received</span>
+                : <>
+                    <button className="pt-mini" disabled={busy} onClick={() => fileRefs.current[r.id]?.click()}>Upload</button>
+                    <input ref={(el) => { fileRefs.current[r.id] = el; }} type="file" multiple hidden
+                      onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ''; onUpload(f, r.id); }} />
+                  </>}
+            </div>
+          ))}
+        </section>
+      )}
+      {done.length > 0 && (
+        <section className="pt-block">
+          <div className="pt-block-h"><span>Completed</span><span>{done.length}</span></div>
+          {done.map((r) => (
+            <div key={r.id} className="pt-row">
+              <span className="pt-file">📄</span>
+              <div className="pt-row-main"><div className="pt-row-name">{r.title}</div></div>
+              <span className="pt-chip pt-c-good">done</span>
+            </div>
+          ))}
+        </section>
+      )}
+    </>
+  );
+}
+
+function FilingsView({ filings }) {
+  if (filings == null) return <div className="pt-muted">Loading…</div>;
+  return (
+    <>
+      <div className="pt-head"><div className="pt-eyebrow">Client portal</div><h1>Filing status</h1>
+        <p className="pt-muted">Where each of your statutory filings stands.</p></div>
+      <section className="pt-block">
+        <div className="pt-block-h"><span>Statutory filings</span><span>{filings.length}</span></div>
+        {filings.length === 0 && <div className="pt-empty">No filings on record yet.</div>}
+        {filings.map((f) => (
+          <div key={f.id} className="pt-row">
+            <div className="pt-row-main"><div className="pt-row-name">{f.title}</div>
+              <div className="pt-row-sub">{f.status === 'filed' ? `Filed ${f.filed_on ? fmtDate(f.filed_on) : ''}` : `Due ${fmtDue(f.due_date)}`}</div></div>
+            <span className={`pt-chip ${CH[f.status]}`}>{f.status}</span>
+          </div>
+        ))}
+      </section>
+    </>
   );
 }
 

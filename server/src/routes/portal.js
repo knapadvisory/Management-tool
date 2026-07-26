@@ -80,6 +80,7 @@ router.get('/documents', requirePortal, (req, res) => {
 
 // A client uploads documents — filed into their own Drive folder, credited to
 // the inviting staff (so existing joins hold) but tagged as a portal upload.
+// An optional request_id answers a specific document request.
 router.post('/documents', requirePortal, upload.array('files', 10), (req, res) => {
   const pu = req.portal;
   const client = db.prepare('SELECT * FROM clients WHERE id = ? AND workspace_id = ?').get(pu.client_id, pu.workspace_id);
@@ -88,15 +89,42 @@ router.post('/documents', requirePortal, upload.array('files', 10), (req, res) =
     || db.prepare("SELECT id FROM users WHERE workspace_id = ? AND role = 'admin' AND active = 1 ORDER BY id LIMIT 1").get(pu.workspace_id)?.id
     || db.prepare('SELECT id FROM users WHERE workspace_id = ? ORDER BY id LIMIT 1').get(pu.workspace_id)?.id;
   const folderId = clientDriveFolderId(client, pu.workspace_id, staffId);
-  const ins = db.prepare(`INSERT INTO attachments (uploader_id, portal_uploader_id, stored_name, original_name, mime_type, size, client_id, is_drive, drive_folder_id, workspace_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`);
+  // Only honour a request_id that belongs to this client and is still open.
+  const rid = req.body?.request_id ? Number(req.body.request_id) : null;
+  const request = rid ? db.prepare("SELECT * FROM document_requests WHERE id = ? AND client_id = ? AND status != 'done'").get(rid, client.id) : null;
+  const ins = db.prepare(`INSERT INTO attachments (uploader_id, portal_uploader_id, stored_name, original_name, mime_type, size, client_id, request_id, is_drive, drive_folder_id, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`);
   for (const f of req.files || []) {
-    ins.run(staffId, pu.id, f.filename, f.originalname, f.mimetype, f.size, client.id, folderId, pu.workspace_id);
+    ins.run(staffId, pu.id, f.filename, f.originalname, f.mimetype, f.size, client.id, request ? request.id : null, folderId, pu.workspace_id);
   }
-  // Let the firm know a client sent something.
+  if (request && (req.files || []).length) {
+    db.prepare("UPDATE document_requests SET status = 'received' WHERE id = ?").run(request.id);
+  }
   req.app.get('io')?.to(`workspace:${pu.workspace_id}`).emit('clients:changed');
   req.app.get('io')?.to(`workspace:${pu.workspace_id}`).emit('drive:changed');
-  res.status(201).json({ documents: docsFor(client.id) });
+  res.status(201).json({ documents: docsFor(client.id), requests: requestsForPortal(client.id) });
+});
+
+// Document requests the firm has raised for this client.
+const requestsForPortal = (clientId) => db.prepare(`
+  SELECT id, title, note, due_date, status, created_at FROM document_requests
+  WHERE client_id = ? ORDER BY (status = 'done'), due_date IS NULL, due_date, id DESC`).all(clientId);
+
+router.get('/requests', requirePortal, (req, res) => {
+  res.json({ requests: requestsForPortal(req.portal.client_id) });
+});
+
+// Read-only filing status straight from the firm's compliance deadlines.
+router.get('/filings', requirePortal, (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = db.prepare(`
+    SELECT id, title, due_date, recurrence, completed, completed_at FROM client_deadlines
+    WHERE client_id = ? ORDER BY (completed = 1), due_date`).all(req.portal.client_id).map((d) => ({
+      id: d.id, title: d.title, due_date: d.due_date, recurrence: d.recurrence,
+      status: d.completed ? 'filed' : (d.due_date < today ? 'overdue' : 'due'),
+      filed_on: d.completed_at ? String(d.completed_at).slice(0, 10) : null,
+    }));
+  res.json({ filings: rows });
 });
 
 // Stream a document the client is allowed to see (their own client's files).
