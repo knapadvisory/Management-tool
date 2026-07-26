@@ -142,6 +142,35 @@ box:
   The last off-site result (ok / failed + time) shows in Admin → Backups, so a
   silently-broken pipeline is visible rather than assumed working.
 
+### Continuous replication (litestream) — near-zero data loss
+
+Daily snapshots leave a gap: if the server dies at 3pm and the last backup was
+2am, that day's work is gone. **Litestream** closes the gap — it's bundled in the
+image and, when configured, streams every database change to off-site storage
+**within seconds**. On a fresh/rebuilt box it also **restores the database
+automatically** from that replica on first boot. It's off by default; set these
+in `/root/teamhub.env` and redeploy:
+
+```bash
+# S3-compatible bucket + credentials (AWS S3, Backblaze B2, Wasabi, MinIO…)
+LITESTREAM_REPLICA_URL="s3://my-bucket/teamhub"
+LITESTREAM_ACCESS_KEY_ID="…"
+LITESTREAM_SECRET_ACCESS_KEY="…"
+# Only for non-AWS S3 providers:
+# LITESTREAM_ENDPOINT="https://s3.us-west-002.backblazeb2.com"
+# LITESTREAM_FORCE_PATH_STYLE="true"
+```
+
+Then `bash deploy/redeploy.sh`. On boot you'll see `[litestream] replicating …`
+in `docker logs teamhub`. **Disaster recovery** is then: stand up a fresh box,
+put the same values in `teamhub.env`, run the deploy — litestream pulls the
+database back to within seconds of the crash. (Uploaded files still come from the
+`BACKUP_SYNC_CMD` off-site copy above, so keep both on.)
+
+Litestream **complements** the daily snapshots — it's replication (near-live
+mirror), not versioned history, so keep the snapshots for point-in-time restores.
+For arm64 hosts, rebuild with `--build-arg LITESTREAM_ARCH=arm64`.
+
 ### Prove the backups restore (recovery drill)
 
 Backups you've never restored are a guess. Run the **non-destructive** drill —
