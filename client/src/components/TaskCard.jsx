@@ -66,6 +66,9 @@ export default function TaskCard({ task, onOpen, draggable, onDragStart, current
             {statusMeta(task.status).label}
           </span>
         )}
+        {task.is_blocked && (
+          <span className="card-blocked-badge" title={`Blocked by: ${(task.blocked_by || []).filter((b) => b.status !== 'completed' && b.status !== 'cancelled').map((b) => b.title).join(', ')}`}>🔒 Blocked</span>
+        )}
         <span className={`priority priority-${task.priority}`}>{task.priority}</span>
         {task.due_date && <span className={`due ${due}`}>📅 {task.due_date}</span>}
         {task.recurrence && task.recurrence !== 'none' && <span title={`Repeats ${task.recurrence}`}>🔁</span>}

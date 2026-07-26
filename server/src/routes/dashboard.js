@@ -74,11 +74,19 @@ router.get('/', (req, res) => {
     `SELECT t.* FROM tasks t WHERE ${OPEN}${scope} ORDER BY (t.due_date IS NULL), t.due_date ASC LIMIT 50`
   ).map(liteTask);
 
-  // Team workload (admins only): open tasks per assignee.
+  // Team workload (admins only): a capacity read per assignee — open tasks, how
+  // many are overdue, and how many are blocked waiting on another task — so an
+  // overloaded person is easy to spot and rebalance.
   let workload = [];
   if (isAdmin) {
     workload = db.prepare(
-      `SELECT u.id, u.name, u.avatar_color, u.avatar_url, COUNT(t.id) AS count
+      `SELECT u.id, u.name, u.avatar_color, u.avatar_url,
+              COUNT(t.id) AS count,
+              COALESCE(SUM(t.due_date IS NOT NULL AND t.due_date < date('now')), 0) AS overdue,
+              COALESCE(SUM(EXISTS (
+                SELECT 1 FROM task_dependencies d JOIN tasks b ON b.id = d.depends_on_id
+                WHERE d.task_id = t.id AND b.status NOT IN ('completed','cancelled')
+              )), 0) AS blocked
        FROM users u
        LEFT JOIN task_assignees ta ON ta.user_id = u.id
        LEFT JOIN tasks t ON t.id = ta.task_id AND t.status NOT IN ('completed','cancelled') AND t.archived_at IS NULL AND t.workspace_id = ${ws}

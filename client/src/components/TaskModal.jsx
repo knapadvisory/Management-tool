@@ -46,7 +46,15 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   useEffect(() => { load(); }, [load]);
 
   async function update(patch) {
-    await api(`/tasks/${taskId}`, { method: 'PATCH', body: patch });
+    try {
+      await api(`/tasks/${taskId}`, { method: 'PATCH', body: patch });
+    } catch (e) {
+      // Completing a task that's still blocked: confirm, then override.
+      if (e.code === 'blocked') {
+        if (!window.confirm(`${e.message}\n\nComplete it anyway?`)) return;
+        await api(`/tasks/${taskId}`, { method: 'PATCH', body: { ...patch, force: true } });
+      } else { window.alert(e.message); return; }
+    }
     load();
   }
 

@@ -241,7 +241,11 @@ export default function DashboardView({ user, users = [], hrEnabled = false, onO
                     <button key={w.id} className="workload-row" onClick={() => openList(`${w.name}’s tasks`, (t) => (t.assignees?.length ? t.assignees : (t.assignee ? [t.assignee] : [])).some((a) => a?.id === w.id) && OPEN(t))}>
                       <div className="workload-top">
                         <span className="workload-name"><Avatar user={w} size={20} /> {w.name}</span>
-                        <span className="muted">{w.count} task{w.count === 1 ? '' : 's'}</span>
+                        <span className="muted">
+                          {w.count} task{w.count === 1 ? '' : 's'}
+                          {w.overdue > 0 && <span className="wl-flag wl-overdue" title={`${w.overdue} overdue`}> · {w.overdue} overdue</span>}
+                          {w.blocked > 0 && <span className="wl-flag wl-blocked" title={`${w.blocked} blocked`}> · 🔒 {w.blocked}</span>}
+                        </span>
                       </div>
                       <div className="workload-bar"><span style={{ width: `${(w.count / max) * 100}%`, background: w.avatar_color }} /></div>
                     </button>

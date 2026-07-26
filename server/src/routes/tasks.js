@@ -732,6 +732,25 @@ router.patch('/:id', (req, res) => {
     return res.status(400).json({ error: `A reason is required to mark a task as ${STATUS_LABEL[status]}` });
   }
 
+  // A task shouldn't be finished while something it depends on is still open —
+  // whether it's completed directly (status) or dragged into a done stage. The
+  // task modal offers a confirm that retries with force:true to override.
+  const targetStage = (stage_id !== undefined && stage_id !== task.stage_id)
+    ? db.prepare('SELECT is_done FROM workflow_stages WHERE id = ?').get(stage_id) : null;
+  const wouldComplete = status === 'completed' || (targetStage && !!targetStage.is_done);
+  if (wouldComplete && task.status !== 'completed' && !req.body.force) {
+    const openBlockers = db.prepare(`
+      SELECT t2.title FROM task_dependencies d JOIN tasks t2 ON t2.id = d.depends_on_id
+      WHERE d.task_id = ? AND t2.status NOT IN ('completed','cancelled')`).all(task.id);
+    if (openBlockers.length) {
+      return res.status(409).json({
+        code: 'blocked',
+        blockers: openBlockers.map((b) => b.title),
+        error: `This task is blocked by ${openBlockers.length} unfinished task${openBlockers.length === 1 ? '' : 's'} (${openBlockers.map((b) => `“${b.title}”`).join(', ')}). Finish those first, or open the task to complete it anyway.`,
+      });
+    }
+  }
+
   let movedToDone = false;
   if (stage_id !== undefined && stage_id !== task.stage_id) {
     const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ? AND workflow_id = ?').get(stage_id, task.workflow_id);
