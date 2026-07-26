@@ -510,6 +510,17 @@ db.exec(`
     resolved_at TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_document_requests_client ON document_requests(client_id, status);
+
+  -- One auto-chase reminder per (request, due_date, milestone), so the hourly
+  -- sweep chases a client for an unfulfilled document request exactly once per
+  -- milestone even across restarts. Mirrors deadline_reminders_sent.
+  CREATE TABLE IF NOT EXISTS request_reminders_sent (
+    request_id INTEGER NOT NULL REFERENCES document_requests(id) ON DELETE CASCADE,
+    due_date TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (request_id, due_date, kind)
+  );
 `);
 // A portal upload can answer a specific document request.
 ensureColumn('attachments', 'request_id', 'INTEGER REFERENCES document_requests(id)');

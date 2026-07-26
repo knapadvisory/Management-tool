@@ -36,7 +36,7 @@ import timeRouter from './routes/time.js';
 import pushRouter from './routes/push.js';
 import feeParserRouter from './routes/feeParser.js';
 import setupSocket from './socket.js';
-import { startReminderScheduler, startAutoArchiveScheduler, startDeadlineReminderScheduler, startWeeklyDigestScheduler } from './reminders.js';
+import { startReminderScheduler, startAutoArchiveScheduler, startDeadlineReminderScheduler, startWeeklyDigestScheduler, startDocumentRequestChaseScheduler } from './reminders.js';
 import { createNotification } from './notifications.js';
 import { startBackupScheduler, runBackup, backupStatus, latestDbPath } from './backup.js';
 
@@ -413,6 +413,7 @@ setupSocket(io);
 startReminderScheduler(io);
 startDeadlineReminderScheduler(io);
 startWeeklyDigestScheduler(io);
+startDocumentRequestChaseScheduler(io);
 startAutoArchiveScheduler();
 startBackupScheduler();
 
