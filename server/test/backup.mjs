@@ -4,7 +4,7 @@
  * database; non-platform users are refused.
  */
 import { spawn } from 'child_process';
-import { mkdtempSync, rmSync, existsSync, readdirSync } from 'fs';
+import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,8 +18,12 @@ const dataDir = mkdtempSync(path.join(tmpdir(), 'teamhub-backup-'));
 let failures = 0;
 const check = (name, ok) => { console.log(`  ${ok ? '✓' : '✗'} ${name}`); if (!ok) failures++; };
 
+// A stand-in off-site target: copy the snapshot's meta into a marker file so
+// the test can prove the hook ran with the right backup in its environment.
+const SYNC_CMD = 'cp "$BACKUP_PATH/meta.json" "$BACKUP_ROOT/synced-$BACKUP_NAME.json"';
+
 const server = spawn('node', [path.join(__dirname, '..', 'src', 'index.js')], {
-  env: { ...process.env, PORT, DATA_DIR: dataDir, JWT_SECRET: 'backup-test', WORKSPACE_SIGNUP_CODE: 'boot', BACKUP_DISABLED: '1' },
+  env: { ...process.env, PORT, DATA_DIR: dataDir, JWT_SECRET: 'backup-test', WORKSPACE_SIGNUP_CODE: 'boot', BACKUP_DISABLED: '1', BACKUP_SYNC_CMD: SYNC_CMD },
   stdio: ['ignore', 'ignore', 'inherit'],
 });
 
@@ -60,6 +64,19 @@ async function main() {
   const dl = await fetch(B + '/platform/backups/latest.db', { headers: { Authorization: 'Bearer ' + K } });
   const head = Buffer.from(await dl.arrayBuffer()).slice(0, 16).toString();
   check('latest-db download is a real SQLite file', dl.status === 200 && head.startsWith('SQLite format 3'));
+
+  // Snapshot integrity is verified and recorded.
+  const meta = JSON.parse(readFileSync(path.join(bdir, 'meta.json'), 'utf8'));
+  check('snapshot is integrity-checked on creation', meta.integrity === 'ok');
+
+  // Off-site sync hook ran with the right backup in its environment.
+  check('off-site sync command runs after a backup', existsSync(path.join(dataDir, 'backups', `synced-${run.data.name}.json`)));
+  const status = (await j('GET', '/platform/backups', null, K)).data;
+  check('status reports off-site configured + last sync ok', status.offsite?.configured === true && status.offsite?.last?.ok === true);
+
+  // The restore drill confirms a stored backup would actually come back.
+  const drill = (await j('POST', '/platform/backups/verify', null, K)).data;
+  check('verify drill passes on a sound backup', drill.ok === true && drill.integrity === 'ok' && drill.counts.workspaces >= 1);
 }
 
 main()
