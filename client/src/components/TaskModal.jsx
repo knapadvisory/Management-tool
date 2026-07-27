@@ -7,6 +7,45 @@ import RemindersEditor from './RemindersEditor.jsx';
 import StatusControl from './StatusControl.jsx';
 import AssigneePicker from './AssigneePicker.jsx';
 
+// "2h 15m" / "45m" from a minute count.
+const fmtMins = (m) => { const h = Math.floor(m / 60); const mm = m % 60; return h ? `${h}h ${mm}m` : `${mm}m`; };
+// Live "1:23:45" elapsed since a UTC 'YYYY-MM-DD HH:MM:SS' start.
+function elapsedSince(startedAt) {
+  if (!startedAt) return '0:00';
+  const start = new Date(startedAt.replace(' ', 'T') + 'Z').getTime();
+  const s = Math.max(0, Math.floor((Date.now() - start) / 1000));
+  const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const sec = s % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+}
+
+// The block-a-task form: a reason, an optional "caused by" person, and Save.
+function BlockForm({ users, onBlock }) {
+  const [reason, setReason] = useState('');
+  const [who, setWho] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function save(e) {
+    e.preventDefault();
+    if (!reason.trim()) return;
+    setBusy(true);
+    try { await onBlock(reason.trim(), who ? Number(who) : null); setReason(''); setWho(''); }
+    finally { setBusy(false); }
+  }
+  return (
+    <form className="block-form" onSubmit={save}>
+      <textarea rows={2} placeholder="What's blocking this task? (e.g. waiting on client for invoices)"
+        value={reason} onChange={(e) => setReason(e.target.value)} />
+      <div className="block-form-row">
+        <select value={who} onChange={(e) => setWho(e.target.value)} title="Optional — the person it's waiting on">
+          <option value="">Caused by… (optional)</option>
+          {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        <button className="btn btn-sm btn-danger" disabled={busy || !reason.trim()}>{busy ? 'Saving…' : '⛔ Block task'}</button>
+      </div>
+    </form>
+  );
+}
+
 export default function TaskModal({ taskId, user, users, workflows = [], projects = [], clients = [], onClose, inline = false }) {
   const [tab, setTab] = useState('chat');
   const [task, setTask] = useState(null);
@@ -72,6 +111,17 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
     const { task: t } = await api(`/tasks/${taskId}/dependencies/${depId}`, { method: 'DELETE' });
     setTask(t);
   }
+  // Work timer + blockage actions.
+  async function startTask() { try { await api(`/tasks/${taskId}/start`, { method: 'POST' }); load(); } catch (e) { window.alert(e.message); } }
+  async function blockTask(reason, blamedId) { try { await api(`/tasks/${taskId}/block`, { method: 'POST', body: { reason, blamed_user_id: blamedId || null } }); load(); } catch (e) { window.alert(e.message); } }
+  async function unblockTask() { try { await api(`/tasks/${taskId}/unblock`, { method: 'POST' }); load(); } catch (e) { window.alert(e.message); } }
+  // Tick once a second while a timer runs so the elapsed clock stays live.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!task?.active_timer) return undefined;
+    const iv = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(iv);
+  }, [task?.active_timer]);
   const isDone = (s) => s === 'completed' || s === 'cancelled';
 
   async function addComment(e) {
@@ -209,6 +259,42 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
 
         <StatusControl task={task} onUpdate={update} canEdit={canChangeStatus} />
 
+        <div className="work-control">
+          {task.active_timer ? (
+            <div className="timer-live">
+              <span className="timer-dot" /> <strong>{elapsedSince(task.active_timer.started_at)}</strong>
+              <span className="muted"> · {task.active_timer.user?.name} working{task.tracked_minutes ? ` · ${fmtMins(task.tracked_minutes)} logged` : ''}</span>
+            </div>
+          ) : active && canChangeStatus && task.status !== 'blocked' ? (
+            <button className="btn btn-primary btn-sm" onClick={startTask}>▶ Start task</button>
+          ) : task.tracked_minutes ? (
+            <div className="timer-total muted">⏱ {fmtMins(task.tracked_minutes)} logged</div>
+          ) : null}
+          {active && canChangeStatus && task.status !== 'blocked' && (
+            <span className="muted small" style={{ marginLeft: 8 }}>{task.active_timer ? 'Block or complete to stop the clock.' : ''}</span>
+          )}
+        </div>
+
+        <div className="blockage-section">
+          <div className="checklist-head">
+            <h4>Blocked by</h4>
+            {task.status === 'blocked' && <span className="dep-blocked-badge">⛔ Blocked</span>}
+          </div>
+          {task.blockage ? (
+            <div className="blockage-active">
+              <div className="blockage-reason">⛔ {task.blockage.reason}</div>
+              {task.blockage.blamed_user && (
+                <div className="blockage-who">Waiting on <Avatar user={task.blockage.blamed_user} size={18} /> {task.blockage.blamed_user.name}</div>
+              )}
+              {canChangeStatus && <button className="btn btn-sm btn-primary" onClick={unblockTask}>▶ Resume</button>}
+            </div>
+          ) : (
+            canChangeStatus && active
+              ? <BlockForm users={users} onBlock={blockTask} />
+              : <div className="empty-hint">Not blocked.</div>
+          )}
+        </div>
+
         <div className="task-fields">
           <label>Stage
             <select value={task.stage_id} onChange={(e) => update({ stage_id: Number(e.target.value) })}>
@@ -294,12 +380,13 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
         <div className="deps-section">
           <div className="checklist-head">
             <h4>Dependencies</h4>
-            {task.is_blocked && <span className="dep-blocked-badge">🔒 Blocked</span>}
+            <span className="info-hint" title="Use this only when this task can't proceed until ANOTHER task is finished. To record a general hold-up (waiting on a person, a client, information), use “Blocked by” above instead.">ⓘ</span>
+            {task.is_blocked && <span className="dep-blocked-badge">🔒 Waiting on a task</span>}
           </div>
 
           <div className="dep-group">
-            <div className="dep-label">Blocked by</div>
-            {(task.blocked_by || []).length === 0 && <div className="empty-hint">Not waiting on anything.</div>}
+            <div className="dep-label">Depends on</div>
+            {(task.blocked_by || []).length === 0 && <div className="empty-hint">Doesn’t depend on another task.</div>}
             {(task.blocked_by || []).map((b) => (
               <div key={b.id} className={`dep-row ${isDone(b.status) ? 'is-done' : 'is-open'}`}>
                 <span className="dep-name">{isDone(b.status) ? '✓' : '⏳'} {b.title}</span>
@@ -307,7 +394,7 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
               </div>
             ))}
             <div className="dep-add">
-              <input placeholder="+ add a blocker (type to search)" value={depQuery}
+              <input placeholder="+ add a task this one depends on (type to search)" value={depQuery}
                 onFocus={loadDepCandidates} onChange={(e) => setDepQuery(e.target.value)} />
               {depQuery.trim() && depTasks && (
                 <div className="dep-results">

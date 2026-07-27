@@ -240,6 +240,23 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
 );
 CREATE INDEX IF NOT EXISTS idx_task_deps_on ON task_dependencies(depends_on_id);
 
+-- Blockages: a human "this task is stuck" record — a free-text reason and,
+-- optionally, the person it's waiting on. Distinct from task_dependencies (which
+-- links task→task). The current blockage is the row with resolved_at IS NULL;
+-- resolving one keeps the history (for "what/who blocks us most" reporting).
+CREATE TABLE IF NOT EXISTS task_blockages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  workspace_id INTEGER REFERENCES workspaces(id),
+  reason TEXT NOT NULL,
+  blamed_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at TEXT,
+  resolved_by INTEGER REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_task_blockages_task ON task_blockages(task_id, resolved_at);
+
 -- Approval requests to cancel or delete a task. A member requests; the task's
 -- assignor (or an admin) approves or rejects. The task isn't cancelled/deleted
 -- until approved.

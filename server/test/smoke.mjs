@@ -274,6 +274,24 @@ async function main() {
   const dtDetail = await req('GET', `/api/tasks/${dtId}`, { token: a });
   check('task reports checklist progress 1/2', dtDetail.data.task.checklist_done === 1 && dtDetail.data.task.checklist_total === 2);
 
+  // Work timer + blockage. dtId is assigned to bob; only bob may drive it.
+  const notMine = await req('POST', `/api/tasks/${dtId}/start`, { token: a });
+  check('only the assignee can start a task', notMine.status === 403);
+  const started = await req('POST', `/api/tasks/${dtId}/start`, { token: b });
+  check('starting a task sets In Progress + a running timer', started.status === 200 && started.data.status === 'in_progress' && !!started.data.active_timer);
+  const blockNoReason = await req('POST', `/api/tasks/${dtId}/block`, { token: b, body: {} });
+  check('a blockage requires a reason', blockNoReason.status === 400);
+  const blocked = await req('POST', `/api/tasks/${dtId}/block`, { token: b, body: { reason: 'Waiting on client data', blamed_user_id: 1 } });
+  check('blocking records reason + caused-by and stops the timer',
+    blocked.status === 200 && blocked.data.status === 'blocked'
+    && blocked.data.blockage?.reason.includes('client data') && blocked.data.blockage?.blamed_user?.id === 1
+    && !blocked.data.active_timer);
+  const resumed = await req('POST', `/api/tasks/${dtId}/unblock`, { token: b });
+  check('resuming clears the blockage and restarts the timer',
+    resumed.status === 200 && resumed.data.status === 'in_progress' && !resumed.data.blockage && !!resumed.data.active_timer);
+  const doneAfter = await req('PATCH', `/api/tasks/${dtId}`, { token: b, body: { status: 'completed' } });
+  check('completing stops the running timer', doneAfter.status === 200 && !doneAfter.data.active_timer && doneAfter.data.tracked_minutes >= 0);
+
   const addTag = await req('POST', `/api/tasks/${dtId}/tags`, { token: a, body: { tag: 'Q3' } });
   check('tag added (lowercased)', addTag.data.tags.includes('q3'));
   const rmTag = await req('DELETE', `/api/tasks/${dtId}/tags/urgent`, { token: a });
