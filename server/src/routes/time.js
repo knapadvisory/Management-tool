@@ -180,6 +180,32 @@ router.get('/report', (req, res) => {
 
 export default router;
 
+// --- Lifecycle-driven timer control (used by the tasks router) --------------
+// A person works one thing at a time, so starting a task's timer stops whatever
+// else they had running. No-op if they're already timing this task.
+export function startTimerForUserTask(userId, taskId, ws) {
+  const running = runningFor(userId);
+  if (running && running.task_id === taskId && running.is_running) return running;
+  if (running) stopEntry(running);
+  const info = db.prepare(`
+    INSERT INTO time_entries (user_id, task_id, client_id, description, entry_date, minutes, started_at, is_running, billable, workspace_id)
+    VALUES (?, ?, ?, '', ?, 0, ?, 1, 1, ?)
+  `).run(userId, taskId, clientOfTask(taskId, ws), today(), nowSql(), ws);
+  return db.prepare('SELECT * FROM time_entries WHERE id = ?').get(info.lastInsertRowid);
+}
+// Stop this user's running timer if it's on this task (leave other tasks alone).
+export function stopTimerForUserTask(userId, taskId) {
+  const running = runningFor(userId);
+  if (running && running.task_id === taskId) { stopEntry(running); return true; }
+  return false;
+}
+// The live timer on a task (whoever is running it), for the task serializer.
+export function runningTimerForTask(taskId) {
+  const e = db.prepare('SELECT * FROM time_entries WHERE task_id = ? AND is_running = 1 ORDER BY id DESC LIMIT 1').get(taskId);
+  if (!e) return null;
+  return { user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(e.user_id)), started_at: e.started_at, minutes: runningMinutes(e.started_at) };
+}
+
 // Aggregate helpers reused by other routers (task / client detail).
 export function timeForTask(taskId) {
   const rows = db.prepare('SELECT * FROM time_entries WHERE task_id = ? AND is_running = 0 ORDER BY entry_date DESC, id DESC').all(taskId);

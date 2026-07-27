@@ -66,8 +66,11 @@ export default function TaskCard({ task, onOpen, draggable, onDragStart, current
             {statusMeta(task.status).label}
           </span>
         )}
+        {task.active_timer && (
+          <span className="card-timer-badge" title={`${task.active_timer.user?.name || 'Someone'} is working on this`}>⏱ running</span>
+        )}
         {task.is_blocked && (
-          <span className="card-blocked-badge" title={`Blocked by: ${(task.blocked_by || []).filter((b) => b.status !== 'completed' && b.status !== 'cancelled').map((b) => b.title).join(', ')}`}>🔒 Blocked</span>
+          <span className="card-blocked-badge" title={`Waiting on: ${(task.blocked_by || []).filter((b) => b.status !== 'completed' && b.status !== 'cancelled').map((b) => b.title).join(', ')}`}>🔒 Waiting</span>
         )}
         <span className={`priority priority-${task.priority}`}>{task.priority}</span>
         {task.due_date && <span className={`due ${due}`}>📅 {task.due_date}</span>}

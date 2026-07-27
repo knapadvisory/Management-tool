@@ -6,7 +6,7 @@ import db from '../db.js';
 import { publicUser } from '../auth.js';
 import { createNotification } from '../notifications.js';
 import { completeDeadlinesForTask } from '../compliance.js';
-import { timeForTask } from './time.js';
+import { timeForTask, startTimerForUserTask, stopTimerForUserTask, runningTimerForTask } from './time.js';
 import { storeBufferInDrive } from './drive.js';
 
 const router = Router();
@@ -29,9 +29,32 @@ const IMPORT_COLUMNS = [
 ];
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 const RECURRENCES = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
-const STATUSES = ['in_progress', 'completed', 'hold', 'cancelled'];
-const STATUS_LABEL = { in_progress: 'In Progress', completed: 'Completed', hold: 'On Hold', cancelled: 'Cancelled' };
-const NEEDS_REASON = (s) => s === 'hold' || s === 'cancelled';
+const STATUSES = ['in_progress', 'completed', 'hold', 'blocked', 'cancelled'];
+const STATUS_LABEL = { in_progress: 'In Progress', completed: 'Completed', hold: 'On Hold', blocked: 'Blocked', cancelled: 'Cancelled' };
+const NEEDS_REASON = (s) => s === 'hold' || s === 'cancelled' || s === 'blocked';
+// Statuses in which a task is actively being worked (the timer should run).
+const WORKING = (s) => s === 'in_progress';
+const STOPPED = (s) => s === 'completed' || s === 'cancelled' || s === 'hold' || s === 'blocked';
+
+// The task's current (unresolved) blockage, shaped for the client.
+function currentBlockage(taskId) {
+  const b = db.prepare('SELECT * FROM task_blockages WHERE task_id = ? AND resolved_at IS NULL ORDER BY id DESC LIMIT 1').get(taskId);
+  if (!b) return null;
+  return {
+    id: b.id, reason: b.reason, created_at: b.created_at,
+    blamed_user: b.blamed_user_id ? publicUser(getUser(b.blamed_user_id)) : null,
+    raised_by: b.created_by ? publicUser(getUser(b.created_by)) : null,
+  };
+}
+
+// Start/stop the acting user's timer to match a task's new status. Only an
+// assignee's clock runs (they do the work); a manager moving someone else's
+// card changes state without starting their own timer.
+function syncTimer(userId, task, newStatus) {
+  const isAssignee = assigneeIdsFor(task.id).includes(userId);
+  if (WORKING(newStatus) && isAssignee) startTimerForUserTask(userId, task.id, task.workspace_id);
+  else if (STOPPED(newStatus)) stopTimerForUserTask(userId, task.id);
+}
 
 const getUser = (id) => (id ? db.prepare('SELECT * FROM users WHERE id = ?').get(id) : null);
 // A user who exists AND belongs to the given workspace (for assignee validation).
@@ -87,6 +110,9 @@ function taskWithMeta(task) {
     blocked_by: blockedBy,
     blocks,
     is_blocked: isBlocked,
+    blockage: currentBlockage(task.id),
+    tracked_minutes: timeForTask(task.id).total_minutes,
+    active_timer: runningTimerForTask(task.id),
   };
 }
 
@@ -855,7 +881,11 @@ router.patch('/:id', (req, res) => {
   // custom workflow whose final column is flagged done — no per-board config.
   const stageChanged = stage_id !== undefined && stage_id !== task.stage_id;
   if (stageChanged && status === undefined) {
-    const st = db.prepare('SELECT t.status, s.is_done FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id WHERE t.id = ?').get(task.id);
+    const st = db.prepare('SELECT t.status, s.is_done, s.position FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id WHERE t.id = ?').get(task.id);
+    // The first column is the backlog ("To Do"); a done column finishes the task;
+    // any middle column means work is underway → In Progress (and starts the clock).
+    const firstPos = db.prepare('SELECT MIN(position) AS p FROM workflow_stages WHERE workflow_id = ?').get(task.workflow_id)?.p;
+    const isBacklog = st.position === firstPos;
     if (st.is_done && st.status !== 'completed') {
       db.prepare("UPDATE tasks SET status = 'completed', status_reason = '' WHERE id = ?").run(task.id);
       logActivity(task.id, req.user.id, 'marked it Completed');
@@ -864,6 +894,10 @@ router.patch('/:id', (req, res) => {
       db.prepare("UPDATE tasks SET status = 'in_progress' WHERE id = ?").run(task.id);
       logActivity(task.id, req.user.id, 'reopened it (In Progress)');
       notifyWatchers(req, task, 'reopened it (In Progress)', 'task_status');
+    } else if (!st.is_done && !isBacklog && st.status !== 'in_progress') {
+      // Dragged To Do → In Progress: start work (and, below, the timer).
+      db.prepare("UPDATE tasks SET status = 'in_progress' WHERE id = ?").run(task.id);
+      logActivity(task.id, req.user.id, 'started it (In Progress)');
     }
   }
 
@@ -918,6 +952,16 @@ router.patch('/:id', (req, res) => {
     const stale = db.prepare("SELECT DISTINCT rater_id FROM task_ratings WHERE task_id = ? AND status = 'pending'").all(task.id);
     db.prepare("DELETE FROM task_ratings WHERE task_id = ? AND status = 'pending'").run(task.id);
     for (const { rater_id } of stale) io?.to(`user:${rater_id}`).emit('rating:update'); // clear it live
+  }
+
+  // Start/stop the work timer to match wherever the task landed (status set
+  // directly, or derived from a stage drag above).
+  const finalStatus = db.prepare('SELECT status FROM tasks WHERE id = ?').get(task.id).status;
+  syncTimer(req.user.id, task, finalStatus);
+  // Leaving the blocked state (via the dropdown, a drag, or completion) clears
+  // the open blockage so status and blockage never disagree.
+  if (finalStatus !== 'blocked') {
+    db.prepare("UPDATE task_blockages SET resolved_at = datetime('now'), resolved_by = ? WHERE task_id = ? AND resolved_at IS NULL").run(req.user.id, task.id);
   }
 
   const updated = emitChanged(req, task.id);
@@ -1281,6 +1325,67 @@ router.get('/meta/tags', (req, res) => {
     SELECT DISTINCT tt.tag FROM task_tags tt JOIN tasks t ON t.id = tt.task_id
     WHERE t.workspace_id = ? ORDER BY tt.tag
   `).all(req.workspaceId).map((r) => r.tag) });
+});
+
+// --- Start / block / resume (work timer + blockage) --------------------------
+// The assignee (or the creator when unassigned) drives the work state.
+function canWork(req, task) {
+  const ids = assigneeIdsFor(task.id);
+  return ids.includes(req.user.id) || (ids.length === 0 && task.creator_id === req.user.id);
+}
+const resolveOpenBlockage = (taskId, userId) =>
+  db.prepare("UPDATE task_blockages SET resolved_at = datetime('now'), resolved_by = ? WHERE task_id = ? AND resolved_at IS NULL").run(userId, taskId);
+
+// Start working: In Progress + start this user's timer. Nudges a backlog card
+// into the first working column so the board reflects it.
+router.post('/:id/start', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  if (!canWork(req, task)) return res.status(403).json({ error: 'Only the assignee can start this task.' });
+  resolveOpenBlockage(task.id, req.user.id);
+  db.prepare("UPDATE tasks SET status = 'in_progress', status_reason = '' WHERE id = ?").run(task.id);
+  const stages = db.prepare('SELECT id, is_done FROM workflow_stages WHERE workflow_id = ? ORDER BY position, id').all(task.workflow_id);
+  const curIdx = stages.findIndex((s) => s.id === task.stage_id);
+  if (curIdx === 0) {
+    const target = stages.find((s, i) => i > 0 && !s.is_done);
+    if (target) db.prepare('UPDATE tasks SET stage_id = ? WHERE id = ?').run(target.id, task.id);
+  }
+  startTimerForUserTask(req.user.id, task.id, task.workspace_id);
+  logActivity(task.id, req.user.id, 'started the task');
+  res.json(emitChanged(req, task.id));
+});
+
+// Block: record a reason (+ optional person it's waiting on) and pause the timer.
+router.post('/:id/block', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  if (!canWork(req, task)) return res.status(403).json({ error: 'Only the assignee can block this task.' });
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) return res.status(400).json({ error: 'Describe what the task is blocked on.' });
+  let blamed = null;
+  if (req.body?.blamed_user_id) {
+    blamed = db.prepare('SELECT id FROM users WHERE id = ? AND workspace_id = ?').get(Number(req.body.blamed_user_id), req.workspaceId)?.id || null;
+  }
+  resolveOpenBlockage(task.id, req.user.id); // one active blockage at a time
+  db.prepare('INSERT INTO task_blockages (task_id, workspace_id, reason, blamed_user_id, created_by) VALUES (?, ?, ?, ?, ?)')
+    .run(task.id, req.workspaceId, reason, blamed, req.user.id);
+  db.prepare("UPDATE tasks SET status = 'blocked', status_reason = ? WHERE id = ?").run(reason, task.id);
+  stopTimerForUserTask(req.user.id, task.id);
+  logActivity(task.id, req.user.id, `blocked it: ${reason}`);
+  notifyWatchers(req, task, `blocked it: ${reason}`, 'task_status');
+  res.json(emitChanged(req, task.id));
+});
+
+// Resume: resolve the blockage and go back to In Progress (+ restart the timer).
+router.post('/:id/unblock', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  if (!canWork(req, task)) return res.status(403).json({ error: 'Only the assignee can resume this task.' });
+  resolveOpenBlockage(task.id, req.user.id);
+  db.prepare("UPDATE tasks SET status = 'in_progress', status_reason = '' WHERE id = ?").run(task.id);
+  startTimerForUserTask(req.user.id, task.id, task.workspace_id);
+  logActivity(task.id, req.user.id, 'resumed the task');
+  res.json(emitChanged(req, task.id));
 });
 
 export default router;

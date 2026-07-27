@@ -45,9 +45,12 @@ export default function StatusControl({ task, onUpdate, canEdit = true }) {
       <div className="status-row">
         <span className="status-badge" style={{ background: current.color }}>{current.label}</span>
         <select value={pending || task.status} onChange={(e) => choose(e.target.value)}>
-          {/* Cancelling goes through the assignor's approval (footer), so it's
-              not a free-form status pick. Keep it listed only if already set. */}
-          {TASK_STATUSES.filter((s) => s.value !== 'cancelled' || task.status === 'cancelled')
+          {/* Cancelling goes through the assignor's approval (footer), and
+              Blocked is driven by the "Blocked by" form (so it captures the
+              reason + person). Keep each listed only if already set. */}
+          {TASK_STATUSES
+            .filter((s) => (s.value !== 'cancelled' || task.status === 'cancelled'))
+            .filter((s) => (s.value !== 'blocked' || task.status === 'blocked'))
             .map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       </div>

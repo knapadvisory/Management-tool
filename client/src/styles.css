@@ -2731,6 +2731,26 @@ button.c360-stat:hover { border-color: var(--accent); }
 .deps-section { margin-top: 14px; }
 .dep-blocked-badge { font-size: 11px; font-weight: 700; color: #b91c1c; background: #fee2e2; padding: 2px 8px; border-radius: 999px; }
 .card-blocked-badge { font-size: 10px; font-weight: 700; color: #b91c1c; background: #fee2e2; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.card-timer-badge { font-size: 10px; font-weight: 700; color: #0369a1; background: #e0f2fe; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+
+/* Task work-timer + blockage (task modal) */
+.work-control { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; min-height: 30px; flex-wrap: wrap; }
+.timer-live { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; color: var(--ink, #14181b); }
+.timer-live strong { font-variant-numeric: tabular-nums; }
+.timer-dot { width: 9px; height: 9px; border-radius: 50%; background: #0ea5e9; box-shadow: 0 0 0 0 rgba(14,165,233,.6); animation: timerpulse 1.6s infinite; }
+@keyframes timerpulse { 0% { box-shadow: 0 0 0 0 rgba(14,165,233,.5); } 70% { box-shadow: 0 0 0 7px rgba(14,165,233,0); } 100% { box-shadow: 0 0 0 0 rgba(14,165,233,0); } }
+@media (prefers-reduced-motion: reduce) { .timer-dot { animation: none; } }
+.timer-total { font-size: 13px; }
+.blockage-section { margin: 14px 0; }
+.blockage-active { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; }
+.blockage-reason { font-weight: 600; color: #991b1b; }
+.blockage-who { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2, #4d5860); }
+.blockage-active .btn { align-self: flex-start; }
+.block-form { display: flex; flex-direction: column; gap: 8px; }
+.block-form textarea { width: 100%; resize: vertical; }
+.block-form-row { display: flex; gap: 8px; align-items: center; }
+.block-form-row select { flex: 1; min-width: 0; }
+.info-hint { cursor: help; color: var(--ink-3, #7a858c); font-size: 13px; margin-left: 2px; }
 .wl-flag { font-weight: 600; }
 .wl-flag.wl-overdue { color: #b91c1c; }
 .wl-flag.wl-blocked { color: #92400e; }
