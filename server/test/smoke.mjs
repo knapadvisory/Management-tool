@@ -204,6 +204,23 @@ async function main() {
   const badWf = await req('POST', '/api/workflows', { token: a, body: { name: 'X', stages: ['Only'] } });
   check('workflow needs 2+ stages', badWf.status === 400);
 
+  // Stage editing: rename, insert-in-between, reorder, done-toggle. Uses its own
+  // throwaway workflow so it doesn't disturb the one the task tests reuse.
+  const wfe = (await req('POST', '/api/workflows', { token: a, body: { name: 'Edit Me', stages: ['One', 'Two', 'Three'] } })).data;
+  const renamed = await req('PATCH', `/api/workflows/${wfe.id}/stages/${wfe.stages[0].id}`, { token: a, body: { name: 'Lead Intake' } });
+  check('a stage can be renamed', renamed.status === 200 && renamed.data.stages[0].name === 'Lead Intake');
+  const inserted = await req('POST', `/api/workflows/${wfe.id}/stages`, { token: a, body: { name: 'Docs', position: 1 } });
+  check('a stage inserts in between (not just at the end)', inserted.status === 201 && inserted.data.stages[1].name === 'Docs' && inserted.data.stages.length === 4);
+  const order = [...inserted.data.stages].reverse().map((s) => s.id);
+  const reordered = await req('PATCH', `/api/workflows/${wfe.id}/stages-order`, { token: a, body: { order } });
+  check('stages can be reordered', reordered.status === 200 && reordered.data.stages.map((s) => s.id).join(',') === order.join(','));
+  const badOrder = await req('PATCH', `/api/workflows/${wfe.id}/stages-order`, { token: a, body: { order: [order[0]] } });
+  check('a partial reorder is rejected', badOrder.status === 400);
+  const firstId = reordered.data.stages[0].id;
+  const doneToggled = await req('PATCH', `/api/workflows/${wfe.id}/stages/${firstId}`, { token: a, body: { is_done: true } });
+  check('a stage can be marked as the done column', doneToggled.status === 200 && doneToggled.data.stages.find((s) => s.id === firstId).is_done === 1);
+  await req('DELETE', `/api/workflows/${wfe.id}`, { token: a }); // tidy up
+
   console.log('Tasks');
   const task = await req('POST', '/api/tasks', {
     token: a,

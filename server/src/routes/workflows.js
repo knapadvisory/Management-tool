@@ -39,16 +39,56 @@ router.patch('/:id', (req, res) => {
   res.json(workflowWithStages(db.prepare('SELECT * FROM workflows WHERE id = ?').get(wf.id)));
 });
 
-// Add a stage before the terminal "done" stage by default.
+// Add a stage. Appends by default, or inserts at `position` (0-based index)
+// when given, shifting later stages down — so a column can go in between.
 router.post('/:id/stages', (req, res) => {
   const wf = db.prepare('SELECT * FROM workflows WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!wf) return res.status(404).json({ error: 'Workflow not found' });
-  const { name } = req.body;
+  const { name, position } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Stage name is required' });
-  const max = db.prepare('SELECT MAX(position) AS p FROM workflow_stages WHERE workflow_id = ?').get(wf.id).p ?? -1;
-  db.prepare('INSERT INTO workflow_stages (workflow_id, name, position, is_done) VALUES (?, ?, ?, 0)')
-    .run(wf.id, name.trim(), max + 1);
+  const stages = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position, id').all(wf.id);
+  db.transaction(() => {
+    let pos;
+    if (Number.isInteger(position) && position >= 0 && position < stages.length) {
+      pos = stages[position].position; // slot in at this index…
+      db.prepare('UPDATE workflow_stages SET position = position + 1 WHERE workflow_id = ? AND position >= ?').run(wf.id, pos);
+    } else {
+      pos = (stages.length ? stages[stages.length - 1].position : -1) + 1; // …or append at the end
+    }
+    db.prepare('INSERT INTO workflow_stages (workflow_id, name, position, is_done) VALUES (?, ?, ?, 0)').run(wf.id, name.trim(), pos);
+  })();
   res.status(201).json(workflowWithStages(wf));
+});
+
+// Rename a stage and/or set whether it's a "done" column (completes tasks).
+router.patch('/:id/stages/:stageId', (req, res) => {
+  if (!db.prepare('SELECT 1 FROM workflows WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)) {
+    return res.status(404).json({ error: 'Workflow not found' });
+  }
+  const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ? AND workflow_id = ?').get(req.params.stageId, req.params.id);
+  if (!stage) return res.status(404).json({ error: 'Stage not found' });
+  const { name, is_done } = req.body;
+  if (name !== undefined && !String(name).trim()) return res.status(400).json({ error: 'Stage name cannot be empty' });
+  db.prepare('UPDATE workflow_stages SET name = COALESCE(?, name), is_done = COALESCE(?, is_done) WHERE id = ?')
+    .run(name?.trim() || null, is_done === undefined ? null : (is_done ? 1 : 0), stage.id);
+  res.json(workflowWithStages(db.prepare('SELECT * FROM workflows WHERE id = ?').get(stage.workflow_id)));
+});
+
+// Reorder a workflow's stages — body { order: [stageId, …] } lists every stage
+// in its new left-to-right order.
+router.patch('/:id/stages-order', (req, res) => {
+  const wf = db.prepare('SELECT * FROM workflows WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
+  if (!wf) return res.status(404).json({ error: 'Workflow not found' });
+  const order = Array.isArray(req.body?.order) ? req.body.order.map(Number) : null;
+  if (!order) return res.status(400).json({ error: 'Provide the new stage order.' });
+  const ids = db.prepare('SELECT id FROM workflow_stages WHERE workflow_id = ?').all(wf.id).map((r) => r.id);
+  const sameSet = order.length === ids.length && ids.every((id) => order.includes(id));
+  if (!sameSet) return res.status(400).json({ error: 'The order must list exactly this workflow’s stages.' });
+  db.transaction(() => {
+    const upd = db.prepare('UPDATE workflow_stages SET position = ? WHERE id = ? AND workflow_id = ?');
+    order.forEach((id, i) => upd.run(i, id, wf.id));
+  })();
+  res.json(workflowWithStages(db.prepare('SELECT * FROM workflows WHERE id = ?').get(wf.id)));
 });
 
 router.delete('/:id/stages/:stageId', (req, res) => {
