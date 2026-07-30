@@ -153,30 +153,29 @@ export default function WorkflowsView() {
         {workflows.map((wf) => (
           <div key={wf.id} className="workflow-card">
             <div className="workflow-card-header">
-              <div>
-                <strong>{wf.name}</strong>
-                {wf.description && <span className="muted"> — {wf.description}</span>}
+              <div className="wf-title">
+                <span className="wf-name">{wf.name}</span>
+                {wf.description && <span className="wf-desc">{wf.description}</span>}
               </div>
-              <div>
-                <span className="muted">{wf.task_count} task{wf.task_count === 1 ? '' : 's'}</span>
-                <button className="icon-btn" title="Delete workflow" onClick={() => deleteWorkflow(wf)}>🗑</button>
+              <div className="wf-actions">
+                <span className="wf-count">{wf.task_count} task{wf.task_count === 1 ? '' : 's'}</span>
+                <span className="wf-count muted-count">{wf.stages.length} stage{wf.stages.length === 1 ? '' : 's'}</span>
+                <button className="icon-btn wf-del" title="Delete workflow" onClick={() => deleteWorkflow(wf)}>🗑</button>
               </div>
             </div>
 
             <div className="workflow-stages" onDragOver={(e) => e.preventDefault()}>
-              <InsertGap wf={wf} index={0} />
               {wf.stages.map((s, i) => (
                 <React.Fragment key={s.id}>
-                  {i > 0 && <span className="stage-arrow">→</span>}
-                  <span
-                    className={`stage-pill editable ${s.is_done ? 'done' : ''} ${drag.current?.wfId === wf.id && drag.current?.index === i ? 'dragging' : ''}`}
+                  <span className="stage-conn"><InsertGap wf={wf} index={i} /></span>
+                  <div
+                    className={`stage-step ${s.is_done ? 'done' : ''} ${drag.current?.wfId === wf.id && drag.current?.index === i ? 'dragging' : ''}`}
                     draggable={edit?.stageId !== s.id}
                     onDragStart={() => { drag.current = { wfId: wf.id, index: i }; }}
                     onDragEnd={() => { drag.current = null; }}
                     onDrop={(e) => { e.preventDefault(); onDrop(wf, i); }}
-                    title="Drag to reorder"
                   >
-                    <button className="stage-move" title="Move left" disabled={i === 0} onClick={() => moveStage(wf, i, i - 1)}>‹</button>
+                    <span className="stage-num" title="Drag to reorder">{String(i + 1).padStart(2, '0')}</span>
                     {edit?.stageId === s.id ? (
                       <input
                         className="stage-rename-input" autoFocus value={edit.value}
@@ -187,16 +186,20 @@ export default function WorkflowsView() {
                     ) : (
                       <span className="stage-name" title="Click to rename" onClick={() => setEdit({ stageId: s.id, value: s.name })}>{s.name}</span>
                     )}
-                    <button className={`stage-done-toggle ${s.is_done ? 'on' : ''}`} title={s.is_done ? 'Completes tasks (click to unset)' : 'Mark as the column that completes a task'} onClick={() => toggleDone(wf.id, s)}>✓</button>
-                    <button className="stage-move" title="Move right" disabled={i === wf.stages.length - 1} onClick={() => moveStage(wf, i, i + 1)}>›</button>
-                    <button className="stage-x" title="Delete stage" onClick={() => deleteStage(wf.id, s.id)}>✕</button>
-                  </span>
-                  <InsertGap wf={wf} index={i + 1} />
+                    {s.is_done && <span className="stage-flag" title="This column completes a task">🏁</span>}
+                    <span className="stage-tools">
+                      <button className="stage-move" title="Move left" disabled={i === 0} onClick={() => moveStage(wf, i, i - 1)}>‹</button>
+                      <button className={`stage-done-toggle ${s.is_done ? 'on' : ''}`} title={s.is_done ? 'Completes tasks (click to unset)' : 'Mark as the column that completes a task'} onClick={() => toggleDone(wf.id, s)}>✓</button>
+                      <button className="stage-move" title="Move right" disabled={i === wf.stages.length - 1} onClick={() => moveStage(wf, i, i + 1)}>›</button>
+                      <button className="stage-x" title="Delete stage" onClick={() => deleteStage(wf.id, s.id)}>✕</button>
+                    </span>
+                  </div>
                 </React.Fragment>
               ))}
+              <span className="stage-conn"><InsertGap wf={wf} index={wf.stages.length} /></span>
               <span className="add-stage">
                 <input
-                  placeholder="＋ add stage at end"
+                  placeholder="＋ add stage"
                   value={newStageFor[wf.id] || ''}
                   onChange={(e) => setNewStageFor((s) => ({ ...s, [wf.id]: e.target.value }))}
                   onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addStage(wf.id))}
