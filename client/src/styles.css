@@ -726,37 +726,67 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .stage-chip { display: inline-flex; align-items: center; gap: 4px; }
 .stage-chip input { width: 180px; padding: 10px 12px; font-size: 15px; border: 1px solid var(--border); border-radius: 8px; }
 .stage-chip button { background: none; border: none; color: var(--muted); font-size: 15px; }
-.workflow-list { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
-.workflow-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
-.workflow-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.workflow-stages { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.stage-pill {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: var(--accent-soft); color: var(--accent-hover); padding: 4px 10px; border-radius: 14px; font-size: 13px; font-weight: 600;
+.workflow-list { display: flex; flex-direction: column; gap: 16px; margin-top: 18px; }
+.workflow-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px;
+  box-shadow: 0 1px 2px rgba(16,24,40,.04); transition: border-color .15s, box-shadow .15s;
 }
-.stage-pill.done { background: var(--success-soft); color: var(--success); }
-.stage-x { background: none; border: none; color: inherit; opacity: .5; font-size: 11px; cursor: pointer; padding: 0 1px; }
-.stage-x:hover { opacity: 1; }
-.stage-arrow { color: var(--muted); }
-.add-stage input { width: 130px; padding: 4px 8px; border: 1px dashed var(--border); border-radius: 14px; font-size: 13px; }
+.workflow-card:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); box-shadow: 0 6px 20px rgba(16,24,40,.07); }
+.workflow-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
+.wf-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wf-name { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+.wf-desc { font-size: 13px; color: var(--muted); }
+.wf-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.wf-count { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  padding: 3px 10px; border-radius: 20px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.wf-count.muted-count { background: var(--surface-2); color: var(--muted); }
+.wf-del { opacity: .4; transition: opacity .12s; } .wf-del:hover { opacity: 1; }
 
-/* Editable workflow stages (rename / reorder / insert / done-toggle) */
-.stage-pill.editable { cursor: grab; padding: 3px 6px 3px 4px; }
-.stage-pill.editable:active { cursor: grabbing; }
-.stage-pill.dragging { opacity: .4; }
-.stage-name { cursor: text; padding: 0 3px; border-radius: 4px; }
-.stage-name:hover { background: rgba(0,0,0,.06); }
-.stage-rename-input { width: 130px; font: inherit; font-weight: 600; padding: 1px 5px; border: 1px solid var(--accent); border-radius: 6px; background: var(--card, #fff); color: var(--text, inherit); }
-.stage-move { background: none; border: none; color: inherit; opacity: .45; font-size: 15px; line-height: 1; cursor: pointer; padding: 0 1px; }
-.stage-move:hover:not(:disabled) { opacity: 1; }
-.stage-move:disabled { opacity: .15; cursor: default; }
-.stage-done-toggle { background: none; border: 1px solid transparent; color: inherit; opacity: .35; font-size: 11px; cursor: pointer; border-radius: 50%; width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center; }
-.stage-done-toggle:hover { opacity: .8; }
-.stage-done-toggle.on { opacity: 1; background: var(--success, #16a34a); color: #fff; border-color: var(--success, #16a34a); }
-.stage-insert { background: none; border: none; color: var(--muted); opacity: 0; font-size: 14px; line-height: 1; cursor: pointer; padding: 0 2px; transition: opacity .12s; }
-.workflow-stages:hover .stage-insert { opacity: .5; }
-.stage-insert:hover { opacity: 1 !important; color: var(--accent); }
-.stage-insert-input { width: 120px; font: inherit; padding: 3px 8px; border: 1px solid var(--accent); border-radius: 14px; background: var(--card, #fff); color: var(--text, inherit); }
+/* Stage pipeline — a designed stepper */
+.workflow-stages { display: flex; align-items: stretch; flex-wrap: wrap; gap: 4px 0; row-gap: 8px; }
+.stage-step {
+  display: inline-flex; align-items: center; gap: 8px; position: relative;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 9px 11px;
+  font-size: 13.5px; font-weight: 600; color: var(--text); cursor: grab; transition: border-color .13s, box-shadow .13s, transform .13s;
+}
+.stage-step:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 3px 10px rgba(16,24,40,.08); }
+.stage-step:active { cursor: grabbing; }
+.stage-step.dragging { opacity: .35; }
+.stage-step.done { background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 45%, var(--border)); }
+.stage-num {
+  font-family: var(--mono, ui-monospace, monospace); font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 3px 5px; line-height: 1; cursor: grab;
+}
+.stage-step.done .stage-num { color: var(--success); background: color-mix(in srgb, var(--success) 16%, transparent); }
+.stage-name { cursor: text; padding: 1px 3px; border-radius: 5px; }
+.stage-name:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.stage-flag { font-size: 12px; }
+.stage-rename-input { width: 150px; font: inherit; font-weight: 600; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 7px; background: var(--surface); color: var(--text); }
+/* controls hidden until you hover the step, so the default view stays clean */
+.stage-tools { display: inline-flex; align-items: center; gap: 2px; max-width: 0; overflow: hidden; opacity: 0; transition: max-width .18s ease, opacity .15s; }
+.stage-step:hover .stage-tools, .stage-step:focus-within .stage-tools { max-width: 120px; opacity: 1; }
+.stage-move { background: none; border: none; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 1px; }
+.stage-move:hover:not(:disabled) { color: var(--text); }
+.stage-move:disabled { opacity: .25; cursor: default; }
+.stage-done-toggle { background: none; border: 1px solid var(--border); color: var(--muted); font-size: 10px; cursor: pointer; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; }
+.stage-done-toggle:hover { color: var(--text); border-color: var(--muted); }
+.stage-done-toggle.on { background: var(--success); color: #fff; border-color: var(--success); }
+.stage-x { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 0 2px; }
+.stage-x:hover { color: var(--danger, #dc2626); }
+/* connector between steps, carrying the insert-＋ */
+.stage-conn { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; position: relative; }
+.stage-conn::before { content: ""; height: 2px; width: 100%; background: var(--border); border-radius: 2px; }
+.stage-insert {
+  position: absolute; background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+  width: 18px; height: 18px; border-radius: 50%; font-size: 13px; line-height: 1; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .12s, transform .12s;
+}
+.workflow-stages:hover .stage-insert { opacity: .65; }
+.stage-insert:hover { opacity: 1 !important; color: #fff; background: var(--accent); border-color: var(--accent); transform: scale(1.12); }
+.stage-insert-input { width: 120px; font: inherit; padding: 4px 9px; border: 1px solid var(--accent); border-radius: 16px; background: var(--surface); color: var(--text); }
+.add-stage { display: inline-flex; align-items: center; margin-left: 6px; }
+.add-stage input { width: 130px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 11px; font-size: 13px; background: transparent; color: var(--text); transition: border-color .13s; }
+.add-stage input:focus { border-style: solid; border-color: var(--accent); outline: none; }
 
 /* ---------- Rich messages ---------- */
 .chat-layout { display: flex; height: 100%; min-width: 0; min-height: 0; }
