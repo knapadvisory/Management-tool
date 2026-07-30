@@ -735,10 +735,28 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   background: var(--accent-soft); color: var(--accent-hover); padding: 4px 10px; border-radius: 14px; font-size: 13px; font-weight: 600;
 }
 .stage-pill.done { background: var(--success-soft); color: var(--success); }
-.stage-x { background: none; border: none; color: inherit; opacity: .5; font-size: 11px; }
+.stage-x { background: none; border: none; color: inherit; opacity: .5; font-size: 11px; cursor: pointer; padding: 0 1px; }
 .stage-x:hover { opacity: 1; }
 .stage-arrow { color: var(--muted); }
-.add-stage input { width: 110px; padding: 4px 8px; border: 1px dashed var(--border); border-radius: 14px; font-size: 13px; }
+.add-stage input { width: 130px; padding: 4px 8px; border: 1px dashed var(--border); border-radius: 14px; font-size: 13px; }
+
+/* Editable workflow stages (rename / reorder / insert / done-toggle) */
+.stage-pill.editable { cursor: grab; padding: 3px 6px 3px 4px; }
+.stage-pill.editable:active { cursor: grabbing; }
+.stage-pill.dragging { opacity: .4; }
+.stage-name { cursor: text; padding: 0 3px; border-radius: 4px; }
+.stage-name:hover { background: rgba(0,0,0,.06); }
+.stage-rename-input { width: 130px; font: inherit; font-weight: 600; padding: 1px 5px; border: 1px solid var(--accent); border-radius: 6px; background: var(--card, #fff); color: var(--text, inherit); }
+.stage-move { background: none; border: none; color: inherit; opacity: .45; font-size: 15px; line-height: 1; cursor: pointer; padding: 0 1px; }
+.stage-move:hover:not(:disabled) { opacity: 1; }
+.stage-move:disabled { opacity: .15; cursor: default; }
+.stage-done-toggle { background: none; border: 1px solid transparent; color: inherit; opacity: .35; font-size: 11px; cursor: pointer; border-radius: 50%; width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center; }
+.stage-done-toggle:hover { opacity: .8; }
+.stage-done-toggle.on { opacity: 1; background: var(--success, #16a34a); color: #fff; border-color: var(--success, #16a34a); }
+.stage-insert { background: none; border: none; color: var(--muted); opacity: 0; font-size: 14px; line-height: 1; cursor: pointer; padding: 0 2px; transition: opacity .12s; }
+.workflow-stages:hover .stage-insert { opacity: .5; }
+.stage-insert:hover { opacity: 1 !important; color: var(--accent); }
+.stage-insert-input { width: 120px; font: inherit; padding: 3px 8px; border: 1px solid var(--accent); border-radius: 14px; background: var(--card, #fff); color: var(--text, inherit); }
 
 /* ---------- Rich messages ---------- */
 .chat-layout { display: flex; height: 100%; min-width: 0; min-height: 0; }
