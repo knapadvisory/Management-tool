@@ -5,8 +5,12 @@ const router = Router();
 
 function workflowWithStages(wf) {
   const stages = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position').all(wf.id);
+  // How many (active) tasks sit in each stage — powers the distribution bars.
+  const perStage = db.prepare('SELECT stage_id, COUNT(*) AS n FROM tasks WHERE workflow_id = ? AND archived_at IS NULL GROUP BY stage_id').all(wf.id);
+  const counts = Object.fromEntries(perStage.map((r) => [r.stage_id, r.n]));
+  const withCounts = stages.map((s) => ({ ...s, task_count: counts[s.id] || 0 }));
   const taskCount = db.prepare('SELECT COUNT(*) AS n FROM tasks WHERE workflow_id = ?').get(wf.id).n;
-  return { ...wf, stages, task_count: taskCount };
+  return { ...wf, stages: withCounts, task_count: taskCount };
 }
 
 router.get('/', (req, res) => {
