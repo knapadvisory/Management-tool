@@ -109,4 +109,60 @@ router.get('/summary', requireAdmin, async (req, res) => {
   }
 });
 
+// --- Attendance clock sync (TeamHub ⇆ HRMS) --------------------------------
+
+const nowSql = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
+const today = () => new Date().toISOString().slice(0, 10);
+const runningMinutes = (startedAt) => {
+  if (!startedAt) return 0;
+  const start = new Date(startedAt.replace(' ', 'T') + 'Z').getTime();
+  return Math.max(0, Math.floor((Date.now() - start) / 60000));
+};
+
+// Mirror a clock-in/out onto HRMS attendance. Fire-and-forget: no-op when HR
+// isn't wired up, never throws into the caller. `action` is 'in' or 'out'.
+export async function pushClock(userId, workspaceId, action) {
+  if (!API_TOKEN) return false;
+  try {
+    const ws = db.prepare('SELECT slug FROM workspaces WHERE id = ?').get(workspaceId)?.slug || String(workspaceId);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const r = await fetch(`${HR_INTERNAL_URL}/api/attendance/clock`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${API_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ ws, teamhub_user_id: userId, action, at: new Date().toISOString(), source: 'teamhub' }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Receive a clock mirrored from HRMS (employee clocked in/out on the HR portal):
+// start or stop that user's TeamHub work-timer. Server-to-server, shared-token
+// auth — NOT a user session. Terminal: it never pushes back to HR, so no loop.
+export function receiveClock(req, res) {
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!API_TOKEN || token !== API_TOKEN) return res.status(401).json({ error: 'Unauthorised' });
+
+  const userId = Number(req.body?.teamhub_user_id);
+  const action = req.body?.action === 'out' ? 'out' : 'in';
+  const user = userId ? db.prepare('SELECT id, workspace_id FROM users WHERE id = ?').get(userId) : null;
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const running = db.prepare('SELECT * FROM time_entries WHERE user_id = ? AND is_running = 1 ORDER BY id DESC LIMIT 1').get(user.id);
+  if (action === 'in') {
+    if (!running) {
+      db.prepare(`INSERT INTO time_entries (user_id, entry_date, minutes, started_at, is_running, billable, workspace_id, description)
+                  VALUES (?, ?, 0, ?, 1, 1, ?, 'Clocked in via HRMS')`)
+        .run(user.id, today(), nowSql(), user.workspace_id);
+    }
+  } else if (running) {
+    db.prepare('UPDATE time_entries SET is_running = 0, ended_at = ?, minutes = ? WHERE id = ?')
+      .run(nowSql(), runningMinutes(running.started_at), running.id);
+  }
+  return res.json({ ok: true });
+}
+
 export default router;

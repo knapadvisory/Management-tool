@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { publicUser } from '../auth.js';
+import { pushClock } from './hr.js';
 
 const router = Router();
 
@@ -62,6 +63,8 @@ router.post('/start', (req, res) => {
     VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?, ?)
   `).run(req.user.id, taskId, resolveClient(req.body, taskId, req.workspaceId), String(req.body.description || '').trim(),
     today(), nowSql(), req.body.billable === false ? 0 : 1, req.workspaceId);
+  // Mirror the clock-in onto HRMS attendance (fire-and-forget; no-op if HR is off).
+  pushClock(req.user.id, req.workspaceId, 'in');
   res.status(201).json({ running: entryWithMeta(db.prepare('SELECT * FROM time_entries WHERE id = ?').get(info.lastInsertRowid)) });
 });
 
@@ -74,7 +77,10 @@ function stopEntry(e) {
 router.post('/stop', (req, res) => {
   const running = runningFor(req.user.id);
   if (!running) return res.status(400).json({ error: 'No timer is running' });
-  res.json({ entry: entryWithMeta(stopEntry(running)) });
+  const entry = stopEntry(running);
+  // Mirror the clock-out onto HRMS attendance (fire-and-forget; no-op if HR is off).
+  pushClock(req.user.id, req.workspaceId, 'out');
+  res.json({ entry: entryWithMeta(entry) });
 });
 
 // --- Manual entries + CRUD -------------------------------------------------
