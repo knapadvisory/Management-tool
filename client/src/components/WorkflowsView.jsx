@@ -1,6 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 
+// A stage's dot/bar colour: the completing column is green; the rest cycle a
+// small palette by position so a long pipeline reads at a glance.
+const DOTS = ['#9C978C', '#3E6FBF', '#C4841D', '#7C5CBF', '#C15B4A', '#2F6B74', '#B08900'];
+const stageColor = (s, i) => (s.is_done ? '#2F8F5B' : DOTS[i % DOTS.length]);
+
+const Grip = () => (
+  <svg className="wf-grip" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <circle cx="5" cy="4" r="1.3" /><circle cx="11" cy="4" r="1.3" /><circle cx="5" cy="8" r="1.3" />
+    <circle cx="11" cy="8" r="1.3" /><circle cx="5" cy="12" r="1.3" /><circle cx="11" cy="12" r="1.3" />
+  </svg>
+);
+const XIcon = () => (<svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>);
+const Trash = () => (<svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4h4v2M6 6l1 11h6l1-11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+const Circle = () => (<svg width="15" height="15" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" /></svg>);
+
 export default function WorkflowsView() {
   const [workflows, setWorkflows] = useState([]);
   const [creating, setCreating] = useState(false);
@@ -8,16 +23,30 @@ export default function WorkflowsView() {
   const [description, setDescription] = useState('');
   const [stages, setStages] = useState(['To Do', 'In Progress', 'Done']);
   const [error, setError] = useState(null);
-  const [newStageFor, setNewStageFor] = useState({});
-  const [edit, setEdit] = useState(null);       // { stageId, value } — inline rename
-  const [insert, setInsert] = useState(null);    // { wfId, index, value } — insert between
-  const drag = useRef(null);                      // { wfId, index } — drag source
+  const [focusStage, setFocusStage] = useState(null); // stage id to focus after adding
+  const [draggingId, setDraggingId] = useState(null);
+  const drag = useRef(null);       // { wfId, index }
+  const wfRef = useRef([]);        // latest workflows, for drag-end persistence
+  const nameRefs = useRef({});     // stageId -> contentEditable el
+  wfRef.current = workflows;
 
   async function load() {
     const d = await api('/workflows');
     setWorkflows(d.workflows);
   }
   useEffect(() => { load(); }, []);
+
+  // Focus + select a freshly-added stage's name for immediate rename.
+  useEffect(() => {
+    if (!focusStage) return;
+    const el = nameRefs.current[focusStage];
+    if (el) {
+      el.focus();
+      const r = document.createRange(); r.selectNodeContents(el);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      setFocusStage(null);
+    }
+  }, [focusStage, workflows]);
 
   async function createWorkflow(e) {
     e.preventDefault();
@@ -29,63 +58,26 @@ export default function WorkflowsView() {
     } catch (err) { setError(err.message); }
   }
 
-  async function addStage(wfId) {
-    const stageName = (newStageFor[wfId] || '').trim();
-    if (!stageName) return;
+  async function addStage(wf) {
+    const before = new Set(wf.stages.map((s) => s.id));
     try {
-      await api(`/workflows/${wfId}/stages`, { method: 'POST', body: { name: stageName } });
-      setNewStageFor((s) => ({ ...s, [wfId]: '' }));
-      load();
+      const r = await api(`/workflows/${wf.id}/stages`, { method: 'POST', body: { name: 'New stage' } });
+      const created = r.stages.find((s) => !before.has(s.id));
+      setWorkflows((ws) => ws.map((w) => (w.id === wf.id ? r : w)));
+      if (created) setFocusStage(created.id);
     } catch (err) { alert(err.message); }
   }
 
-  async function insertStage(wfId, index) {
-    const stageName = (insert?.value || '').trim();
-    if (!stageName) { setInsert(null); return; }
-    try {
-      await api(`/workflows/${wfId}/stages`, { method: 'POST', body: { name: stageName, position: index } });
-      setInsert(null);
-      load();
-    } catch (err) { alert(err.message); }
-  }
-
-  async function renameStage(wfId, stage) {
-    const nm = (edit?.value || '').trim();
-    setEdit(null);
-    if (!nm || nm === stage.name) return;
+  async function renameStage(wfId, stage, text) {
+    const nm = (text || '').trim();
+    if (!nm || nm === stage.name) { load(); return; } // revert empties/no-ops
     try { await api(`/workflows/${wfId}/stages/${stage.id}`, { method: 'PATCH', body: { name: nm } }); load(); }
-    catch (err) { alert(err.message); }
+    catch (err) { alert(err.message); load(); }
   }
 
   async function toggleDone(wfId, stage) {
     try { await api(`/workflows/${wfId}/stages/${stage.id}`, { method: 'PATCH', body: { is_done: !stage.is_done } }); load(); }
     catch (err) { alert(err.message); }
-  }
-
-  async function reorder(wf, ids) {
-    // Optimistic: re-render the new order immediately, then persist.
-    setWorkflows((ws) => ws.map((w) => (w.id === wf.id ? { ...w, stages: ids.map((id) => w.stages.find((s) => s.id === id)) } : w)));
-    try { await api(`/workflows/${wf.id}/stages-order`, { method: 'PATCH', body: { order: ids } }); load(); }
-    catch (err) { alert(err.message); load(); }
-  }
-
-  function moveStage(wf, from, to) {
-    if (to < 0 || to >= wf.stages.length || from === to) return;
-    const ids = wf.stages.map((s) => s.id);
-    const [m] = ids.splice(from, 1);
-    ids.splice(to, 0, m);
-    reorder(wf, ids);
-  }
-
-  function onDrop(wf, to) {
-    const d = drag.current;
-    drag.current = null;
-    if (!d || d.wfId !== wf.id) return;
-    if (d.index === to) return;
-    const ids = wf.stages.map((s) => s.id);
-    const [m] = ids.splice(d.index, 1);
-    ids.splice(to > d.index ? to - 1 : to, 0, m); // drop-before-target semantics
-    reorder(wf, ids);
   }
 
   async function deleteStage(wfId, stageId) {
@@ -99,20 +91,28 @@ export default function WorkflowsView() {
     catch (err) { alert(err.message); }
   }
 
-  // A small "+" between stages to insert a column there.
-  const InsertGap = ({ wf, index }) => (
-    insert && insert.wfId === wf.id && insert.index === index ? (
-      <input
-        className="stage-insert-input" autoFocus placeholder="New stage…"
-        value={insert.value}
-        onChange={(e) => setInsert((s) => ({ ...s, value: e.target.value }))}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); insertStage(wf.id, index); } if (e.key === 'Escape') setInsert(null); }}
-        onBlur={() => insertStage(wf.id, index)}
-      />
-    ) : (
-      <button className="stage-insert" title="Insert a stage here" onClick={() => setInsert({ wfId: wf.id, index, value: '' })}>＋</button>
-    )
-  );
+  // --- Drag to reorder (live preview, persisted on drop) ---
+  function onDragStart(wf, i, stageId) { drag.current = { wfId: wf.id, index: i }; setDraggingId(stageId); }
+  function onDragOverRow(wf, i) {
+    const d = drag.current;
+    if (!d || d.wfId !== wf.id || d.index === i) return;
+    setWorkflows((ws) => ws.map((w) => {
+      if (w.id !== wf.id) return w;
+      const arr = [...w.stages];
+      const [m] = arr.splice(d.index, 1);
+      arr.splice(i, 0, m);
+      return { ...w, stages: arr };
+    }));
+    drag.current = { wfId: wf.id, index: i };
+  }
+  async function onDragEnd(wf) {
+    const d = drag.current; drag.current = null; setDraggingId(null);
+    if (!d) return;
+    const current = wfRef.current.find((w) => w.id === wf.id);
+    if (!current) return;
+    try { await api(`/workflows/${wf.id}/stages-order`, { method: 'PATCH', body: { order: current.stages.map((s) => s.id) } }); load(); }
+    catch { load(); }
+  }
 
   return (
     <div className="workflows-page">
@@ -121,8 +121,7 @@ export default function WorkflowsView() {
         <button className="btn btn-primary" onClick={() => setCreating((c) => !c)}>＋ New workflow</button>
       </header>
       <p className="muted">
-        A workflow defines the stages a task moves through. Each workflow gets its own board under Tasks.
-        Rename a stage by clicking it, drag to reorder, use ＋ between stages to insert, and ✓ marks the column that completes a task.
+        A workflow is the ordered set of stages a task moves through. Drag a stage to reorder it, click a name to rename it, and mark the stage that completes a task.
       </p>
 
       {creating && (
@@ -134,9 +133,7 @@ export default function WorkflowsView() {
             {stages.map((s, i) => (
               <span key={i} className="stage-chip">
                 <input value={s} onChange={(e) => setStages((st) => st.map((x, j) => (j === i ? e.target.value : x)))} />
-                {stages.length > 2 && (
-                  <button type="button" onClick={() => setStages((st) => st.filter((_, j) => j !== i))}>✕</button>
-                )}
+                {stages.length > 2 && (<button type="button" onClick={() => setStages((st) => st.filter((_, j) => j !== i))}>✕</button>)}
               </span>
             ))}
             <button type="button" className="btn" onClick={() => setStages((st) => [...st, ''])}>＋ Stage</button>
@@ -150,64 +147,68 @@ export default function WorkflowsView() {
       )}
 
       <div className="workflow-list">
-        {workflows.map((wf) => (
-          <div key={wf.id} className="workflow-card">
-            <div className="workflow-card-header">
-              <div className="wf-title">
-                <span className="wf-name">{wf.name}</span>
-                {wf.description && <span className="wf-desc">{wf.description}</span>}
+        {workflows.map((wf) => {
+          const total = wf.stages.reduce((n, s) => n + (s.task_count || 0), 0);
+          return (
+            <div key={wf.id} className="workflow-card">
+              <div className="wf-head">
+                <div className="wf-title-block">
+                  <span className="wf-title">{wf.name}</span>
+                  {wf.description && <span className="wf-desc">{wf.description}</span>}
+                </div>
+                <div className="wf-meta">
+                  <span className="wf-count"><b>{wf.task_count}</b> task{wf.task_count === 1 ? '' : 's'}</span>
+                  <button className="wf-icon-btn danger" title="Delete workflow" onClick={() => deleteWorkflow(wf)}><Trash /></button>
+                </div>
               </div>
-              <div className="wf-actions">
-                <span className="wf-count">{wf.task_count} task{wf.task_count === 1 ? '' : 's'}</span>
-                <span className="wf-count muted-count">{wf.stages.length} stage{wf.stages.length === 1 ? '' : 's'}</span>
-                <button className="icon-btn wf-del" title="Delete workflow" onClick={() => deleteWorkflow(wf)}>🗑</button>
-              </div>
-            </div>
 
-            <div className="workflow-stages" onDragOver={(e) => e.preventDefault()}>
-              {wf.stages.map((s, i) => (
-                <React.Fragment key={s.id}>
-                  <span className="stage-conn"><InsertGap wf={wf} index={i} /></span>
-                  <div
-                    className={`stage-step ${s.is_done ? 'done' : ''} ${drag.current?.wfId === wf.id && drag.current?.index === i ? 'dragging' : ''}`}
-                    draggable={edit?.stageId !== s.id}
-                    onDragStart={() => { drag.current = { wfId: wf.id, index: i }; }}
-                    onDragEnd={() => { drag.current = null; }}
-                    onDrop={(e) => { e.preventDefault(); onDrop(wf, i); }}
-                  >
-                    <span className="stage-num" title="Drag to reorder">{String(i + 1).padStart(2, '0')}</span>
-                    {edit?.stageId === s.id ? (
-                      <input
-                        className="stage-rename-input" autoFocus value={edit.value}
-                        onChange={(e) => setEdit((x) => ({ ...x, value: e.target.value }))}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); renameStage(wf.id, s); } if (e.key === 'Escape') setEdit(null); }}
-                        onBlur={() => renameStage(wf.id, s)}
-                      />
-                    ) : (
-                      <span className="stage-name" title="Click to rename" onClick={() => setEdit({ stageId: s.id, value: s.name })}>{s.name}</span>
-                    )}
-                    {s.is_done && <span className="stage-flag" title="This column completes a task">🏁</span>}
-                    <span className="stage-tools">
-                      <button className="stage-move" title="Move left" disabled={i === 0} onClick={() => moveStage(wf, i, i - 1)}>‹</button>
-                      <button className={`stage-done-toggle ${s.is_done ? 'on' : ''}`} title={s.is_done ? 'Completes tasks (click to unset)' : 'Mark as the column that completes a task'} onClick={() => toggleDone(wf.id, s)}>✓</button>
-                      <button className="stage-move" title="Move right" disabled={i === wf.stages.length - 1} onClick={() => moveStage(wf, i, i + 1)}>›</button>
-                      <button className="stage-x" title="Delete stage" onClick={() => deleteStage(wf.id, s.id)}>✕</button>
-                    </span>
-                  </div>
-                </React.Fragment>
-              ))}
-              <span className="stage-conn"><InsertGap wf={wf} index={wf.stages.length} /></span>
-              <span className="add-stage">
-                <input
-                  placeholder="＋ add stage"
-                  value={newStageFor[wf.id] || ''}
-                  onChange={(e) => setNewStageFor((s) => ({ ...s, [wf.id]: e.target.value }))}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addStage(wf.id))}
-                />
-              </span>
+              <div className="stage-list">
+                {wf.stages.map((s, i) => {
+                  const color = stageColor(s, i);
+                  const pct = total ? Math.round(((s.task_count || 0) / total) * 100) : 0;
+                  return (
+                    <div
+                      key={s.id}
+                      className={`wf-stage-row ${draggingId === s.id ? 'dragging' : ''}`}
+                      onDragOver={(e) => { e.preventDefault(); onDragOverRow(wf, i); }}
+                    >
+                      <span
+                        className="wf-grip-wrap" draggable
+                        onDragStart={() => onDragStart(wf, i, s.id)}
+                        onDragEnd={() => onDragEnd(wf)}
+                        title="Drag to reorder"
+                      ><Grip /></span>
+                      <span className="wf-dot" style={{ background: color }} />
+                      <span
+                        className="wf-stage-name" contentEditable suppressContentEditableWarning spellCheck={false}
+                        ref={(el) => { nameRefs.current[s.id] = el; }}
+                        onBlur={(e) => renameStage(wf.id, s, e.currentTarget.textContent)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
+                          if (e.key === 'Escape') { e.currentTarget.textContent = s.name; e.currentTarget.blur(); }
+                        }}
+                      >{s.name}</span>
+                      <div className="wf-bar-wrap">
+                        <div className="wf-bar-track"><div className="wf-bar-fill" style={{ width: `${pct}%`, background: color }} /></div>
+                        <span className="wf-stage-count">{s.task_count || 0}</span>
+                      </div>
+                      <div className="wf-row-actions" style={s.is_done ? { opacity: 1 } : undefined}>
+                        {s.is_done ? (
+                          <button className="wf-complete-badge" title="This stage completes a task (click to unset)" onClick={() => toggleDone(wf.id, s)}>COMPLETES TASK</button>
+                        ) : (
+                          <button className="wf-complete-toggle" title="Mark as the stage that completes a task" onClick={() => toggleDone(wf.id, s)}><Circle /></button>
+                        )}
+                        <button className="wf-icon-btn" title="Delete stage" onClick={() => deleteStage(wf.id, s.id)}><XIcon /></button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {wf.stages.length === 0 && <div className="wf-empty-note">No stages yet — add the first below.</div>}
+              </div>
+              <button className="wf-add-stage" onClick={() => addStage(wf)}>＋ Add stage</button>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
