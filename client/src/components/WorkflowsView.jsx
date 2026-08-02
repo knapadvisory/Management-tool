@@ -213,18 +213,20 @@ export default function WorkflowsView({ onOpenTask }) {
                         <div className="wf-bar-track"><div className="wf-bar-fill" style={{ width: `${pct}%`, background: color }} /></div>
                         <span className="wf-stage-count">{s.task_count || 0}</span>
                       </div>
-                      <button
-                        className={`wf-view-tasks wf-tip ${openStage === s.id ? 'open' : ''}`}
-                        data-tip={`View the ${s.task_count || 0} task${(s.task_count || 0) === 1 ? '' : 's'} in “${s.name}”`}
-                        onClick={() => toggleTasks(wf, s)}
-                      ><ListIcon /> Tasks</button>
-                      <div className="wf-row-actions" style={s.is_done ? { opacity: 1 } : undefined}>
-                        {s.is_done ? (
-                          <button className="wf-complete-badge wf-tip" data-tip="This stage completes a task — click to unset" onClick={() => toggleDone(wf.id, s)}>COMPLETES TASK</button>
-                        ) : (
-                          <button className="wf-complete-toggle wf-tip" data-tip="Mark as the stage that completes a task" onClick={() => toggleDone(wf.id, s)}><Circle /></button>
-                        )}
-                        <button className="wf-icon-btn wf-tip" data-tip="Delete stage" onClick={() => deleteStage(wf.id, s.id)}><XIcon /></button>
+                      <div className="wf-right">
+                        <span className="wf-complete-slot">
+                          {s.is_done ? (
+                            <button className="wf-complete-badge wf-tip" data-tip="This stage completes a task — click to unset" onClick={() => toggleDone(wf.id, s)}>COMPLETES TASK</button>
+                          ) : (
+                            <button className="wf-complete-toggle wf-tip" data-tip="Mark as the stage that completes a task" onClick={() => toggleDone(wf.id, s)}><Circle /></button>
+                          )}
+                        </span>
+                        <button
+                          className={`wf-view-tasks wf-tip ${openStage === s.id ? 'open' : ''}`}
+                          data-tip={`View the ${s.task_count || 0} task${(s.task_count || 0) === 1 ? '' : 's'} in “${s.name}”`}
+                          onClick={() => toggleTasks(wf, s)}
+                        ><ListIcon /> Tasks</button>
+                        <button className="wf-icon-btn wf-del wf-tip" data-tip="Delete stage" onClick={() => deleteStage(wf.id, s.id)}><XIcon /></button>
                       </div>
                     </div>
                     {openStage === s.id && (
