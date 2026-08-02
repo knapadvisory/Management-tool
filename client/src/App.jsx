@@ -584,7 +584,7 @@ export default function App() {
         )}
         {view?.type === 'timesheet' && <TimesheetView user={user} />}
         {view?.type === 'analytics' && user.role !== 'guest' && <AnalyticsView user={user} users={users} />}
-        {view?.type === 'workflows' && <WorkflowsView />}
+        {view?.type === 'workflows' && <WorkflowsView user={user} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />}
         {view?.type === 'tools' && user.role !== 'guest' && <KnapTools />}
         {view?.type === 'admin' && user.role === 'admin' && (
           <AdminPanel user={user} />
