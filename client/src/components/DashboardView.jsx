@@ -199,16 +199,15 @@ export default function DashboardView({ user, users = [], hrEnabled = false, onO
               <div className="dash-block-head"><h2>{t('dash.taskboard')}</h2><button className="dash-link" onClick={onOpenTasks}>Open board →</button></div>
               <div className="board-summary">
                 {data.board.map((col) => (
-                  <button key={col.stage} className="board-col" onClick={() => openList(col.stage, (t) => t.stage?.name === col.stage && OPEN(t))}>
+                  <button key={col.key} className={`board-col cat-${col.key}`} onClick={() => openList(col.label, (t) => t.stage?.category === col.key && OPEN(t))}>
                     <div className="board-col-count">{col.count}</div>
-                    <div className="board-col-name muted">{col.stage}</div>
+                    <div className="board-col-name muted">{col.label}</div>
                   </button>
                 ))}
                 <button className="board-col done" onClick={() => openList('Completed', (t) => t.status === 'completed')}>
                   <div className="board-col-count">{data.done_count}</div>
                   <div className="board-col-name muted">Completed <ScopeInfo text="All completed tasks still on the active board (not archived), all-time. Archiving a completed task removes it from here — use “Closed this month” for a period count." /></div>
                 </button>
-                {data.board.length === 0 && <p className="muted" style={{ padding: 12 }}>No open tasks.</p>}
               </div>
             </section>
           ) : (

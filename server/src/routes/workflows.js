@@ -27,8 +27,17 @@ router.post('/', (req, res) => {
   const create = db.transaction(() => {
     const info = db.prepare('INSERT INTO workflows (name, description, created_by, workspace_id) VALUES (?, ?, ?, ?)')
       .run(name.trim(), description, req.user.id, req.workspaceId);
-    const insertStage = db.prepare('INSERT INTO workflow_stages (workflow_id, name, position, is_done) VALUES (?, ?, ?, ?)');
-    stageNames.forEach((s, i) => insertStage.run(info.lastInsertRowid, s, i, i === stageNames.length - 1 ? 1 : 0));
+    const insertStage = db.prepare('INSERT INTO workflow_stages (workflow_id, name, position, is_done, category) VALUES (?, ?, ?, ?, ?)');
+    stageNames.forEach((s, i) => {
+      const isLast = i === stageNames.length - 1;
+      // Seed sensible lifecycle categories: first → to-do, last → done, the one
+      // just before it → review, the rest → in-progress. All editable later.
+      let category = 'in_progress';
+      if (i === 0) category = 'todo';
+      else if (isLast) category = 'done';
+      else if (i === stageNames.length - 2) category = 'review';
+      insertStage.run(info.lastInsertRowid, s, i, isLast ? 1 : 0, category);
+    });
     return db.prepare('SELECT * FROM workflows WHERE id = ?').get(info.lastInsertRowid);
   });
   res.status(201).json(workflowWithStages(create()));
@@ -64,17 +73,29 @@ router.post('/:id/stages', (req, res) => {
   res.status(201).json(workflowWithStages(wf));
 });
 
-// Rename a stage and/or set whether it's a "done" column (completes tasks).
+// Rename a stage, set its lifecycle category, and/or set whether it's a "done"
+// column (completes tasks). Category is the primary control from the editor;
+// is_done is kept in lockstep with it (a 'done' stage completes its tasks).
+const STAGE_CATEGORIES = ['todo', 'in_progress', 'review', 'done'];
 router.patch('/:id/stages/:stageId', (req, res) => {
   if (!db.prepare('SELECT 1 FROM workflows WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId)) {
     return res.status(404).json({ error: 'Workflow not found' });
   }
   const stage = db.prepare('SELECT * FROM workflow_stages WHERE id = ? AND workflow_id = ?').get(req.params.stageId, req.params.id);
   if (!stage) return res.status(404).json({ error: 'Stage not found' });
-  const { name, is_done } = req.body;
+  const { name, is_done, category } = req.body;
   if (name !== undefined && !String(name).trim()) return res.status(400).json({ error: 'Stage name cannot be empty' });
-  db.prepare('UPDATE workflow_stages SET name = COALESCE(?, name), is_done = COALESCE(?, is_done) WHERE id = ?')
-    .run(name?.trim() || null, is_done === undefined ? null : (is_done ? 1 : 0), stage.id);
+  if (category !== undefined && !STAGE_CATEGORIES.includes(String(category))) {
+    return res.status(400).json({ error: 'Invalid stage category' });
+  }
+  // Resolve the (category, is_done) pair, keeping them consistent no matter which
+  // field the caller sent. Category wins when both are present.
+  let cat = category !== undefined ? String(category) : null;
+  let doneVal = null; // null = leave unchanged
+  if (cat !== null) doneVal = cat === 'done' ? 1 : 0;
+  else if (is_done !== undefined) { doneVal = is_done ? 1 : 0; cat = is_done ? 'done' : 'in_progress'; }
+  db.prepare('UPDATE workflow_stages SET name = COALESCE(?, name), is_done = COALESCE(?, is_done), category = COALESCE(?, category) WHERE id = ?')
+    .run(name?.trim() || null, doneVal, cat, stage.id);
   res.json(workflowWithStages(db.prepare('SELECT * FROM workflows WHERE id = ?').get(stage.workflow_id)));
 });
 

@@ -201,6 +201,10 @@ async function main() {
   });
   check('custom workflow created', wf.status === 201 && wf.data.stages.length === 3);
   check('last stage marked done', wf.data.stages[2].is_done === 1);
+  check('stages seeded with lifecycle categories',
+    wf.data.stages[0].category === 'todo' && wf.data.stages[1].category === 'review' && wf.data.stages[2].category === 'done');
+  check('default workflow stages carry categories',
+    wfs.data.workflows[0].stages.map((s) => s.category).join(',') === 'todo,in_progress,review,done');
   const badWf = await req('POST', '/api/workflows', { token: a, body: { name: 'X', stages: ['Only'] } });
   check('workflow needs 2+ stages', badWf.status === 400);
 
@@ -219,6 +223,14 @@ async function main() {
   const firstId = reordered.data.stages[0].id;
   const doneToggled = await req('PATCH', `/api/workflows/${wfe.id}/stages/${firstId}`, { token: a, body: { is_done: true } });
   check('a stage can be marked as the done column', doneToggled.status === 200 && doneToggled.data.stages.find((s) => s.id === firstId).is_done === 1);
+  // Setting the category is the primary control; is_done follows it in lockstep.
+  const catSet = await req('PATCH', `/api/workflows/${wfe.id}/stages/${firstId}`, { token: a, body: { category: 'review' } });
+  const catStage = catSet.data.stages.find((s) => s.id === firstId);
+  check('setting category to review clears the done flag', catSet.status === 200 && catStage.category === 'review' && catStage.is_done === 0);
+  const catDone = await req('PATCH', `/api/workflows/${wfe.id}/stages/${firstId}`, { token: a, body: { category: 'done' } });
+  check('setting category to done sets the done flag', catDone.data.stages.find((s) => s.id === firstId).is_done === 1);
+  const badCat = await req('PATCH', `/api/workflows/${wfe.id}/stages/${firstId}`, { token: a, body: { category: 'nonsense' } });
+  check('an invalid category is rejected', badCat.status === 400);
   await req('DELETE', `/api/workflows/${wfe.id}`, { token: a }); // tidy up
 
   console.log('Tasks');
