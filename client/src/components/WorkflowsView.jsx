@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
+import Avatar from './Avatar.jsx';
+
+const fmtDate = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString([], { day: 'numeric', month: 'short' }) : '');
 
 // A stage's dot/bar colour: the completing column is green; the rest cycle a
 // small palette by position so a long pipeline reads at a glance.
@@ -15,8 +18,10 @@ const Grip = () => (
 const XIcon = () => (<svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>);
 const Trash = () => (<svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4h4v2M6 6l1 11h6l1-11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>);
 const Circle = () => (<svg width="15" height="15" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" /></svg>);
+const ListIcon = () => (<svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M7 5h9M7 10h9M7 15h9M3.5 5h.01M3.5 10h.01M3.5 15h.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>);
+const PRIO = { urgent: '#dc2626', high: '#ea580c', medium: '#ca8a04', low: '#94a3b8' };
 
-export default function WorkflowsView() {
+export default function WorkflowsView({ onOpenTask }) {
   const [workflows, setWorkflows] = useState([]);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -25,6 +30,8 @@ export default function WorkflowsView() {
   const [error, setError] = useState(null);
   const [focusStage, setFocusStage] = useState(null); // stage id to focus after adding
   const [draggingId, setDraggingId] = useState(null);
+  const [openStage, setOpenStage] = useState(null);    // stage id whose task list is expanded
+  const [wfTasks, setWfTasks] = useState({});          // wfId -> tasks[] (cache)
   const drag = useRef(null);       // { wfId, index }
   const wfRef = useRef([]);        // latest workflows, for drag-end persistence
   const nameRefs = useRef({});     // stageId -> contentEditable el
@@ -90,6 +97,20 @@ export default function WorkflowsView() {
     try { await api(`/workflows/${wf.id}`, { method: 'DELETE' }); load(); }
     catch (err) { alert(err.message); }
   }
+
+  // Expand/collapse the list of tasks sitting in a stage (fetched once per
+  // workflow, then filtered by stage on the client).
+  async function toggleTasks(wf, stage) {
+    if (openStage === stage.id) { setOpenStage(null); return; }
+    setOpenStage(stage.id);
+    if (!wfTasks[wf.id]) {
+      try {
+        const d = await api(`/tasks?workflow_id=${wf.id}`);
+        setWfTasks((m) => ({ ...m, [wf.id]: d.tasks || [] }));
+      } catch { setWfTasks((m) => ({ ...m, [wf.id]: [] })); }
+    }
+  }
+  const tasksInStage = (wfId, stageId) => (wfTasks[wfId] || []).filter((t) => t.stage_id === stageId);
 
   // --- Drag to reorder (live preview, persisted on drop) ---
   function onDragStart(wf, i, stageId) { drag.current = { wfId: wf.id, index: i }; setDraggingId(stageId); }
@@ -167,8 +188,8 @@ export default function WorkflowsView() {
                   const color = stageColor(s, i);
                   const pct = total ? Math.round(((s.task_count || 0) / total) * 100) : 0;
                   return (
+                    <React.Fragment key={s.id}>
                     <div
-                      key={s.id}
                       className={`wf-stage-row ${draggingId === s.id ? 'dragging' : ''}`}
                       onDragOver={(e) => { e.preventDefault(); onDragOverRow(wf, i); }}
                     >
@@ -192,6 +213,11 @@ export default function WorkflowsView() {
                         <div className="wf-bar-track"><div className="wf-bar-fill" style={{ width: `${pct}%`, background: color }} /></div>
                         <span className="wf-stage-count">{s.task_count || 0}</span>
                       </div>
+                      <button
+                        className={`wf-view-tasks ${openStage === s.id ? 'open' : ''}`}
+                        title={`View the ${s.task_count || 0} task${(s.task_count || 0) === 1 ? '' : 's'} in “${s.name}”`}
+                        onClick={() => toggleTasks(wf, s)}
+                      ><ListIcon /> Tasks</button>
                       <div className="wf-row-actions" style={s.is_done ? { opacity: 1 } : undefined}>
                         {s.is_done ? (
                           <button className="wf-complete-badge" title="This stage completes a task (click to unset)" onClick={() => toggleDone(wf.id, s)}>COMPLETES TASK</button>
@@ -201,6 +227,25 @@ export default function WorkflowsView() {
                         <button className="wf-icon-btn" title="Delete stage" onClick={() => deleteStage(wf.id, s.id)}><XIcon /></button>
                       </div>
                     </div>
+                    {openStage === s.id && (
+                      <div className="wf-task-panel">
+                        {!wfTasks[wf.id] ? (
+                          <div className="wf-task-empty">Loading…</div>
+                        ) : tasksInStage(wf.id, s.id).length === 0 ? (
+                          <div className="wf-task-empty">No tasks in this stage.</div>
+                        ) : (
+                          tasksInStage(wf.id, s.id).map((t) => (
+                            <button key={t.id} className="wf-task-item" onClick={() => onOpenTask?.(t.id)}>
+                              <span className="wf-task-prio" style={{ background: PRIO[t.priority] || PRIO.low }} title={t.priority} />
+                              <span className="wf-task-title">{t.title}</span>
+                              {t.due_date && <span className="wf-task-due">{fmtDate(t.due_date)}</span>}
+                              {(t.assignees?.[0] || t.assignee) && <Avatar user={t.assignees?.[0] || t.assignee} size={20} />}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                    </React.Fragment>
                   );
                 })}
                 {wf.stages.length === 0 && <div className="wf-empty-note">No stages yet — add the first below.</div>}

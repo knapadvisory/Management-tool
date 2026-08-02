@@ -742,8 +742,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .wf-icon-btn.danger:hover { background: color-mix(in srgb, var(--danger, #dc2626) 12%, transparent); color: var(--danger, #dc2626); }
 
 /* Stage rows */
-.stage-list { padding: 8px 12px; }
-.wf-stage-row { display: flex; align-items: center; gap: 12px; padding: 9px 8px; border-radius: 8px; position: relative; }
+.stage-list { padding: 8px 16px; }
+.wf-stage-row { display: flex; align-items: center; gap: 12px; padding: 9px 10px 9px 8px; border-radius: 8px; position: relative; }
 .wf-stage-row:hover { background: color-mix(in srgb, var(--text) 3.5%, transparent); }
 .wf-stage-row:hover .wf-row-actions { opacity: 1; }
 .wf-stage-row.dragging { opacity: .4; }
@@ -759,7 +759,22 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .wf-bar-track { flex: 1; height: 6px; background: color-mix(in srgb, var(--text) 8%, transparent); border-radius: 4px; overflow: hidden; }
 .wf-bar-fill { height: 100%; border-radius: 4px; transition: width .25s ease; }
 .wf-stage-count { font-size: 11.5px; color: var(--muted); width: 32px; text-align: right; flex-shrink: 0; font-family: var(--mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }
-.wf-row-actions { display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity .1s; margin-left: auto; flex-shrink: 0; }
+.wf-row-actions { display: flex; align-items: center; gap: 4px; opacity: 0; transition: opacity .1s; flex-shrink: 0; }
+/* View-tasks: always visible, sits between the bar and the row actions */
+.wf-view-tasks { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; flex-shrink: 0;
+  font-size: 12px; font-weight: 500; color: var(--muted); background: transparent; border: 1px solid transparent;
+  border-radius: 7px; padding: 4px 9px; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
+.wf-view-tasks:hover, .wf-view-tasks.open { background: var(--accent-soft); color: var(--accent); }
+.wf-view-tasks svg { flex-shrink: 0; }
+/* Expanded task list under a stage */
+.wf-task-panel { margin: 0 8px 8px 40px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: color-mix(in srgb, var(--text) 2.5%, transparent); }
+.wf-task-empty { padding: 12px 14px; font-size: 12.5px; color: var(--muted); font-style: italic; }
+.wf-task-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 12px; background: transparent; border: none; border-bottom: 1px solid var(--border); cursor: pointer; color: var(--text); font-size: 13px; }
+.wf-task-item:last-child { border-bottom: none; }
+.wf-task-item:hover { background: var(--accent-soft); }
+.wf-task-prio { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.wf-task-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-task-due { font-size: 11.5px; color: var(--muted); font-family: var(--mono, ui-monospace, monospace); flex-shrink: 0; }
 .wf-complete-toggle { width: 26px; height: 26px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border: none; background: transparent; color: color-mix(in srgb, var(--text) 25%, transparent); }
 .wf-complete-toggle:hover { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
 .wf-complete-badge { font-size: 10.5px; font-weight: 600; color: var(--success); background: color-mix(in srgb, var(--success) 15%, transparent); padding: 3px 8px; border-radius: 20px; letter-spacing: .02em; border: none; cursor: pointer; }
