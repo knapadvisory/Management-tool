@@ -27,7 +27,7 @@ function check(name, cond) {
 }
 
 const server = spawn('node', [path.join(__dirname, '..', 'src', 'index.js')], {
-  env: { ...process.env, PORT, DATA_DIR: dataDir, JWT_SECRET: 'smoke-test-secret', WORKSPACE_SIGNUP_CODE: 'boot' },
+  env: { ...process.env, PORT, DATA_DIR: dataDir, JWT_SECRET: 'smoke-test-secret', WORKSPACE_SIGNUP_CODE: 'boot', TEAMHUB_API_TOKEN: 'smoke-hr-token' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 
@@ -89,6 +89,26 @@ async function main() {
   check('approved member can log in', bobLogin.status === 200 && !!bobLogin.data.token);
   check('members share the workspace', alice.data.user.workspace_id === bobLogin.data.user.workspace_id);
   const b = bobLogin.data.token;
+
+  // HRMS → TeamHub clock mirror: /api/hr/clock (shared-token auth) starts/stops
+  // a member's work-timer so an HR-side clock reflects on TeamHub.
+  const clockNoToken = await fetch(BASE + '/api/hr/clock', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ teamhub_user_id: bobId, action: 'in' }),
+  });
+  check('hr clock rejects a missing token', clockNoToken.status === 401);
+  const clockHeaders = { Authorization: 'Bearer smoke-hr-token', 'Content-Type': 'application/json' };
+  const clockIn = await fetch(BASE + '/api/hr/clock', {
+    method: 'POST', headers: clockHeaders, body: JSON.stringify({ teamhub_user_id: bobId, action: 'in' }),
+  });
+  check('hr clock-in mirrors to a running timer', clockIn.status === 200);
+  const runningAfterIn = await req('GET', '/api/time/running', { token: b });
+  check('bob now has a running timer', !!runningAfterIn.data.running?.is_running);
+  await fetch(BASE + '/api/hr/clock', {
+    method: 'POST', headers: clockHeaders, body: JSON.stringify({ teamhub_user_id: bobId, action: 'out' }),
+  });
+  const runningAfterOut = await req('GET', '/api/time/running', { token: b });
+  check('hr clock-out stops the timer', runningAfterOut.data.running === null);
 
   const dupe = await req('POST', `/api/workspaces/${slug}/register`, {
     body: { name: 'Alice2', email: 'alice@smoke.test', password: 'secret123' },

@@ -24,7 +24,7 @@ import projectsRouter from './routes/projects.js';
 import clientsRouter from './routes/clients.js';
 import portalRouter from './routes/portal.js';
 import analyticsRouter from './routes/analytics.js';
-import hrRouter from './routes/hr.js';
+import hrRouter, { receiveClock } from './routes/hr.js';
 import templatesRouter from './routes/templates.js';
 import notificationsRouter from './routes/notifications.js';
 import uploadsRouter from './routes/uploads.js';
@@ -405,6 +405,10 @@ app.use('/api/portal', portalRouter); // client portal — its own auth inside
 app.use('/api/analytics', requireAuth, blockGuests, analyticsRouter); // staff-only practice analytics
 // Bridge to KNAP-HRMS. Any member can open HR (they land in their own
 // self-service portal); /summary is gated to admins inside the router.
+// Server-to-server clock mirror from HRMS (shared-token auth inside the handler;
+// no user session). Registered BEFORE the user-facing HR router so its requireAuth
+// prefix match doesn't intercept this token-guarded webhook.
+app.post('/api/hr/clock', receiveClock);
 app.use('/api/hr', requireAuth, blockGuests, hrRouter);
 
 // Serve the built client in production.
