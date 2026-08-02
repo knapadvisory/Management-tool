@@ -778,10 +778,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   border-radius: 7px; padding: 4px 9px; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
 .wf-view-tasks:hover, .wf-view-tasks.open { background: var(--accent-soft); color: var(--accent); }
 .wf-view-tasks svg { flex-shrink: 0; }
-/* The mark-complete circle and delete stay quiet until you hover the row; the
-   COMPLETES-TASK badge is always shown. All keep their slot so nothing shifts. */
-.wf-complete-toggle { opacity: 0; transition: opacity .12s, background .12s, color .12s; }
-.wf-stage-row:hover .wf-complete-toggle { opacity: 1; }
+/* Delete stays quiet until you hover the row; the category select is always
+   shown (it's the primary control) and keeps its slot so nothing shifts. */
 .wf-del { opacity: 0; transition: opacity .12s, background .12s, color .12s; }
 .wf-stage-row:hover .wf-del { opacity: 1; }
 /* Expanded task list under a stage */
@@ -793,9 +791,18 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .wf-task-prio { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .wf-task-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wf-task-due { font-size: 11.5px; color: var(--muted); font-family: var(--mono, ui-monospace, monospace); flex-shrink: 0; }
-.wf-complete-toggle { width: 26px; height: 26px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border: none; background: transparent; color: color-mix(in srgb, var(--text) 25%, transparent); }
-.wf-complete-toggle:hover { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
-.wf-complete-badge { font-size: 10.5px; font-weight: 600; color: var(--success); background: color-mix(in srgb, var(--success) 15%, transparent); padding: 3px 9px; border-radius: 20px; letter-spacing: .02em; border: none; cursor: pointer; white-space: nowrap; }
+/* Per-stage lifecycle category — the pill that decides which Home-board bucket
+   this stage rolls up into. Colour-coded so the pipeline reads at a glance. */
+.wf-cat-select { appearance: none; -webkit-appearance: none; font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  border-radius: 20px; padding: 4px 22px 4px 11px; cursor: pointer; border: 1px solid transparent; white-space: nowrap;
+  background-repeat: no-repeat; background-position: right 8px center; background-size: 8px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  transition: background-color .12s, color .12s, border-color .12s; }
+.wf-cat-select:hover { border-color: color-mix(in srgb, currentColor 35%, transparent); }
+.wf-cat-todo { color: var(--muted); background-color: color-mix(in srgb, var(--text) 7%, transparent); }
+.wf-cat-in_progress { color: var(--warning); background-color: var(--warning-soft); }
+.wf-cat-review { color: var(--accent); background-color: var(--accent-soft); }
+.wf-cat-done { color: var(--success); background-color: var(--success-soft); }
 .wf-empty-note { padding: 12px 14px 4px; font-size: 12px; color: var(--muted); font-style: italic; }
 .wf-add-stage { display: flex; align-items: center; gap: 8px; padding: 10px 14px; margin: 2px 12px 12px; border-radius: 8px; border: 1px dashed color-mix(in srgb, var(--text) 20%, transparent); color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer; background: transparent; width: calc(100% - 24px); text-align: left; transition: border-color .12s, color .12s, background .12s; }
 .wf-add-stage:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
@@ -1727,6 +1734,8 @@ button.dash-kpi:hover { border-color: var(--accent); }
 .board-summary { display: flex; gap: 10px; flex-wrap: wrap; }
 .board-col { flex: 1; min-width: 92px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; text-align: center; }
 .board-col.done { background: var(--success-soft); border-color: var(--success-soft); }
+.board-col.cat-in_progress { background: var(--warning-soft); border-color: var(--warning-soft); }
+.board-col.cat-review { background: var(--accent-soft); border-color: var(--accent-soft); }
 .board-col-count { font-size: 24px; font-weight: 700; }
 .board-col-name { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; }
 

@@ -17,7 +17,6 @@ const Grip = () => (
 );
 const XIcon = () => (<svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>);
 const Trash = () => (<svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4h4v2M6 6l1 11h6l1-11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>);
-const Circle = () => (<svg width="15" height="15" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" /></svg>);
 const ListIcon = () => (<svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M7 5h9M7 10h9M7 15h9M3.5 5h.01M3.5 10h.01M3.5 15h.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>);
 const PRIO = { urgent: '#dc2626', high: '#ea580c', medium: '#ca8a04', low: '#94a3b8' };
 
@@ -82,8 +81,11 @@ export default function WorkflowsView({ onOpenTask }) {
     catch (err) { alert(err.message); load(); }
   }
 
-  async function toggleDone(wfId, stage) {
-    try { await api(`/workflows/${wfId}/stages/${stage.id}`, { method: 'PATCH', body: { is_done: !stage.is_done } }); load(); }
+  // Set a stage's lifecycle category — this is what rolls the stage up into one
+  // of the four Home-board buckets. 'done' also makes the stage complete its tasks.
+  async function setCategory(wfId, stage, category) {
+    if (category === (stage.category || 'in_progress')) return;
+    try { await api(`/workflows/${wfId}/stages/${stage.id}`, { method: 'PATCH', body: { category } }); load(); }
     catch (err) { alert(err.message); }
   }
 
@@ -215,11 +217,17 @@ export default function WorkflowsView({ onOpenTask }) {
                       </div>
                       <div className="wf-right">
                         <span className="wf-complete-slot">
-                          {s.is_done ? (
-                            <button className="wf-complete-badge wf-tip" data-tip="This stage completes a task — click to unset" onClick={() => toggleDone(wf.id, s)}>COMPLETES TASK</button>
-                          ) : (
-                            <button className="wf-complete-toggle wf-tip" data-tip="Mark as the stage that completes a task" onClick={() => toggleDone(wf.id, s)}><Circle /></button>
-                          )}
+                          <select
+                            className={`wf-cat-select wf-cat-${s.category || 'in_progress'}`}
+                            value={s.category || 'in_progress'}
+                            onChange={(e) => setCategory(wf.id, s, e.target.value)}
+                            title="Which Home-board bucket this stage rolls up into"
+                          >
+                            <option value="todo">To Do</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="review">Review</option>
+                            <option value="done">Done ✓</option>
+                          </select>
                         </span>
                         <button
                           className={`wf-view-tasks wf-tip ${openStage === s.id ? 'open' : ''}`}

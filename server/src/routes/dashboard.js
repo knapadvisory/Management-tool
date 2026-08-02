@@ -61,12 +61,19 @@ router.get('/', (req, res) => {
      ORDER BY (t.due_date IS NULL), t.due_date ASC LIMIT 8`
   ).map(liteTask);
 
-  // Board: open tasks grouped by their stage, plus recently-completed count.
-  const board = rows(
-    `SELECT s.name AS stage, COUNT(*) AS count
-     FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id
-     WHERE ${OPEN}${scope} GROUP BY s.id ORDER BY s.position`
+  // Board: open tasks rolled up into the four fixed lifecycle buckets (via each
+  // stage's category), so the Home board stays stable no matter how many
+  // workflows/stages exist. 'done'-category tasks sit under the Completed tile.
+  const catCounts = Object.fromEntries(
+    rows(`SELECT s.category AS category, COUNT(*) AS count
+          FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id
+          WHERE ${OPEN}${scope} GROUP BY s.category`).map((r) => [r.category, r.count])
   );
+  const board = [
+    { key: 'todo', label: 'To Do', count: catCounts.todo || 0 },
+    { key: 'in_progress', label: 'In Progress', count: catCounts.in_progress || 0 },
+    { key: 'review', label: 'Review', count: catCounts.review || 0 },
+  ];
   const doneCount = one(`SELECT COUNT(*) AS n FROM tasks t WHERE t.status = 'completed' AND t.archived_at IS NULL${scope}`).n;
 
   // All in-scope open tasks (for the member "all tasks" list / admin overview).

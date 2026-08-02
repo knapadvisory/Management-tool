@@ -690,6 +690,35 @@ ensureColumn('client_deadlines', 'task_id', 'INTEGER REFERENCES tasks(id)');
 // were completed before this column existed stay NULL (excluded from the rate).
 ensureColumn('client_deadlines', 'completed_at', 'TEXT');
 
+// Lifecycle category of a workflow stage, used to roll every stage (whatever its
+// custom name) up into the four fixed Home-board buckets:
+//   'todo' | 'in_progress' | 'review' | 'done'
+// Kept in sync with is_done (a 'done' stage completes its tasks). Defaults to
+// 'in_progress'; existing stages are back-filled once below.
+ensureColumn('workflow_stages', 'category', "TEXT NOT NULL DEFAULT 'in_progress'");
+// One-time seed of sensible categories for stages that predate the column:
+// done stages → 'done', the first stage → 'todo', the last non-done stage →
+// 'review', everything in between → 'in_progress'. Admins can re-map any stage
+// afterwards; the flag guards against clobbering those later edits.
+if (!db.prepare(`SELECT 1 FROM app_settings WHERE key = 'seed_stage_categories_v1'`).get()) {
+  db.transaction(() => {
+    const upd = db.prepare('UPDATE workflow_stages SET category = ? WHERE id = ?');
+    for (const wf of db.prepare('SELECT id FROM workflows').all()) {
+      const stages = db.prepare('SELECT id, is_done FROM workflow_stages WHERE workflow_id = ? ORDER BY position, id').all(wf.id);
+      const open = stages.filter((s) => !s.is_done);
+      stages.forEach((s) => { if (s.is_done) upd.run('done', s.id); });
+      open.forEach((s, i) => {
+        let cat = 'in_progress';
+        if (i === 0) cat = 'todo';
+        else if (i === open.length - 1 && open.length >= 2) cat = 'review';
+        upd.run(cat, s.id);
+      });
+    }
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('seed_stage_categories_v1', ?)`)
+      .run(new Date().toISOString());
+  })();
+}
+
 // Per-user secret for the subscribable calendar (iCal) feed. Unguessable; can be
 // rotated to revoke an old feed URL. Generated on first use, not at signup.
 ensureColumn('users', 'calendar_token', 'TEXT');
@@ -850,9 +879,10 @@ export function seedWorkspace(workspaceId) {
     }
     if (!db.prepare(`SELECT id FROM workflows WHERE workspace_id = ? LIMIT 1`).get(workspaceId)) {
       const wf = db.prepare(`INSERT INTO workflows (name, description, workspace_id) VALUES ('Default', 'Standard task flow', ?)`).run(workspaceId);
-      const stage = db.prepare(`INSERT INTO workflow_stages (workflow_id, name, position, is_done) VALUES (?, ?, ?, ?)`);
-      ['To Do', 'In Progress', 'Review'].forEach((name, i) => stage.run(wf.lastInsertRowid, name, i, 0));
-      stage.run(wf.lastInsertRowid, 'Done', 3, 1);
+      const stage = db.prepare(`INSERT INTO workflow_stages (workflow_id, name, position, is_done, category) VALUES (?, ?, ?, ?, ?)`);
+      [['To Do', 'todo'], ['In Progress', 'in_progress'], ['Review', 'review']]
+        .forEach(([name, category], i) => stage.run(wf.lastInsertRowid, name, i, 0, category));
+      stage.run(wf.lastInsertRowid, 'Done', 3, 1, 'done');
     }
   });
   t();
