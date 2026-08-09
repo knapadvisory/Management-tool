@@ -3,22 +3,22 @@
 
 // Each theme carries an accent (buttons, links, highlights) AND a deep
 // sidebar colour, so picking one recolours the whole app (Slack-style).
-//
-// The set is deliberately restrained — this is a professional-services tool, so
-// the palette stays in sober blues, indigos, teals and greys rather than loud
-// pinks/oranges. The first entry (Indigo) is the default; it also matches the
-// server-side default accent (#4f46e5). Any account still carrying an accent
-// that was removed here falls back to this default automatically (see
-// applyTheme), so retiring the louder colours quietly resets those users too.
 export const ACCENTS = [
   { name: 'Indigo', accent: '#4f46e5', hover: '#4338ca', sidebar: '#1e1b4b' },
-  { name: 'Blue', accent: '#2563eb', hover: '#1d4ed8', sidebar: '#0f2544' },
-  { name: 'Mood Indigo', accent: '#3730a3', hover: '#312e81', sidebar: '#191540' },
   { name: 'Violet', accent: '#7c3aed', hover: '#6d28d9', sidebar: '#2e1065' },
+  { name: 'Aubergine', accent: '#a53692', hover: '#8a2a7a', sidebar: '#3f0e40' },
+  { name: 'Blue', accent: '#2563eb', hover: '#1d4ed8', sidebar: '#0f2544' },
   { name: 'Teal', accent: '#0d9488', hover: '#0f766e', sidebar: '#062f2b' },
+  { name: 'Green', accent: '#16a34a', hover: '#15803d', sidebar: '#08341e' },
+  { name: 'Amber', accent: '#d97706', hover: '#b45309', sidebar: '#3a2408' },
+  { name: 'Rose', accent: '#e11d48', hover: '#be123c', sidebar: '#4a0f22' },
+  { name: 'Clementine', accent: '#e8590c', hover: '#c2410c', sidebar: '#3a1c06' },
+  { name: 'Jade', accent: '#0f9d76', hover: '#0b7a5c', sidebar: '#06342a' },
   { name: 'Lagoon', accent: '#0e7490', hover: '#155e75', sidebar: '#07293a' },
-  { name: 'Slate', accent: '#475569', hover: '#334155', sidebar: '#1a1d29' },
+  { name: 'Mood Indigo', accent: '#3730a3', hover: '#312e81', sidebar: '#191540' },
+  { name: 'Barbra', accent: '#db2777', hover: '#be185d', sidebar: '#420f2b' },
   { name: 'Graphite', accent: '#4b5563', hover: '#374151', sidebar: '#171a21' },
+  { name: 'Slate', accent: '#475569', hover: '#334155', sidebar: '#1a1d29' },
 ];
 
 export const MODES = ['light', 'dark', 'system'];
