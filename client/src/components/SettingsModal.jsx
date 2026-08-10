@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { api, uploadAvatar } from '../api.js';
 import Avatar from './Avatar.jsx';
 import { ACCENTS, applyTheme, saveLocalTheme } from '../theme.js';
@@ -392,6 +392,8 @@ function AccessibilityPanel() {
 
 function AdvancedPanel() {
   const [enterToSend, setEnterToSend] = usePref('enterToSend');
+  const [apkAvailable, setApkAvailable] = useState(false);
+  useEffect(() => { api('/config').then((c) => setApkAvailable(!!c.android_app_available)).catch(() => {}); }, []);
   const mod = navigator.platform?.toLowerCase().includes('mac') ? '⌘' : 'Ctrl';
   return (
     <div>
@@ -415,6 +417,14 @@ function AdvancedPanel() {
         <li><kbd>Enter</kbd> <span className="muted">Send a message (or add a new line — see above)</span></li>
         <li><kbd>Esc</kbd> <span className="muted">Close a dialog</span></li>
       </ul>
+      {apkAvailable && (
+        <>
+          <hr className="profile-sep" />
+          <div className="profile-section-title">Mobile app</div>
+          <p className="settings-toggle-hint muted">Install TeamHub on your Android phone — same sign-in, with native calls and notifications.</p>
+          <a className="btn btn-primary btn-sm settings-apk-btn" href="/download/android" download>📱 Download the Android app</a>
+        </>
+      )}
     </div>
   );
 }
