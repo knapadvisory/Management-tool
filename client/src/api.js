@@ -17,6 +17,20 @@ export async function uploadFiles(files) {
   return data.attachments;
 }
 
+// Platform admin: publish the latest Android APK for the portal's download button.
+export async function uploadAndroidApk(file) {
+  const fd = new FormData();
+  fd.append('apk', file);
+  const res = await fetch('/api/platform/android-apk', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: fd,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Upload failed');
+  return data;
+}
+
 // Upload files straight into the shared team Drive (optionally into a folder,
 // optionally tagged / shared with a set of teammates).
 export async function uploadToDrive(files, folderId = null, sharedWith = []) {

@@ -3,6 +3,7 @@ import http from 'http';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 
@@ -83,6 +84,7 @@ app.get('/api/config', (req, res) => {
     vapid_public_key: getVapidPublicKey(),
     avatar_colors: AVATAR_COLORS,
     ice_servers: iceServers(),
+    android_app_available: androidApkAvailable(),
   });
 });
 
@@ -253,6 +255,43 @@ app.get('/api/platform/backups/latest.db', requireAuth, requirePlatformAdmin, (r
   const p = latestDbPath();
   if (!p) return res.status(404).json({ error: 'No backup available yet' });
   res.download(p, `teamhub-${new Date().toISOString().slice(0, 10)}.db`);
+});
+
+// --- Android app (APK) ---
+// The web portal offers a "Download the Android app" button that points here.
+// The current APK comes from a hosted URL (ANDROID_APK_URL) if set, otherwise
+// the file a platform admin uploaded through the portal.
+const ANDROID_DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+const ANDROID_APK_PATH = process.env.ANDROID_APK_PATH || path.join(ANDROID_DATA_DIR, 'teamhub.apk');
+const ANDROID_APK_URL = (process.env.ANDROID_APK_URL || '').trim();
+const androidApkAvailable = () => !!ANDROID_APK_URL || fs.existsSync(ANDROID_APK_PATH);
+const apkTmpDir = path.join(ANDROID_DATA_DIR, 'tmp');
+fs.mkdirSync(apkTmpDir, { recursive: true });
+const apkUpload = multer({ dest: apkTmpDir, limits: { fileSize: 250 * 1024 * 1024 } });
+
+// Public: always resolves to the latest APK (redirect to the host, or stream it).
+app.get('/download/android', (req, res) => {
+  if (ANDROID_APK_URL) return res.redirect(302, ANDROID_APK_URL);
+  if (fs.existsSync(ANDROID_APK_PATH)) {
+    res.type('application/vnd.android.package-archive');
+    return res.download(ANDROID_APK_PATH, 'TeamHub.apk');
+  }
+  res.status(404).send('The TeamHub Android app is not available yet.');
+});
+
+// Platform admin publishes the latest APK from the portal.
+app.get('/api/platform/android-apk', requireAuth, requirePlatformAdmin, (req, res) => {
+  res.json({ available: androidApkAvailable(), hosted: !!ANDROID_APK_URL });
+});
+app.post('/api/platform/android-apk', requireAuth, requirePlatformAdmin, apkUpload.single('apk'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No APK uploaded' });
+  if (!(req.file.originalname || '').toLowerCase().endsWith('.apk')) {
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({ error: 'The file must be an .apk' });
+  }
+  fs.mkdirSync(path.dirname(ANDROID_APK_PATH), { recursive: true });
+  fs.renameSync(req.file.path, ANDROID_APK_PATH);
+  res.json({ ok: true, available: true });
 });
 
 // --- Auth ---
