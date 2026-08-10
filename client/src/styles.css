@@ -1873,6 +1873,7 @@ button.closed-row:hover { background: var(--surface-2); }
 .settings-toggle-main { display: flex; flex-direction: column; gap: 2px; }
 .settings-toggle-label { font-size: 14px; font-weight: 600; }
 .settings-toggle-hint { font-size: 12px; }
+.settings-apk-btn { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
 
 @media (max-width: 640px) {
   .settings-body { flex-direction: column; }
