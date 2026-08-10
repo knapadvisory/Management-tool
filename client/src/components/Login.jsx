@@ -22,9 +22,12 @@ export default function Login({ onAuth }) {
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
   const [emailEnabled, setEmailEnabled] = useState(false);
+  const [apkAvailable, setApkAvailable] = useState(false);
   const [providers, setProviders] = useState({});
 
-  useEffect(() => { api('/config').then((c) => setEmailEnabled(!!c.email_enabled)).catch(() => {}); }, []);
+  useEffect(() => {
+    api('/config').then((c) => { setEmailEnabled(!!c.email_enabled); setApkAvailable(!!c.android_app_available); }).catch(() => {});
+  }, []);
   useEffect(() => { api('/auth/oauth/providers').then(setProviders).catch(() => {}); }, []);
   // Surface an SSO failure that the callback stashed before redirecting here.
   useEffect(() => {
@@ -93,6 +96,9 @@ export default function Login({ onAuth }) {
               <div className="landing-actions">
                 <button className="landing-primary" onClick={() => go('create')}>Register your company</button>
                 <button className="landing-secondary" onClick={() => go('login')}>Sign in</button>
+                {apkAvailable && (
+                  <a className="landing-secondary" href="/download/android" download>📱 Get the Android app</a>
+                )}
               </div>
               <p className="landing-note muted">New companies need a registration code from KNAP. Employees join with a link from their admin.</p>
             </section>

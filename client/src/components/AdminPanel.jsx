@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { api, getToken } from '../api.js';
+import { api, getToken, uploadAndroidApk } from '../api.js';
 import { getSocket } from '../socket.js';
 import Avatar from './Avatar.jsx';
 import ArchiveManager from './ArchiveManager.jsx';
@@ -66,6 +66,8 @@ export default function AdminPanel({ user }) {
       <InviteCodes />
 
       <PlatformCodes />
+
+      <PlatformAndroidApk />
 
       <PlatformCompanies />
 
@@ -333,6 +335,49 @@ function PlatformCodes() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Platform owner (KNAP) only: publish the Android APK the portal offers for
+// download, so employees can install the app straight from the sign-in page.
+function PlatformAndroidApk() {
+  const [isPlatform, setIsPlatform] = useState(false);
+  const [status, setStatus] = useState({ available: false, hosted: false });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const load = useCallback(() => { api('/platform/android-apk').then(setStatus).catch(() => {}); }, []);
+  useEffect(() => {
+    api('/platform/me').then((d) => { setIsPlatform(!!d.platform_admin); if (d.platform_admin) load(); }).catch(() => {});
+  }, [load]);
+
+  async function upload(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBusy(true); setMsg(null);
+    try { await uploadAndroidApk(file); setMsg('APK published ✓'); load(); }
+    catch (err) { setMsg(err.message); }
+    setBusy(false);
+  }
+
+  if (!isPlatform) return null;
+  return (
+    <div className="admin-policy admin-platform">
+      <div className="admin-policy-head"><strong>📱 Android app (APK)</strong></div>
+      <p className="muted">
+        Publish the latest signed APK. Everyone then sees a “Get the Android app” button on the sign-in page and
+        installs it directly — no app store needed.{status.hosted ? ' A hosted APK URL is configured; that takes precedence over an upload.' : ''}
+      </p>
+      <div className="admin-policy-row">
+        <label className="btn btn-primary btn-sm">
+          {busy ? 'Uploading…' : (status.available ? 'Replace APK' : 'Upload APK')}
+          <input type="file" accept=".apk,application/vnd.android.package-archive" hidden disabled={busy} onChange={upload} />
+        </label>
+        {status.available && <a className="btn btn-sm" href="/download/android" download>Download current</a>}
+        <span className="muted">{msg || (status.available ? 'An APK is published.' : 'No APK published yet.')}</span>
+      </div>
     </div>
   );
 }
