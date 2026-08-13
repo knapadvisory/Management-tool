@@ -36,6 +36,20 @@ router.get('/users', (req, res) => {
   res.json({ users });
 });
 
+// Live locations of team members who have OPTED IN to sharing (and only them).
+// Users who haven't consented never appear here. Scoped to the admin's workspace.
+router.get('/locations', (req, res) => {
+  const rows = db.prepare(`
+    SELECT u.id, u.name, u.avatar_color, u.avatar_url, u.title,
+           l.lat, l.lng, l.accuracy, l.recorded_at, u.location_consent_at
+    FROM users u
+    JOIN user_locations l ON l.user_id = u.id
+    WHERE u.workspace_id = ? AND u.location_sharing = 1 AND u.deleted = 0
+    ORDER BY l.recorded_at DESC
+  `).all(req.workspaceId);
+  res.json({ locations: rows });
+});
+
 // Permanently-deleted accounts, kept for the admin's records (their content —
 // tasks, messages, files — stays attributed to them).
 router.get('/users/deleted', (req, res) => {

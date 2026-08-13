@@ -589,6 +589,23 @@ ensureColumn('users', 'theme', "TEXT NOT NULL DEFAULT 'light'");
 ensureColumn('users', 'accent', "TEXT NOT NULL DEFAULT '#4f46e5'");
 // Visual skin: 'original' (default look) or 'editorial' (warm minimalist).
 ensureColumn('users', 'skin', "TEXT NOT NULL DEFAULT 'original'");
+
+// Opt-in location sharing (off by default). A user must explicitly consent
+// before any location is accepted or stored; consent_at records when they did.
+ensureColumn('users', 'location_sharing', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('users', 'location_consent_at', 'TEXT');
+
+// Only the latest position per user is kept (data minimisation) — no trail. The
+// row is deleted the moment the user turns sharing off.
+db.exec(`
+CREATE TABLE IF NOT EXISTS user_locations (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  lat REAL NOT NULL,
+  lng REAL NOT NULL,
+  accuracy REAL,
+  recorded_at TEXT NOT NULL
+);
+`);
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
 // Marks an attachment as a profile photo so it is viewable workspace-wide

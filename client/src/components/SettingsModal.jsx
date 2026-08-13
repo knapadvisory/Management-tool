@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { api, uploadAvatar } from '../api.js';
 import Avatar from './Avatar.jsx';
 import { ACCENTS, applyTheme, saveLocalTheme } from '../theme.js';
@@ -16,6 +16,7 @@ const SECTIONS = [
   { key: 'calendar', tkey: 'settings.calendar', icon: '📅' },
   { key: 'language', tkey: 'settings.language', icon: '🌐' },
   { key: 'accessibility', tkey: 'settings.accessibility', icon: '♿' },
+  { key: 'location', tkey: 'settings.location', icon: '📍' },
   { key: 'advanced', tkey: 'settings.advanced', icon: '⚙️' },
   { key: 'account', tkey: 'settings.account', icon: '🔒' },
 ];
@@ -50,6 +51,7 @@ export default function SettingsModal({ user, colors = [], initialSection = 'pro
             {section === 'calendar' && <CalendarPanel />}
             {section === 'language' && <LanguagePanel />}
             {section === 'accessibility' && <AccessibilityPanel />}
+            {section === 'location' && <LocationPanel />}
             {section === 'advanced' && <AdvancedPanel />}
             {section === 'account' && <AccountPanel user={user} onLogout={onLogout} />}
           </div>
@@ -386,6 +388,53 @@ function AccessibilityPanel() {
         <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Reduce motion" hint="Turn off animations and transitions across the app." />
         <Toggle checked={underlineLinks} onChange={setUnderlineLinks} label="Underline links" hint="Always underline links in messages, not just on hover." />
       </div>
+    </div>
+  );
+}
+
+// Opt-in location sharing. Off unless the user turns it on here; when on, the
+// app shows a persistent banner (see LocationSharing) so it's never covert.
+function LocationPanel() {
+  const [status, setStatus] = useState({ location_sharing: false, last: null });
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => { api('/location/me').then(setStatus).catch(() => {}); }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function toggle(enabled) {
+    setBusy(true);
+    try {
+      await api('/location/consent', { method: 'POST', body: { enabled } });
+      window.dispatchEvent(new Event('location-consent-changed'));
+      load();
+    } catch { /* ignore */ }
+    setBusy(false);
+  }
+
+  const on = !!status.location_sharing;
+  return (
+    <div>
+      <h3 className="settings-title">Location</h3>
+      <p className="muted">
+        Optionally share your live location with your workspace admins while you’re on duty — handy for field
+        visits and client meetings. It’s entirely your choice, and it’s off until you turn it on.
+      </p>
+      <Toggle
+        checked={on}
+        disabled={busy}
+        onChange={toggle}
+        label="Share my location while on duty"
+        hint={on ? 'On — your admins can see your current location.' : 'Off — nothing is shared.'}
+      />
+      <hr className="profile-sep" />
+      <ul className="settings-points muted">
+        <li>Only your <strong>latest</strong> position is stored — no history or trail is kept.</li>
+        <li>Only your workspace <strong>admins</strong> can see it, and only while this is on.</li>
+        <li>A banner stays on screen the whole time it’s active, so you always know.</li>
+        <li>Turn it off any time — your stored location is deleted right away.</li>
+      </ul>
+      {on && status.last && (
+        <p className="settings-toggle-hint muted">Last shared {new Date(status.last.recorded_at).toLocaleString()}.</p>
+      )}
     </div>
   );
 }

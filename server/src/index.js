@@ -36,6 +36,7 @@ import dashboardRouter from './routes/dashboard.js';
 import timeRouter from './routes/time.js';
 import pushRouter from './routes/push.js';
 import feeParserRouter from './routes/feeParser.js';
+import locationRouter from './routes/location.js';
 import setupSocket from './socket.js';
 import { startReminderScheduler, startAutoArchiveScheduler, startDeadlineReminderScheduler, startWeeklyDigestScheduler, startDocumentRequestChaseScheduler } from './reminders.js';
 import { createNotification } from './notifications.js';
@@ -433,6 +434,7 @@ app.use('/api/templates', requireAuth, blockGuests, templatesRouter);
 app.use('/api/notifications', requireAuth, notificationsRouter);
 app.use('/api/uploads', uploadsRouter); // POST is guarded inside; GET uses a query-param token
 app.use('/api/search', requireAuth, blockGuests, searchRouter);
+app.use('/api/location', requireAuth, blockGuests, locationRouter);
 app.use('/api/files', requireAuth, blockGuests, filesRouter);
 app.use('/api/drive', requireAuth, blockGuests, driveRouter);
 app.use('/api/dashboard', requireAuth, blockGuests, dashboardRouter);

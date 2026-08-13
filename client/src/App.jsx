@@ -29,6 +29,7 @@ import CallManager from './components/CallManager.jsx';
 import GroupCallManager from './components/GroupCallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
+import LocationSharing from './components/LocationSharing.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import GuestJoin from './components/GuestJoin.jsx';
 import GuestApp from './components/GuestApp.jsx';
@@ -495,6 +496,7 @@ export default function App() {
 
   return (
     <div className={`app ${drawerOpen ? 'drawer-open' : ''}`}>
+      <LocationSharing />
       {drawerOpen && <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)} />}
       <Sidebar
         user={user}

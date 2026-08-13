@@ -402,6 +402,10 @@ public class MainActivity extends BridgeActivity {
             perms.add(Manifest.permission.CAMERA);
             perms.add(Manifest.permission.RECORD_AUDIO);
             perms.add(Manifest.permission.MODIFY_AUDIO_SETTINGS);
+            // For opt-in location sharing; the OS still gates the runtime grant,
+            // and the web app only reads location after the user consents in-app.
+            perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
+            perms.add(Manifest.permission.ACCESS_COARSE_LOCATION);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 perms.add(Manifest.permission.POST_NOTIFICATIONS);
             }
