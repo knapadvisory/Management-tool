@@ -2117,6 +2117,8 @@ button.closed-row:hover { background: var(--surface-2); }
 .landing-feature h3 { font-size: 16px; margin: 0 0 6px; }
 .landing-feature p { font-size: 14px; line-height: 1.5; color: var(--text); opacity: .72; margin: 0; }
 .landing-footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 40px; padding-top: 22px; border-top: 1px solid var(--border); }
+.landing-footer-link { display: inline-block; margin-top: 6px; color: var(--accent); text-decoration: none; }
+.landing-footer-link:hover { text-decoration: underline; }
 @media (max-width: 860px) { .landing-features { grid-template-columns: repeat(2, 1fr); } .landing-title { font-size: 32px; } .landing-sub { font-size: 15px; } }
 @media (max-width: 560px) { .landing-features { grid-template-columns: 1fr; } .landing-title { font-size: 26px; } .landing-hero { padding: 20px 4px 28px; } }
 

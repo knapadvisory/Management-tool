@@ -456,6 +456,8 @@ app.use('/api/hr', requireAuth, blockGuests, hrRouter);
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
+  // Clean public URL for the privacy policy (also served at /privacy.html).
+  app.get('/privacy', (req, res) => res.sendFile(path.join(clientDist, 'privacy.html')));
   app.get(/^\/(?!api|socket\.io).*/, (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
 }
 
