@@ -65,6 +65,8 @@ export default function AdminPanel({ user }) {
 
       <InviteCodes />
 
+      <TeamLocations />
+
       <PlatformCodes />
 
       <PlatformAndroidApk />
@@ -331,6 +333,47 @@ function PlatformCodes() {
                   <button className="icon-btn" title="Revoke this code" onClick={() => revoke(c.id)}>✕</button>
                 </>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Workspace admins: the live location of teammates who have OPTED IN to sharing
+// (Settings → Location). People who haven't consented never appear, and anyone
+// sharing sees a persistent banner — this is never a covert capability.
+function agoText(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function TeamLocations() {
+  const [locations, setLocations] = useState([]);
+  const load = useCallback(() => { api('/admin/locations').then((d) => setLocations(d.locations || [])).catch(() => {}); }, []);
+  useEffect(() => { load(); const id = setInterval(load, 60000); return () => clearInterval(id); }, [load]);
+
+  return (
+    <div className="admin-policy">
+      <div className="admin-policy-head"><strong>📍 Team locations</strong></div>
+      <p className="muted">
+        The live location of teammates who have <strong>opted in</strong> to sharing (Settings → Location). People who
+        haven’t consented never appear here, and anyone sharing sees an on-screen banner the whole time.
+      </p>
+      {locations.length === 0 ? (
+        <p className="muted">No one is sharing their location right now.</p>
+      ) : (
+        <div className="code-list">
+          {locations.map((l) => (
+            <div key={l.id} className="code-row">
+              <Avatar user={l} size={28} />
+              <span className="code-label">{l.name}{l.title ? ` · ${l.title}` : ''}</span>
+              <span className="code-status muted">{agoText(l.recorded_at)}{l.accuracy ? ` · ±${Math.round(l.accuracy)}m` : ''}</span>
+              <a className="btn btn-sm" href={`https://www.google.com/maps?q=${l.lat},${l.lng}`} target="_blank" rel="noreferrer">View on map</a>
             </div>
           ))}
         </div>
