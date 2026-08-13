@@ -115,6 +115,7 @@ export default function Login({ onAuth }) {
 
             <footer className="landing-footer">
               © {new Date().getFullYear()} KNAP Advisory · TeamHub — internal team &amp; practice management
+              <br /><a href="/privacy" className="landing-footer-link">Privacy Policy</a>
             </footer>
           </div>
         ) : (
