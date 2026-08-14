@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delete your account &amp; data · TeamHub</title>
+<meta name="robots" content="index,follow">
+<style>
+  :root{ --ink:#1b1d29; --muted:#5b606e; --line:#e6e7ec; --bg:#ffffff; --band:#f6f7f9; --accent:#4f46e5; --navy:#1a1d29; --good:#15803d; --err:#b91c1c; }
+  @media (prefers-color-scheme: dark){
+    :root{ --ink:#e7e8ee; --muted:#a2a6b3; --line:#2a2d3a; --bg:#14161d; --band:#1b1e27; --accent:#a5b4fc; --navy:#0f1117; --good:#6ee7a0; --err:#fca5a5; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.65}
+  header{background:var(--navy);color:#fff;padding:28px 20px}
+  header .in{max-width:680px;margin:0 auto;display:flex;align-items:center;gap:10px}
+  .logo{width:28px;height:28px;border-radius:7px;background:#4f46e5;color:#fff;display:grid;place-content:center;font-weight:800}
+  header h1{font-size:18px;margin:0;font-weight:700;letter-spacing:-.01em}
+  main{max-width:680px;margin:0 auto;padding:32px 20px 72px}
+  h2{font-size:17px;margin:26px 0 8px}
+  p,li{font-size:15px}
+  p{margin:0 0 12px}
+  ul{margin:0 0 12px;padding-left:22px}
+  li{margin:0 0 6px}
+  .muted{color:var(--muted)}
+  a{color:var(--accent)}
+  .card{background:var(--band);border:1px solid var(--line);border-radius:12px;padding:20px;margin:18px 0}
+  label{display:block;font-size:13px;font-weight:600;margin:12px 0 4px}
+  input,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+  textarea{min-height:84px;resize:vertical}
+  button{margin-top:16px;background:var(--accent);color:#fff;border:0;padding:11px 18px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.6;cursor:default}
+  .msg{margin-top:14px;font-size:14px;padding:10px 12px;border-radius:8px;display:none}
+  .msg.ok{display:block;background:rgba(21,128,61,.12);color:var(--good)}
+  .msg.err{display:block;background:rgba(185,28,28,.12);color:var(--err)}
+  footer{border-top:1px solid var(--line);color:var(--muted);font-size:13px;max-width:680px;margin:0 auto;padding:20px}
+</style>
+</head>
+<body>
+<header><div class="in"><span class="logo">✓</span><h1>TeamHub — Delete your account &amp; data</h1></div></header>
+<main>
+  <p>You can request deletion of your TeamHub account and the personal data associated with it. This page lets you submit that request; you don't need to be signed in.</p>
+
+  <h2>What gets deleted</h2>
+  <ul>
+    <li>Your profile (name, email, title, avatar) and login credentials.</li>
+    <li>Your last shared location, if any (this is deleted immediately whenever you turn location sharing off).</li>
+    <li>Your notification tokens and personal preferences.</li>
+  </ul>
+
+  <h2>What may be retained</h2>
+  <p class="muted">Content you created inside a workspace — messages, tasks, comments and files — may be retained by your organisation for its business and legal records, and where retention is required by law. Where retained, it is disassociated from your profile where feasible.</p>
+
+  <h2>Request deletion</h2>
+  <div class="card">
+    <p class="muted" style="margin-top:0">Enter the email address on your TeamHub account. We verify and action requests within <strong>30 days</strong>, and email you when it's done. Your workspace admin can also delete your account directly from within the app.</p>
+    <form id="form">
+      <label for="email">Account email *</label>
+      <input id="email" name="email" type="email" required placeholder="you@company.com">
+      <label for="name">Your name</label>
+      <input id="name" name="name" type="text" placeholder="Optional">
+      <label for="message">Anything else?</label>
+      <textarea id="message" name="message" placeholder="Optional — e.g. which workspace, or specific data"></textarea>
+      <button id="submit" type="submit">Request account deletion</button>
+      <div id="msg" class="msg"></div>
+    </form>
+  </div>
+
+  <p class="muted">Prefer email? Write to <a href="mailto:knapadvisory@gmail.com?subject=TeamHub%20account%20deletion%20request">knapadvisory@gmail.com</a> from your account address. See also our <a href="/privacy">Privacy Policy</a>.</p>
+</main>
+<footer>© KNAP Advisory · TeamHub</footer>
+
+<script>
+  const form = document.getElementById('form');
+  const btn = document.getElementById('submit');
+  const msg = document.getElementById('msg');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    msg.className = 'msg'; msg.textContent = '';
+    btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      const res = await fetch('/api/account-deletion-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('email').value,
+          name: document.getElementById('name').value,
+          message: document.getElementById('message').value,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+      msg.className = 'msg ok';
+      msg.textContent = 'Request received. We’ll process it within 30 days and email you when it’s done.';
+      form.reset();
+    } catch (err) {
+      msg.className = 'msg err';
+      msg.textContent = err.message || 'Could not submit. Please email knapadvisory@gmail.com instead.';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Request account deletion';
+    }
+  });
+</script>
+</body>
+</html>
