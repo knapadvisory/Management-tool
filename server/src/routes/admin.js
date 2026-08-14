@@ -50,6 +50,17 @@ router.get('/locations', (req, res) => {
   res.json({ locations: rows });
 });
 
+// Public account/data-deletion requests awaiting action (from /delete-account).
+router.get('/deletion-requests', (req, res) => {
+  const requests = db.prepare("SELECT * FROM account_deletion_requests WHERE status = 'pending' ORDER BY created_at DESC").all();
+  res.json({ requests });
+});
+router.post('/deletion-requests/:id/handle', (req, res) => {
+  db.prepare("UPDATE account_deletion_requests SET status = 'handled', handled_at = datetime('now'), handled_by = ? WHERE id = ?")
+    .run(req.user.id, req.params.id);
+  res.json({ ok: true });
+});
+
 // Permanently-deleted accounts, kept for the admin's records (their content —
 // tasks, messages, files — stays attributed to them).
 router.get('/users/deleted', (req, res) => {

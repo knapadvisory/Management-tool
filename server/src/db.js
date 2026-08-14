@@ -606,6 +606,21 @@ CREATE TABLE IF NOT EXISTS user_locations (
   recorded_at TEXT NOT NULL
 );
 `);
+
+// Public account/data-deletion requests (Google Play data-deletion requirement).
+// Anyone can file one from /delete-account without logging in; admins action it.
+db.exec(`
+CREATE TABLE IF NOT EXISTS account_deletion_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  name TEXT,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  handled_at TEXT,
+  handled_by INTEGER
+);
+`);
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
 // Marks an attachment as a profile photo so it is viewable workspace-wide

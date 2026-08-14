@@ -89,6 +89,20 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+// Public account/data-deletion request (Google Play data-deletion requirement).
+// No auth — a person requesting deletion may not be able to sign in. Lightly
+// validated and stored; workspace admins see and action it in Team admin.
+app.post('/api/account-deletion-request', (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return res.status(400).json({ error: 'Please enter a valid email address.' });
+  }
+  const name = String(req.body?.name || '').trim().slice(0, 200) || null;
+  const message = String(req.body?.message || '').trim().slice(0, 2000) || null;
+  db.prepare('INSERT INTO account_deletion_requests (email, name, message) VALUES (?, ?, ?)').run(email, name, message);
+  res.json({ ok: true });
+});
+
 // --- Self-service password reset (email) ---
 // Request a reset link. Always responds 200 (never reveals whether the email
 // exists). Only actually sends when email is configured and the user exists.
@@ -458,6 +472,7 @@ if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   // Clean public URL for the privacy policy (also served at /privacy.html).
   app.get('/privacy', (req, res) => res.sendFile(path.join(clientDist, 'privacy.html')));
+  app.get('/delete-account', (req, res) => res.sendFile(path.join(clientDist, 'delete-account.html')));
   app.get(/^\/(?!api|socket\.io).*/, (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
 }
 

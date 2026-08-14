@@ -67,6 +67,8 @@ export default function AdminPanel({ user }) {
 
       <TeamLocations />
 
+      <DeletionRequests />
+
       <PlatformCodes />
 
       <PlatformAndroidApk />
@@ -337,6 +339,37 @@ function PlatformCodes() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Account/data-deletion requests filed from the public /delete-account page
+// (a Google Play requirement). Admins action them and mark them handled.
+function DeletionRequests() {
+  const [requests, setRequests] = useState([]);
+  const load = useCallback(() => { api('/admin/deletion-requests').then((d) => setRequests(d.requests || [])).catch(() => {}); }, []);
+  useEffect(() => { load(); const id = setInterval(load, 60000); return () => clearInterval(id); }, [load]);
+
+  async function handle(id) {
+    await api(`/admin/deletion-requests/${id}/handle`, { method: 'POST' }).catch(() => {});
+    load();
+  }
+
+  if (requests.length === 0) return null;
+  return (
+    <div className="admin-policy">
+      <div className="admin-policy-head"><strong>🗑️ Account deletion requests</strong></div>
+      <p className="muted">People who asked to delete their account and data via the public deletion page. Delete the matching user (above), then mark the request handled. Aim to action within 30 days.</p>
+      <div className="code-list">
+        {requests.map((r) => (
+          <div key={r.id} className="code-row">
+            <span className="code-value">{r.email}</span>
+            <span className="code-label">{r.name || '—'}{r.message ? ` · ${r.message}` : ''}</span>
+            <span className="code-status muted">{agoText(r.created_at)}</span>
+            <button className="btn btn-sm" onClick={() => handle(r.id)}>Mark handled</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
