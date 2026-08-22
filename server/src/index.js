@@ -473,6 +473,8 @@ if (fs.existsSync(clientDist)) {
   // Clean public URL for the privacy policy (also served at /privacy.html).
   app.get('/privacy', (req, res) => res.sendFile(path.join(clientDist, 'privacy.html')));
   app.get('/delete-account', (req, res) => res.sendFile(path.join(clientDist, 'delete-account.html')));
+  // Clean URL for the standalone PDF password-removal tool (fully client-side).
+  app.get('/pdf-unlock', (req, res) => res.sendFile(path.join(clientDist, 'pdf-unlock.html')));
   app.get(/^\/(?!api|socket\.io).*/, (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
 }
 
