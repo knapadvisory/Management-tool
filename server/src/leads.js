@@ -39,10 +39,15 @@ export function autoCreateFollowupTask(workspace, lead) {
 }
 
 export function notifyNewLead(io, workspace, lead, taskId = null) {
-  const admins = db.prepare("SELECT id FROM users WHERE workspace_id = ? AND role = 'admin' AND deleted = 0 AND active = 1").all(workspace.id);
+  // Admins and Sales both work the whole pipeline, so both hear about new leads.
+  const recipients = db.prepare(
+    "SELECT id FROM users WHERE workspace_id = ? AND role IN ('admin', 'sales') AND deleted = 0 AND active = 1",
+  ).all(workspace.id);
+  // The assigned owner should also know, even if they are a plain member.
+  if (lead.owner_id && !recipients.some((r) => r.id === lead.owner_id)) recipients.push({ id: lead.owner_id });
   const who = lead.name || lead.email || 'enquiry';
   const text = `New lead: ${who}${lead.message ? ` — ${lead.message.slice(0, 90)}` : ''}`;
-  for (const a of admins) {
+  for (const a of recipients) {
     createNotification(io, { user_id: a.id, type: 'lead', task_id: taskId, text });
     io?.to(`user:${a.id}`).emit('leads:changed');
   }

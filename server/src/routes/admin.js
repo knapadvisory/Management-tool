@@ -122,7 +122,7 @@ router.post('/users', (req, res) => {
   if (db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail)) {
     return res.status(409).json({ error: 'An account with this email already exists' });
   }
-  const chosenRole = role === 'admin' ? 'admin' : 'member';
+  const chosenRole = ['admin', 'sales', 'member'].includes(role) ? role : 'member';
   const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
   const info = db.prepare(
     'INSERT INTO users (name, email, password_hash, avatar_color, title, role, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -143,14 +143,15 @@ router.patch('/users/:id', (req, res) => {
   if (!target) return res.status(404).json({ error: 'User not found' });
   const { role, title } = req.body;
 
+  const validRole = ['admin', 'sales', 'member'].includes(role);
   if (role && role !== target.role) {
-    if (role !== 'admin' && role !== 'member') return res.status(400).json({ error: 'Invalid role' });
-    if (target.role === 'admin' && role === 'member' && lastActiveAdmin(target.id, req.workspaceId)) {
+    if (!validRole) return res.status(400).json({ error: 'Invalid role' });
+    if (target.role === 'admin' && role !== 'admin' && lastActiveAdmin(target.id, req.workspaceId)) {
       return res.status(400).json({ error: 'Cannot demote the only remaining admin' });
     }
   }
   db.prepare('UPDATE users SET role = COALESCE(?, role), title = COALESCE(?, title) WHERE id = ?')
-    .run(role === 'admin' || role === 'member' ? role : null, title ?? null, target.id);
+    .run(validRole ? role : null, title ?? null, target.id);
 
   req.app.get('io')?.emit('directory:changed');
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(target.id)));

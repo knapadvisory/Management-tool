@@ -80,6 +80,39 @@ async function main() {
   const bad = await req('PATCH', `/api/leads/${lead.id}`, { token: a, body: { status: 'banana' } });
   check('an invalid status is rejected', bad.status === 400);
 
+  // --- Role-based visibility: admin/sales see all, members see only their own ---
+  await req('POST', '/api/admin/users', { token: a, body: { name: 'Mia', email: 'mia@a.test', password: 'secret123', role: 'member' } });
+  await req('POST', '/api/admin/users', { token: a, body: { name: 'Sam', email: 'sam@a.test', password: 'secret123', role: 'sales' } });
+  const mia = (await req('POST', '/api/auth/login', { body: { email: 'mia@a.test', password: 'secret123' } })).data;
+  const sam = (await req('POST', '/api/auth/login', { body: { email: 'sam@a.test', password: 'secret123' } })).data;
+  check('a Sales user can be created', !!sam.token && sam.user.role === 'sales');
+
+  // The lead is owned by the admin (assigned earlier), so a member sees nothing.
+  const miaEmpty = await req('GET', '/api/leads', { token: mia.token });
+  check('a member sees no leads until one is assigned to them', miaEmpty.data.leads.length === 0);
+
+  // Assign it to Mia → it shows on her board.
+  await req('PATCH', `/api/leads/${lead.id}`, { token: a, body: { owner_id: mia.user.id } });
+  const miaOwn = await req('GET', '/api/leads', { token: mia.token });
+  check('a member sees a lead once assigned to them', miaOwn.data.leads.length === 1 && miaOwn.data.leads[0].id === lead.id);
+
+  // Sales sees every lead regardless of owner.
+  const samAll = await req('GET', '/api/leads', { token: sam.token });
+  check('a Sales user sees all leads', samAll.data.leads.length === 1);
+
+  // A member manages their own lead, but not one assigned elsewhere.
+  const miaMove = await req('PATCH', `/api/leads/${lead.id}`, { token: mia.token, body: { status: 'contacted' } });
+  check('a member can manage their own lead', miaMove.status === 200 && miaMove.data.lead.status === 'contacted');
+  await req('PATCH', `/api/leads/${lead.id}`, { token: a, body: { owner_id: sam.user.id } });
+  const miaDenied = await req('PATCH', `/api/leads/${lead.id}`, { token: mia.token, body: { status: 'won' } });
+  check('a member cannot manage a lead not assigned to them', miaDenied.status === 403);
+  const samMove = await req('PATCH', `/api/leads/${lead.id}`, { token: sam.token, body: { status: 'qualified' } });
+  check('a Sales user can manage any lead', samMove.status === 200 && samMove.data.lead.status === 'qualified');
+
+  // A member can only add a lead onto their own board.
+  const miaAdd = await req('POST', '/api/leads', { token: mia.token, body: { name: 'Walk-in', owner_id: sam.user.id } });
+  check('a member-added lead is assigned to them, not to whoever they named', miaAdd.data.lead.owner_id === mia.user.id);
+
   // Rotating the key invalidates the old one.
   const rotated = await req('POST', '/api/leads/settings/key', { token: a });
   check('the key can be rotated', rotated.data.key && rotated.data.key !== key);

@@ -682,6 +682,7 @@ function MemberRow({ m, me, act }) {
         <div className="admin-row-name">
           {m.name}
           {m.role === 'admin' && <span className="role-badge admin">Admin</span>}
+          {m.role === 'sales' && <span className="role-badge sales">Sales</span>}
           {isSelf && <span className="role-badge you">You</span>}
           {!m.active && <span className="role-badge off">Deactivated</span>}
         </div>
@@ -691,17 +692,12 @@ function MemberRow({ m, me, act }) {
       <div className="admin-row-actions">
         {!!m.active && !isSelf && (
           <>
-            {m.role === 'member' ? (
-              <button className="btn btn-sm" title="Give full admin access"
-                onClick={() => act(() => api(`/admin/users/${m.id}`, { method: 'PATCH', body: { role: 'admin' } }))}>
-                Make admin
-              </button>
-            ) : (
-              <button className="btn btn-sm" title="Remove admin access"
-                onClick={() => act(() => api(`/admin/users/${m.id}`, { method: 'PATCH', body: { role: 'member' } }))}>
-                Make member
-              </button>
-            )}
+            <select className="btn btn-sm role-select" value={m.role} title="Change this user's role"
+              onChange={(e) => act(() => api(`/admin/users/${m.id}`, { method: 'PATCH', body: { role: e.target.value } }))}>
+              <option value="member">Member</option>
+              <option value="sales">Sales</option>
+              <option value="admin">Admin</option>
+            </select>
             <button className="btn btn-sm" title="Set a new password for this user"
               onClick={() => {
                 const pw = prompt(`Set a new password for ${m.name} (6+ characters):`);
@@ -789,6 +785,7 @@ function CreateUserModal({ onClose, onCreated }) {
           <input type="password" placeholder="Temporary password (6+ chars)" value={form.password} onChange={set('password')} required minLength={6} />
           <select value={form.role} onChange={set('role')}>
             <option value="member">Member</option>
+            <option value="sales">Sales (sees & manages all leads)</option>
             <option value="admin">Admin (full access)</option>
           </select>
           {error && <div className="form-error">{error}</div>}

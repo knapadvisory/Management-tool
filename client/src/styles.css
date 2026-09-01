@@ -1146,6 +1146,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .role-badge.admin { background: var(--accent-soft); color: var(--accent-hover); }
 .role-badge.you { background: var(--success-soft); color: var(--success); }
 .role-badge.off { background: var(--danger-soft); color: var(--danger); }
+.role-badge.sales { background: var(--warning-soft); color: var(--warning); }
+.role-select { cursor: pointer; }
 .admin-create-form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .admin-create-form input, .admin-create-form select {
   padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;

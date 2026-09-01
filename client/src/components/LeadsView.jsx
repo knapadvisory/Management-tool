@@ -13,6 +13,7 @@ const COLUMNS = [
 const digits = (s) => String(s || '').replace(/\D/g, '');
 
 export default function LeadsView({ user, users = [], onOpenTask }) {
+  const manageAll = user.role === 'admin' || user.role === 'sales';
   const [leads, setLeads] = useState([]);
   const [selected, setSelected] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -44,7 +45,11 @@ export default function LeadsView({ user, users = [], onOpenTask }) {
       <div className="leads-head">
         <div>
           <h2>Leads</h2>
-          <p className="muted">Enquiries from your website, email and manual entry — move them along the pipeline.</p>
+          <p className="muted">
+            {manageAll
+              ? 'Enquiries from your website, email and manual entry — move them along the pipeline.'
+              : 'Leads assigned to you — move them along the pipeline.'}
+          </p>
         </div>
         <div className="leads-head-actions">
           <button className="btn" onClick={() => setAdding(true)}>＋ Add lead</button>
