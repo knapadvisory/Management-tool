@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import db from '../db.js';
-import { intakeLead } from '../leads.js';
+import { intakeLead, runStageAutomations } from '../leads.js';
 import { ensureStages, listStages, stageKeys, makeStageKey } from '../leadStages.js';
 
 const router = Router();
@@ -104,13 +104,23 @@ router.patch('/stages/reorder', requireAdmin, (req, res) => {
   res.json({ stages: listStages(req.workspaceId) });
 });
 
-// Rename a column.
+// Rename a column and/or set its automations (auto_task, auto_reminder_days).
 router.patch('/stages/:id', requireAdmin, (req, res) => {
   const stage = db.prepare('SELECT * FROM lead_stages WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!stage) return res.status(404).json({ error: 'Not found' });
-  const label = String(req.body?.label || '').trim();
-  if (!label) return res.status(400).json({ error: 'A name is required' });
-  db.prepare('UPDATE lead_stages SET label = ? WHERE id = ?').run(label, stage.id);
+  const b = req.body || {};
+  const sets = []; const vals = [];
+  if (b.label !== undefined) {
+    const label = String(b.label).trim();
+    if (!label) return res.status(400).json({ error: 'A name is required' });
+    sets.push('label = ?'); vals.push(label);
+  }
+  if (b.auto_task !== undefined) { sets.push('auto_task = ?'); vals.push(b.auto_task ? 1 : 0); }
+  if (b.auto_reminder_days !== undefined) {
+    const d = b.auto_reminder_days === null || b.auto_reminder_days === '' ? null : Math.max(0, Math.min(365, parseInt(b.auto_reminder_days, 10) || 0));
+    sets.push('auto_reminder_days = ?'); vals.push(d);
+  }
+  if (sets.length) db.prepare(`UPDATE lead_stages SET ${sets.join(', ')} WHERE id = ?`).run(...vals, stage.id);
   emitStages(req);
   res.json({ stages: listStages(req.workspaceId) });
 });
@@ -147,6 +157,14 @@ router.patch('/:id', (req, res) => {
   if (sets.length) {
     sets.push("updated_at = datetime('now')");
     db.prepare(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`).run(...vals, lead.id);
+  }
+  const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id);
+
+  // Entering a new stage fires that stage's automations (task / reminder).
+  if (b.status !== undefined && b.status !== lead.status) {
+    const stage = db.prepare('SELECT * FROM lead_stages WHERE workspace_id = ? AND key = ?').get(req.workspaceId, b.status);
+    const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.workspaceId);
+    runStageAutomations(req.app.get('io'), ws, updated, stage, req.user.id);
   }
   res.json({ lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
 });

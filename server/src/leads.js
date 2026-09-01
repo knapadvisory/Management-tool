@@ -14,7 +14,7 @@ export function createLead(workspaceId, { name = '', email = '', phone = '', mes
 }
 
 /** Auto-create a follow-up task in the workspace's configured leads workflow. */
-export function autoCreateFollowupTask(workspace, lead) {
+export function autoCreateFollowupTask(workspace, lead, { titlePrefix = 'Follow up' } = {}) {
   const wfId = workspace.leads_task_workflow_id;
   if (!wfId) return null;
   const wf = db.prepare('SELECT id FROM workflows WHERE id = ? AND workspace_id = ?').get(wfId, workspace.id);
@@ -34,10 +34,35 @@ export function autoCreateFollowupTask(workspace, lead) {
 
   const info = db.prepare(
     "INSERT INTO tasks (title, description, workflow_id, stage_id, assignee_id, creator_id, priority, due_date) VALUES (?, ?, ?, ?, ?, ?, 'high', ?)",
-  ).run(`Follow up: ${who}`, desc, wfId, stage.id, lead.owner_id || null, creator.id, due);
+  ).run(`${titlePrefix}: ${who}`, desc, wfId, stage.id, lead.owner_id || null, creator.id, due);
   const taskId = info.lastInsertRowid;
   db.prepare('UPDATE leads SET task_id = ? WHERE id = ?').run(taskId, lead.id);
   return taskId;
+}
+
+/**
+ * Run a stage's automations when a lead enters it: optionally create a follow-up
+ * task and/or schedule a reminder N days out. `actorId` is who moved the lead
+ * (they and the owner get the reminder). Returns what fired.
+ */
+export function runStageAutomations(io, workspace, lead, stage, actorId = null) {
+  const fired = { taskId: null, reminderId: null };
+  if (!stage) return fired;
+
+  if (stage.auto_task) {
+    fired.taskId = autoCreateFollowupTask(workspace, lead, { titlePrefix: `${stage.label}` });
+  }
+  if (stage.auto_reminder_days != null) {
+    const at = new Date(Date.now() + Number(stage.auto_reminder_days) * 86400000)
+      .toISOString().slice(0, 19).replace('T', ' ');
+    const uid = lead.owner_id || actorId || null;
+    const info = db.prepare(
+      'INSERT INTO lead_reminders (workspace_id, lead_id, user_id, remind_at, note) VALUES (?, ?, ?, ?, ?)',
+    ).run(workspace.id, lead.id, uid, at, `Follow up — ${stage.label}`);
+    fired.reminderId = info.lastInsertRowid;
+  }
+  if (fired.taskId || fired.reminderId) io?.to(`workspace:${workspace.id}`).emit('leads:changed');
+  return fired;
 }
 
 export function notifyNewLead(io, workspace, lead, taskId = null) {

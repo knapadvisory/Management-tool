@@ -682,6 +682,10 @@ CREATE TABLE IF NOT EXISTS lead_reminders (
 );
 CREATE INDEX IF NOT EXISTS idx_lead_reminders_due ON lead_reminders(sent, remind_at);
 `);
+// Per-stage automation: create a follow-up task and/or schedule a reminder when
+// a lead enters this column.
+ensureColumn('lead_stages', 'auto_task', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('lead_stages', 'auto_reminder_days', 'INTEGER');
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
 // Marks an attachment as a profile photo so it is viewable workspace-wide

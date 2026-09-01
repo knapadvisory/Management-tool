@@ -309,23 +309,43 @@ function ManageStages({ stages, onClose, onChange }) {
     setItems(next);
     apply(await api('/leads/stages/reorder', { method: 'PATCH', body: { order: next.map((s) => s.id) } }));
   }
+  async function setAuto(id, body) { apply(await api(`/leads/stages/${id}`, { method: 'PATCH', body })); }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
         <div className="modal-header"><strong>Pipeline stages</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div style={{ padding: 16 }}>
-          <p className="muted" style={{ marginBottom: 12 }}>Rename, reorder, add or remove the columns on your Leads board. New leads land in the first column.</p>
+          <p className="muted" style={{ marginBottom: 12 }}>Rename, reorder, add or remove the columns on your Leads board. New leads land in the first column. Automations run when a lead enters a stage.</p>
           <div className="stage-list">
             {items.map((s, i) => (
-              <div className="stage-row" key={s.id}>
-                <span className="dot" style={{ background: STAGE_COLORS[i % STAGE_COLORS.length] }} />
-                <input className="auth-input stage-name" defaultValue={s.label}
-                  onBlur={(e) => rename(s.id, e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} />
-                <button className="icon-btn" title="Move up" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
-                <button className="icon-btn" title="Move down" disabled={i === items.length - 1} onClick={() => move(i, 1)}>↓</button>
-                <button className="icon-btn" title="Delete column" disabled={items.length <= 1} onClick={() => del(s)}>✕</button>
+              <div className="stage-block" key={s.id}>
+                <div className="stage-row">
+                  <span className="dot" style={{ background: STAGE_COLORS[i % STAGE_COLORS.length] }} />
+                  <input className="auth-input stage-name" defaultValue={s.label}
+                    onBlur={(e) => rename(s.id, e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} />
+                  <button className="icon-btn" title="Move up" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
+                  <button className="icon-btn" title="Move down" disabled={i === items.length - 1} onClick={() => move(i, 1)}>↓</button>
+                  <button className="icon-btn" title="Delete column" disabled={items.length <= 1} onClick={() => del(s)}>✕</button>
+                </div>
+                <div className="stage-auto">
+                  <label className="stage-auto-opt">
+                    <input type="checkbox" checked={!!s.auto_task} onChange={(e) => setAuto(s.id, { auto_task: e.target.checked })} />
+                    Create a follow-up task
+                  </label>
+                  <label className="stage-auto-opt">
+                    <input type="checkbox" checked={s.auto_reminder_days != null}
+                      onChange={(e) => setAuto(s.id, { auto_reminder_days: e.target.checked ? 2 : null })} />
+                    Remind after
+                    <input className="auth-input stage-days" type="number" min="0" max="365"
+                      key={`days-${s.id}-${s.auto_reminder_days == null ? 'off' : 'on'}`}
+                      defaultValue={s.auto_reminder_days ?? ''} disabled={s.auto_reminder_days == null}
+                      onBlur={(e) => setAuto(s.id, { auto_reminder_days: e.target.value })}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} />
+                    days
+                  </label>
+                </div>
               </div>
             ))}
           </div>
