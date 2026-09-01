@@ -3,11 +3,13 @@
 // the authenticated "add lead" action.
 import db from './db.js';
 import { createNotification } from './notifications.js';
+import { firstStageKey } from './leadStages.js';
 
 export function createLead(workspaceId, { name = '', email = '', phone = '', message = '', source = 'manual', owner_id = null }) {
+  const status = firstStageKey(workspaceId);
   const info = db.prepare(
-    'INSERT INTO leads (workspace_id, name, email, phone, message, source, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).run(workspaceId, name.trim(), email.trim(), phone.trim(), message.trim(), source, owner_id);
+    'INSERT INTO leads (workspace_id, name, email, phone, message, source, status, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(workspaceId, name.trim(), email.trim(), phone.trim(), message.trim(), source, status, owner_id);
   return db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid);
 }
 

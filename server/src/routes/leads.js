@@ -4,12 +4,14 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import db from '../db.js';
 import { intakeLead } from '../leads.js';
+import { ensureStages, listStages, stageKeys, makeStageKey } from '../leadStages.js';
 
 const router = Router();
-const STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
 const requireAdmin = (req, res, next) => (req.user.role === 'admin' ? next() : res.status(403).json({ error: 'Admins only' }));
 // Admins and Sales see and manage every lead; everyone else only their own.
 const canManageAll = (req) => req.user.role === 'admin' || req.user.role === 'sales';
+// Tell every open board in the workspace the columns changed.
+const emitStages = (req) => req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('leads:stages');
 
 router.get('/', (req, res) => {
   const all = canManageAll(req);
@@ -64,6 +66,59 @@ router.patch('/settings', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Pipeline stages (columns). Read for anyone on the board; edit is admin. ---
+router.get('/stages', (req, res) => {
+  res.json({ stages: ensureStages(req.workspaceId) });
+});
+
+// Add a column at the end of the pipeline.
+router.post('/stages', requireAdmin, (req, res) => {
+  const label = String(req.body?.label || '').trim();
+  if (!label) return res.status(400).json({ error: 'A name is required' });
+  ensureStages(req.workspaceId);
+  const pos = (db.prepare('SELECT MAX(position) AS m FROM lead_stages WHERE workspace_id = ?').get(req.workspaceId).m ?? -1) + 1;
+  db.prepare('INSERT INTO lead_stages (workspace_id, key, label, position) VALUES (?, ?, ?, ?)')
+    .run(req.workspaceId, makeStageKey(req.workspaceId, label), label, pos);
+  emitStages(req);
+  res.status(201).json({ stages: listStages(req.workspaceId) });
+});
+
+// Reorder the whole pipeline. Body: { order: [stageId, …] }. Declared before /:id.
+router.patch('/stages/reorder', requireAdmin, (req, res) => {
+  const order = Array.isArray(req.body?.order) ? req.body.order : [];
+  const owned = new Set(listStages(req.workspaceId).map((s) => s.id));
+  const upd = db.prepare('UPDATE lead_stages SET position = ? WHERE id = ? AND workspace_id = ?');
+  const tx = db.transaction(() => { order.forEach((id, i) => { if (owned.has(Number(id))) upd.run(i, Number(id), req.workspaceId); }); });
+  tx();
+  emitStages(req);
+  res.json({ stages: listStages(req.workspaceId) });
+});
+
+// Rename a column.
+router.patch('/stages/:id', requireAdmin, (req, res) => {
+  const stage = db.prepare('SELECT * FROM lead_stages WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
+  if (!stage) return res.status(404).json({ error: 'Not found' });
+  const label = String(req.body?.label || '').trim();
+  if (!label) return res.status(400).json({ error: 'A name is required' });
+  db.prepare('UPDATE lead_stages SET label = ? WHERE id = ?').run(label, stage.id);
+  emitStages(req);
+  res.json({ stages: listStages(req.workspaceId) });
+});
+
+// Delete a column; its leads move to another stage (given, or the first one).
+router.delete('/stages/:id', requireAdmin, (req, res) => {
+  const stages = listStages(req.workspaceId);
+  if (stages.length <= 1) return res.status(400).json({ error: 'Keep at least one stage' });
+  const stage = stages.find((s) => s.id === Number(req.params.id));
+  if (!stage) return res.status(404).json({ error: 'Not found' });
+  const fallback = stages.find((s) => s.id === Number(req.body?.move_to)) || stages.find((s) => s.id !== stage.id);
+  db.prepare('UPDATE leads SET status = ? WHERE workspace_id = ? AND status = ?').run(fallback.key, req.workspaceId, stage.key);
+  db.prepare('DELETE FROM lead_stages WHERE id = ?').run(stage.id);
+  emitStages(req);
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('leads:changed');
+  res.json({ stages: listStages(req.workspaceId) });
+});
+
 // --- Single lead ---
 router.patch('/:id', (req, res) => {
   const lead = db.prepare('SELECT * FROM leads WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
@@ -72,7 +127,7 @@ router.patch('/:id', (req, res) => {
   const b = req.body || {};
   const sets = []; const vals = [];
   if (b.status !== undefined) {
-    if (!STATUSES.includes(b.status)) return res.status(400).json({ error: 'Invalid status' });
+    if (!stageKeys(req.workspaceId).includes(b.status)) return res.status(400).json({ error: 'Invalid status' });
     sets.push('status = ?'); vals.push(b.status);
   }
   if (b.owner_id !== undefined) { sets.push('owner_id = ?'); vals.push(b.owner_id || null); }

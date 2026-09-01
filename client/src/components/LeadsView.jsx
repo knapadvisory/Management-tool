@@ -3,31 +3,30 @@ import { api } from '../api.js';
 import { getSocket } from '../socket.js';
 import Avatar from './Avatar.jsx';
 
-const COLUMNS = [
-  { key: 'new', label: 'New' },
-  { key: 'contacted', label: 'Contacted' },
-  { key: 'qualified', label: 'Qualified' },
-  { key: 'won', label: 'Won' },
-  { key: 'lost', label: 'Lost' },
-];
+// Column accent colours, assigned by position so custom stages still get one.
+const STAGE_COLORS = ['#4f46e5', '#d97706', '#2563eb', '#16a34a', '#64748b', '#db2777', '#0891b2', '#7c3aed'];
 const digits = (s) => String(s || '').replace(/\D/g, '');
 
 export default function LeadsView({ user, users = [], onOpenTask }) {
   const manageAll = user.role === 'admin' || user.role === 'sales';
   const [leads, setLeads] = useState([]);
+  const [stages, setStages] = useState([]);
   const [selected, setSelected] = useState(null);
   const [adding, setAdding] = useState(false);
   const [setup, setSetup] = useState(false);
+  const [managing, setManaging] = useState(false);
   const [drag, setDrag] = useState(null);
 
   const load = useCallback(() => { api('/leads').then((d) => setLeads(d.leads || [])).catch(() => {}); }, []);
+  const loadStages = useCallback(() => { api('/leads/stages').then((d) => setStages(d.stages || [])).catch(() => {}); }, []);
   useEffect(() => {
-    load();
+    load(); loadStages();
     const s = getSocket();
     s?.on('leads:changed', load);
+    s?.on('leads:stages', loadStages);
     const id = setInterval(load, 45000);
-    return () => { s?.off('leads:changed', load); clearInterval(id); };
-  }, [load]);
+    return () => { s?.off('leads:changed', load); s?.off('leads:stages', loadStages); clearInterval(id); };
+  }, [load, loadStages]);
 
   async function patch(id, body) {
     const { lead } = await api(`/leads/${id}`, { method: 'PATCH', body });
@@ -53,21 +52,25 @@ export default function LeadsView({ user, users = [], onOpenTask }) {
         </div>
         <div className="leads-head-actions">
           <button className="btn" onClick={() => setAdding(true)}>＋ Add lead</button>
+          {user.role === 'admin' && <button className="btn" onClick={() => setManaging(true)}>▤ Stages</button>}
           {user.role === 'admin' && <button className="btn" onClick={() => setSetup(true)}>⚙ Website setup</button>}
         </div>
       </div>
 
       <div className="leads-board">
-        {COLUMNS.map((col) => {
+        {stages.map((col, i) => {
           const items = leads.filter((l) => l.status === col.key);
           return (
             <div
-              key={col.key}
-              className={`leads-col leads-col-${col.key} ${drag ? 'droppable' : ''}`}
+              key={col.id}
+              className={`leads-col ${drag ? 'droppable' : ''}`}
               onDragOver={(e) => { if (drag) e.preventDefault(); }}
               onDrop={() => { if (drag && drag.status !== col.key) patch(drag.id, { status: col.key }); setDrag(null); }}
             >
-              <div className="leads-col-head"><span className={`dot dot-${col.key}`} /> {col.label} <span className="leads-count">{items.length}</span></div>
+              <div className="leads-col-head">
+                <span className="dot" style={{ background: STAGE_COLORS[i % STAGE_COLORS.length] }} /> {col.label}
+                <span className="leads-count">{items.length}</span>
+              </div>
               <div className="leads-col-body">
                 {items.map((l) => (
                   <div
@@ -96,17 +99,18 @@ export default function LeadsView({ user, users = [], onOpenTask }) {
 
       {selected && (
         <LeadDetail
-          lead={selected} users={users} onClose={() => setSelected(null)}
+          lead={selected} users={users} stages={stages} onClose={() => setSelected(null)}
           onPatch={patch} onDelete={remove} onOpenTask={onOpenTask}
         />
       )}
       {adding && <AddLead users={users} onClose={() => setAdding(false)} onAdded={() => { setAdding(false); load(); }} />}
       {setup && <LeadSetup onClose={() => setSetup(false)} />}
+      {managing && <ManageStages stages={stages} onClose={() => setManaging(false)} onChange={setStages} />}
     </div>
   );
 }
 
-function LeadDetail({ lead, users, onClose, onPatch, onDelete, onOpenTask }) {
+function LeadDetail({ lead, users, stages, onClose, onPatch, onDelete, onOpenTask }) {
   const wa = digits(lead.phone);
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -122,9 +126,9 @@ function LeadDetail({ lead, users, onClose, onPatch, onDelete, onOpenTask }) {
           {wa && <a className="btn btn-sm" href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer">💬 WhatsApp</a>}
         </div>
 
-        <label className="lead-field-label">Status</label>
+        <label className="lead-field-label">Stage</label>
         <select value={lead.status} onChange={(e) => onPatch(lead.id, { status: e.target.value })} className="lead-select">
-          {COLUMNS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+          {stages.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
         </select>
 
         <label className="lead-field-label">Owner</label>
@@ -180,6 +184,68 @@ function AddLead({ users, onClose, onAdded }) {
           </select>
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Adding…' : 'Add lead'}</button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function ManageStages({ stages, onClose, onChange }) {
+  const [items, setItems] = useState(stages);
+  const [adding, setAdding] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setItems(stages); }, [stages]);
+
+  const apply = (res) => { const s = res.stages || []; setItems(s); onChange(s); };
+  async function addStage(e) {
+    e.preventDefault();
+    if (!adding.trim() || busy) return;
+    setBusy(true);
+    try { apply(await api('/leads/stages', { method: 'POST', body: { label: adding.trim() } })); setAdding(''); }
+    finally { setBusy(false); }
+  }
+  async function rename(id, label) {
+    const cur = stages.find((s) => s.id === id);
+    if (!label.trim() || (cur && cur.label === label.trim())) return;
+    apply(await api(`/leads/stages/${id}`, { method: 'PATCH', body: { label: label.trim() } }));
+  }
+  async function del(stage) {
+    if (items.length <= 1) return;
+    if (!window.confirm(`Delete the "${stage.label}" column? Any leads in it move to the first column.`)) return;
+    apply(await api(`/leads/stages/${stage.id}`, { method: 'DELETE' }));
+  }
+  async function move(i, dir) {
+    const j = i + dir;
+    if (j < 0 || j >= items.length) return;
+    const next = items.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    setItems(next);
+    apply(await api('/leads/stages/reorder', { method: 'PATCH', body: { order: next.map((s) => s.id) } }));
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+        <div className="modal-header"><strong>Pipeline stages</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div style={{ padding: 16 }}>
+          <p className="muted" style={{ marginBottom: 12 }}>Rename, reorder, add or remove the columns on your Leads board. New leads land in the first column.</p>
+          <div className="stage-list">
+            {items.map((s, i) => (
+              <div className="stage-row" key={s.id}>
+                <span className="dot" style={{ background: STAGE_COLORS[i % STAGE_COLORS.length] }} />
+                <input className="auth-input stage-name" defaultValue={s.label}
+                  onBlur={(e) => rename(s.id, e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} />
+                <button className="icon-btn" title="Move up" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
+                <button className="icon-btn" title="Move down" disabled={i === items.length - 1} onClick={() => move(i, 1)}>↓</button>
+                <button className="icon-btn" title="Delete column" disabled={items.length <= 1} onClick={() => del(s)}>✕</button>
+              </div>
+            ))}
+          </div>
+          <form onSubmit={addStage} className="stage-add">
+            <input className="auth-input" placeholder="New stage name" value={adding} onChange={(e) => setAdding(e.target.value)} />
+            <button className="btn btn-primary" disabled={!adding.trim() || busy}>Add</button>
+          </form>
+        </div>
       </div>
     </div>
   );

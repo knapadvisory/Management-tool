@@ -3184,3 +3184,11 @@ button.c360-stat:hover { border-color: var(--accent); }
   .leads-board { grid-template-columns: 1fr; }
   .lead-src { margin-left: 0; }
 }
+
+/* ---------- Leads: manage pipeline stages ---------- */
+.stage-list { display: flex; flex-direction: column; gap: 8px; }
+.stage-row { display: flex; align-items: center; gap: 8px; }
+.stage-row .stage-name { flex: 1; padding: 8px 10px; }
+.stage-row .icon-btn:disabled { opacity: .3; cursor: not-allowed; }
+.stage-add { display: flex; gap: 8px; margin-top: 14px; border-top: 1px solid var(--border); padding-top: 14px; }
+.stage-add .auth-input { flex: 1; }
