@@ -3192,3 +3192,20 @@ button.c360-stat:hover { border-color: var(--accent); }
 .stage-row .icon-btn:disabled { opacity: .3; cursor: not-allowed; }
 .stage-add { display: flex; gap: 8px; margin-top: 14px; border-top: 1px solid var(--border); padding-top: 14px; }
 .stage-add .auth-input { flex: 1; }
+
+/* ---------- Leads: notes & reminders ---------- */
+.lead-chip-due { color: var(--warning); }
+.lead-reminders { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 8px; }
+.lead-reminder { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.lead-reminder.done { opacity: .6; }
+.lead-remind-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.lead-quickpick { display: flex; gap: 6px; flex-wrap: wrap; }
+.lead-note-form { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.lead-note-form textarea { width: 100%; }
+.lead-notes { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.lead-note { display: flex; gap: 8px; }
+.lead-note-body { flex: 1; }
+.lead-note-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.lead-note-meta .muted { font-size: 11.5px; }
+.lead-note-del { margin-left: auto; }
+.lead-note-text { font-size: 13.5px; white-space: pre-wrap; margin-top: 2px; }

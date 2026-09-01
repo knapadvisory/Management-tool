@@ -12,11 +12,21 @@ const requireAdmin = (req, res, next) => (req.user.role === 'admin' ? next() : r
 const canManageAll = (req) => req.user.role === 'admin' || req.user.role === 'sales';
 // Tell every open board in the workspace the columns changed.
 const emitStages = (req) => req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('leads:stages');
+// Load a lead the caller is allowed to touch, or send the right error. Returns
+// the lead on success, or null after having already answered the response.
+function accessibleLead(req, res) {
+  const lead = db.prepare('SELECT * FROM leads WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
+  if (!lead) { res.status(404).json({ error: 'Not found' }); return null; }
+  if (!canManageAll(req) && lead.owner_id !== req.user.id) { res.status(403).json({ error: 'Not your lead' }); return null; }
+  return lead;
+}
 
 router.get('/', (req, res) => {
   const all = canManageAll(req);
   const leads = db.prepare(`
-    SELECT l.*, u.name AS owner_name, u.avatar_color AS owner_avatar_color
+    SELECT l.*, u.name AS owner_name, u.avatar_color AS owner_avatar_color,
+      (SELECT COUNT(*) FROM lead_notes n WHERE n.lead_id = l.id) AS note_count,
+      (SELECT MIN(remind_at) FROM lead_reminders r WHERE r.lead_id = l.id AND r.sent = 0) AS next_reminder
     FROM leads l LEFT JOIN users u ON u.id = l.owner_id
     WHERE l.workspace_id = ? ${all ? '' : 'AND l.owner_id = ?'} ORDER BY l.created_at DESC
   `).all(...(all ? [req.workspaceId] : [req.workspaceId, req.user.id]));
@@ -147,6 +157,70 @@ router.delete('/:id', (req, res) => {
   if (!canManageAll(req) && lead.owner_id !== req.user.id) return res.status(403).json({ error: 'Not your lead' });
   db.prepare('DELETE FROM leads WHERE id = ? AND workspace_id = ?').run(req.params.id, req.workspaceId);
   res.json({ ok: true });
+});
+
+// --- Notes / remarks ---
+router.get('/:id/notes', (req, res) => {
+  if (!accessibleLead(req, res)) return;
+  const notes = db.prepare(`
+    SELECT n.id, n.body, n.created_at, n.user_id, u.name AS author_name, u.avatar_color AS author_color
+    FROM lead_notes n LEFT JOIN users u ON u.id = n.user_id
+    WHERE n.lead_id = ? ORDER BY n.id DESC
+  `).all(req.params.id);
+  res.json({ notes });
+});
+
+router.post('/:id/notes', (req, res) => {
+  const lead = accessibleLead(req, res);
+  if (!lead) return;
+  const body = String(req.body?.body || '').trim().slice(0, 5000);
+  if (!body) return res.status(400).json({ error: 'A note is required' });
+  const info = db.prepare('INSERT INTO lead_notes (workspace_id, lead_id, user_id, body) VALUES (?, ?, ?, ?)')
+    .run(req.workspaceId, lead.id, req.user.id, body);
+  db.prepare("UPDATE leads SET updated_at = datetime('now') WHERE id = ?").run(lead.id);
+  const note = db.prepare(`
+    SELECT n.id, n.body, n.created_at, n.user_id, u.name AS author_name, u.avatar_color AS author_color
+    FROM lead_notes n LEFT JOIN users u ON u.id = n.user_id WHERE n.id = ?
+  `).get(info.lastInsertRowid);
+  req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('leads:changed');
+  res.status(201).json({ note });
+});
+
+router.delete('/:id/notes/:noteId', (req, res) => {
+  const lead = accessibleLead(req, res);
+  if (!lead) return;
+  const note = db.prepare('SELECT * FROM lead_notes WHERE id = ? AND lead_id = ?').get(req.params.noteId, lead.id);
+  if (!note) return res.json({ ok: true });
+  if (note.user_id !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Only the author or an admin can delete this note' });
+  db.prepare('DELETE FROM lead_notes WHERE id = ?').run(note.id);
+  res.json({ ok: true });
+});
+
+// --- Follow-up reminders ---
+router.get('/:id/reminders', (req, res) => {
+  if (!accessibleLead(req, res)) return;
+  const reminders = db.prepare('SELECT id, remind_at, note, sent, user_id FROM lead_reminders WHERE lead_id = ? ORDER BY remind_at').all(req.params.id);
+  res.json({ reminders });
+});
+
+router.post('/:id/reminders', (req, res) => {
+  const lead = accessibleLead(req, res);
+  if (!lead) return;
+  // Store as UTC "YYYY-MM-DD HH:MM:SS" so it compares against datetime('now').
+  const d = new Date(req.body?.remind_at);
+  if (Number.isNaN(d.getTime())) return res.status(400).json({ error: 'A valid reminder time is required' });
+  const at = d.toISOString().slice(0, 19).replace('T', ' ');
+  const note = String(req.body?.note || '').trim().slice(0, 500);
+  db.prepare('INSERT INTO lead_reminders (workspace_id, lead_id, user_id, remind_at, note) VALUES (?, ?, ?, ?, ?)')
+    .run(req.workspaceId, lead.id, req.user.id, at, note);
+  res.status(201).json({ reminders: db.prepare('SELECT id, remind_at, note, sent, user_id FROM lead_reminders WHERE lead_id = ? ORDER BY remind_at').all(lead.id) });
+});
+
+router.delete('/:id/reminders/:reminderId', (req, res) => {
+  const lead = accessibleLead(req, res);
+  if (!lead) return;
+  db.prepare('DELETE FROM lead_reminders WHERE id = ? AND lead_id = ?').run(req.params.reminderId, lead.id);
+  res.json({ reminders: db.prepare('SELECT id, remind_at, note, sent, user_id FROM lead_reminders WHERE lead_id = ? ORDER BY remind_at').all(lead.id) });
 });
 
 export default router;

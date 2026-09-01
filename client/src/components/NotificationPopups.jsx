@@ -7,6 +7,7 @@ const ICON = {
   dm: '💬', channel_msg: '#️⃣', mention: '📣', task_assigned: '📌',
   task_update: '✏️', task_moved: '↕️', task_status: '🔁', task_note: '🗒️',
   task_chat: '💬', task_reminder: '🔔', task_recurred: '🔁', task_deleted: '🗑️',
+  lead: '🎯', lead_reminder: '⏰',
 };
 
 export default function NotificationPopups({ popups = [], onOpen, onClose }) {

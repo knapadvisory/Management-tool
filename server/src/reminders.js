@@ -64,11 +64,31 @@ export function processDueReminders(io) {
   }
 }
 
+// Fire any lead follow-up reminders whose time has arrived. Notifies the person
+// who set the reminder and the lead's current owner, and links the lead's
+// follow-up task if one exists so they can jump straight to it.
+export function processDueLeadReminders(io) {
+  const due = db.prepare(`SELECT * FROM lead_reminders WHERE sent = 0 AND remind_at <= datetime('now')`).all();
+  for (const r of due) {
+    db.prepare('UPDATE lead_reminders SET sent = 1 WHERE id = ?').run(r.id);
+    const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(r.lead_id);
+    if (!lead) continue;
+    const who = lead.name || lead.email || lead.phone || 'a lead';
+    const text = `Follow up with ${who}${r.note ? `: ${r.note}` : ''}`;
+    const recipients = new Set([r.user_id, lead.owner_id].filter(Boolean));
+    for (const uid of recipients) {
+      createNotification(io, { user_id: uid, type: 'lead_reminder', actor_id: null, task_id: lead.task_id || null, text });
+      io?.to(`user:${uid}`).emit('leads:changed');
+    }
+  }
+}
+
 export function startReminderScheduler(io) {
   // Run shortly after boot, then every minute. Reminders have minute
   // granularity, which is plenty for task due-date nudges.
   processDueReminders(io);
-  const timer = setInterval(() => processDueReminders(io), 60 * 1000);
+  processDueLeadReminders(io);
+  const timer = setInterval(() => { processDueReminders(io); processDueLeadReminders(io); }, 60 * 1000);
   timer.unref?.(); // don't keep the process alive just for the scheduler
   return timer;
 }
