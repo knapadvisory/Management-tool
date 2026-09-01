@@ -72,7 +72,7 @@ export default function Login({ onAuth }) {
   return (
     <div className="auth-page">
       <header className="auth-topbar">
-        <div className="auth-brand"><span className="auth-logo">✓</span> TeamHub</div>
+        <div className="auth-brand"><img className="auth-logo-img" src="/logo-mark.svg" alt="" /> TeamHub</div>
         <div className="auth-topbar-right">
           {mode === 'home' ? (
             <button className="auth-topbtn" onClick={() => go('login')}>Sign In</button>
