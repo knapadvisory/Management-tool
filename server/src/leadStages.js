@@ -3,25 +3,25 @@
 import db from './db.js';
 
 export const DEFAULT_STAGES = [
-  { key: 'new', label: 'New' },
-  { key: 'contacted', label: 'Contacted' },
-  { key: 'qualified', label: 'Qualified' },
-  { key: 'won', label: 'Won' },
-  { key: 'lost', label: 'Lost' },
+  { key: 'new', label: 'New', outcome: 'open' },
+  { key: 'contacted', label: 'Contacted', outcome: 'open' },
+  { key: 'qualified', label: 'Qualified', outcome: 'open' },
+  { key: 'won', label: 'Won', outcome: 'won' },
+  { key: 'lost', label: 'Lost', outcome: 'lost' },
 ];
 
 /** Seed the default columns for a workspace that has none yet. */
 export function ensureStages(workspaceId) {
   const count = db.prepare('SELECT COUNT(*) AS n FROM lead_stages WHERE workspace_id = ?').get(workspaceId).n;
   if (count === 0) {
-    const insert = db.prepare('INSERT INTO lead_stages (workspace_id, key, label, position) VALUES (?, ?, ?, ?)');
-    DEFAULT_STAGES.forEach((s, i) => insert.run(workspaceId, s.key, s.label, i));
+    const insert = db.prepare('INSERT INTO lead_stages (workspace_id, key, label, position, outcome) VALUES (?, ?, ?, ?, ?)');
+    DEFAULT_STAGES.forEach((s, i) => insert.run(workspaceId, s.key, s.label, i, s.outcome));
   }
   return listStages(workspaceId);
 }
 
 export function listStages(workspaceId) {
-  return db.prepare('SELECT id, key, label, position, auto_task, auto_reminder_days FROM lead_stages WHERE workspace_id = ? ORDER BY position, id').all(workspaceId);
+  return db.prepare('SELECT id, key, label, position, auto_task, auto_reminder_days, outcome FROM lead_stages WHERE workspace_id = ? ORDER BY position, id').all(workspaceId);
 }
 
 export function stageKeys(workspaceId) {

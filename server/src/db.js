@@ -686,6 +686,10 @@ CREATE INDEX IF NOT EXISTS idx_lead_reminders_due ON lead_reminders(sent, remind
 // a lead enters this column.
 ensureColumn('lead_stages', 'auto_task', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('lead_stages', 'auto_reminder_days', 'INTEGER');
+// Outcome marker so analytics knows which columns mean won / lost ('open' by
+// default). leads.closed_at records when a lead first reached a won/lost stage.
+ensureColumn('lead_stages', 'outcome', "TEXT NOT NULL DEFAULT 'open'");
+ensureColumn('leads', 'closed_at', 'TEXT');
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
 // Marks an attachment as a profile photo so it is viewable workspace-wide

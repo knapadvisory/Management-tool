@@ -172,6 +172,22 @@ async function main() {
   const remAgain = await req('GET', `/api/leads/${fresh.id}/reminders`, { token: a });
   check('staying in a stage does not re-fire its automations', remAgain.data.reminders.length === 1);
 
+  // --- Analytics ---
+  // Move the fresh lead to "won" so there is a closed lead to measure.
+  await req('PATCH', `/api/leads/${fresh.id}`, { token: a, body: { status: 'won' } });
+  const an = await req('GET', '/api/leads/analytics', { token: a });
+  check('analytics returns pipeline totals', an.status === 200 && typeof an.data.total === 'number' && an.data.total >= 2);
+  check('analytics counts a won lead', an.data.won >= 1);
+  check('analytics computes a win rate', typeof an.data.conversion === 'number' && an.data.conversion > 0);
+  check('analytics breaks leads down by stage', Array.isArray(an.data.byStage) && an.data.byStage.some((s) => s.outcome === 'won'));
+  check('analytics breaks leads down by source', an.data.bySource.some((s) => s.source === 'website'));
+  check('a won lead stamps a close time for time-to-win', an.data.avgDaysToWin !== undefined);
+  // Sales can see analytics; a plain member cannot.
+  const samAn = await req('GET', '/api/leads/analytics', { token: sam.token });
+  check('a Sales user can view analytics', samAn.status === 200);
+  const miaAn = await req('GET', '/api/leads/analytics', { token: mia.token });
+  check('a member cannot view analytics', miaAn.status === 403);
+
   // --- Notes / remarks (the lead is currently owned by Sam) ---
   const noteRes = await req('POST', `/api/leads/${lead.id}/notes`, { token: a, body: { body: 'Called, asked to send a quote.' } });
   check('a note can be added to a lead', noteRes.status === 201 && noteRes.data.note.body.startsWith('Called'));
