@@ -171,6 +171,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   display: inline-flex; align-items: center; justify-content: center;
   width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 15px;
 }
+.auth-logo-img { width: 30px; height: 30px; border-radius: 8px; display: inline-block; vertical-align: middle; }
 .auth-topbar-right { display: flex; align-items: center; gap: 12px; font-size: 14px; }
 .auth-topbtn { background: var(--accent); color: #fff; border: none; padding: 8px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .auth-topbtn:hover { background: var(--accent-hover); }

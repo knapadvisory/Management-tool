@@ -25,7 +25,7 @@ export default function GuestApp({ user, collabs, onlineIds, onLogout, onRefresh
   return (
     <div className="app guest-app">
       <aside className="guest-rail">
-        <div className="guest-rail-brand"><span className="auth-logo">✓</span> TeamHub</div>
+        <div className="guest-rail-brand"><img className="auth-logo-img" src="/logo-mark.svg" alt="" /> TeamHub</div>
         <div className="guest-rail-label">Your conversations</div>
         <div className="guest-rail-list">
           {collabs.length === 0 && <p className="muted guest-rail-empty">No conversations yet.</p>}
