@@ -149,6 +149,29 @@ async function main() {
   const miaStage = await req('POST', '/api/leads/stages', { token: mia.token, body: { label: 'Sneaky' } });
   check('a member cannot add a stage', miaStage.status === 403);
 
+  // --- Stage-triggered automations ---
+  // Point the auto-task workflow at the default one, then arm a stage.
+  await req('PATCH', '/api/leads/settings', { token: a, body: { task_workflow_id: wfId } });
+  const stagesNow = (await req('GET', '/api/leads/stages', { token: a })).data.stages;
+  const contacted = stagesNow.find((s) => s.key === 'contacted');
+  const armed = await req('PATCH', `/api/leads/stages/${contacted.id}`, { token: a, body: { auto_task: true, auto_reminder_days: 3 } });
+  const armedStage = armed.data.stages.find((s) => s.id === contacted.id);
+  check('a stage can be armed with automations', armedStage.auto_task === 1 && armedStage.auto_reminder_days === 3);
+
+  // Add a fresh lead (starts in the first stage) and move it into "contacted".
+  const fresh = (await req('POST', '/api/leads', { token: a, body: { name: 'Auto Test' } })).data.lead;
+  const taskBefore = fresh.task_id;
+  await req('PATCH', `/api/leads/${fresh.id}`, { token: a, body: { status: 'contacted' } });
+  const freshRem = await req('GET', `/api/leads/${fresh.id}/reminders`, { token: a });
+  check('entering an armed stage schedules a reminder', freshRem.data.reminders.length === 1);
+  const freshLead = (await req('GET', '/api/leads', { token: a })).data.leads.find((l) => l.id === fresh.id);
+  check('entering an armed stage creates a follow-up task', !!freshLead.task_id && freshLead.task_id !== taskBefore);
+
+  // Re-saving the same stage does not re-fire (status unchanged → no dupes).
+  await req('PATCH', `/api/leads/${fresh.id}`, { token: a, body: { status: 'contacted' } });
+  const remAgain = await req('GET', `/api/leads/${fresh.id}/reminders`, { token: a });
+  check('staying in a stage does not re-fire its automations', remAgain.data.reminders.length === 1);
+
   // --- Notes / remarks (the lead is currently owned by Sam) ---
   const noteRes = await req('POST', `/api/leads/${lead.id}/notes`, { token: a, body: { body: 'Called, asked to send a quote.' } });
   check('a note can be added to a lead', noteRes.status === 201 && noteRes.data.note.body.startsWith('Called'));

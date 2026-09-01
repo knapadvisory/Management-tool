@@ -21,7 +21,7 @@ export function ensureStages(workspaceId) {
 }
 
 export function listStages(workspaceId) {
-  return db.prepare('SELECT id, key, label, position FROM lead_stages WHERE workspace_id = ? ORDER BY position, id').all(workspaceId);
+  return db.prepare('SELECT id, key, label, position, auto_task, auto_reminder_days FROM lead_stages WHERE workspace_id = ? ORDER BY position, id').all(workspaceId);
 }
 
 export function stageKeys(workspaceId) {
