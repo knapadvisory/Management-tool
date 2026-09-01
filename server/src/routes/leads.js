@@ -8,23 +8,28 @@ import { intakeLead } from '../leads.js';
 const router = Router();
 const STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
 const requireAdmin = (req, res, next) => (req.user.role === 'admin' ? next() : res.status(403).json({ error: 'Admins only' }));
+// Admins and Sales see and manage every lead; everyone else only their own.
+const canManageAll = (req) => req.user.role === 'admin' || req.user.role === 'sales';
 
 router.get('/', (req, res) => {
+  const all = canManageAll(req);
   const leads = db.prepare(`
     SELECT l.*, u.name AS owner_name, u.avatar_color AS owner_avatar_color
     FROM leads l LEFT JOIN users u ON u.id = l.owner_id
-    WHERE l.workspace_id = ? ORDER BY l.created_at DESC
-  `).all(req.workspaceId);
+    WHERE l.workspace_id = ? ${all ? '' : 'AND l.owner_id = ?'} ORDER BY l.created_at DESC
+  `).all(...(all ? [req.workspaceId] : [req.workspaceId, req.user.id]));
   res.json({ leads });
 });
 
-// Add a lead by hand (runs the same automations as website intake).
+// Add a lead by hand (runs the same automations as website intake). A member
+// who is not manage-all can only file leads onto their own board.
 router.post('/', (req, res) => {
   const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.workspaceId);
+  const ownerId = canManageAll(req) ? (req.body?.owner_id || null) : req.user.id;
   const { lead } = intakeLead(req.app.get('io'), ws, {
     name: String(req.body?.name || ''), email: String(req.body?.email || ''),
     phone: String(req.body?.phone || ''), message: String(req.body?.message || ''),
-    source: 'manual', owner_id: req.body?.owner_id || null,
+    source: 'manual', owner_id: ownerId,
   });
   res.json({ lead });
 });
@@ -63,6 +68,7 @@ router.patch('/settings', requireAdmin, (req, res) => {
 router.patch('/:id', (req, res) => {
   const lead = db.prepare('SELECT * FROM leads WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
   if (!lead) return res.status(404).json({ error: 'Not found' });
+  if (!canManageAll(req) && lead.owner_id !== req.user.id) return res.status(403).json({ error: 'Not your lead' });
   const b = req.body || {};
   const sets = []; const vals = [];
   if (b.status !== undefined) {
@@ -81,6 +87,9 @@ router.patch('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
+  const lead = db.prepare('SELECT owner_id FROM leads WHERE id = ? AND workspace_id = ?').get(req.params.id, req.workspaceId);
+  if (!lead) return res.json({ ok: true });
+  if (!canManageAll(req) && lead.owner_id !== req.user.id) return res.status(403).json({ error: 'Not your lead' });
   db.prepare('DELETE FROM leads WHERE id = ? AND workspace_id = ?').run(req.params.id, req.workspaceId);
   res.json({ ok: true });
 });
