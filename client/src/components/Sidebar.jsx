@@ -122,6 +122,12 @@ export default function Sidebar({
           <img className="nav-ico" src={clientIco} alt="" /> {t('nav.clients')}
         </button>
         <button
+          className={`nav-item ${view?.type === 'leads' ? 'active' : ''}`}
+          onClick={() => onSelectView('leads')}
+        >
+          <span className="nav-ico nav-ico-emoji">🎯</span> Leads
+        </button>
+        <button
           className={`nav-item ${view?.type === 'workflows' ? 'active' : ''}`}
           onClick={() => onSelectView('workflows')}
         >

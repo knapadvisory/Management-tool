@@ -30,6 +30,7 @@ import GroupCallManager from './components/GroupCallManager.jsx';
 import SearchModal from './components/SearchModal.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import LocationSharing from './components/LocationSharing.jsx';
+import LeadsView from './components/LeadsView.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import GuestJoin from './components/GuestJoin.jsx';
 import GuestApp from './components/GuestApp.jsx';
@@ -582,6 +583,10 @@ export default function App() {
         {view?.type === 'clients' && (
           <ClientsView user={user} users={users} initialClientId={view.clientId}
             onNavigateClient={(id) => setView({ type: 'clients', clientId: id ?? undefined })}
+            onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
+        )}
+        {view?.type === 'leads' && (
+          <LeadsView user={user} users={users}
             onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
         )}
         {view?.type === 'timesheet' && <TimesheetView user={user} />}
