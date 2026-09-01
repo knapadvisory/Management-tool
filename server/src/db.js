@@ -621,6 +621,29 @@ CREATE TABLE IF NOT EXISTS account_deletion_requests (
   handled_by INTEGER
 );
 `);
+
+// Sales/enquiry leads — captured from the website enquiry form (via a keyed
+// intake endpoint), from email, or added manually. Managed on a pipeline board.
+db.exec(`
+CREATE TABLE IF NOT EXISTS leads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  message TEXT DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'website',
+  status TEXT NOT NULL DEFAULT 'new',
+  owner_id INTEGER REFERENCES users(id),
+  task_id INTEGER REFERENCES tasks(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+// Per-workspace lead config: the secret key the website posts with, and the
+// workflow a follow-up task is auto-created in for each new lead.
+ensureColumn('workspaces', 'leads_intake_key', 'TEXT');
+ensureColumn('workspaces', 'leads_task_workflow_id', 'INTEGER');
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
 // Marks an attachment as a profile photo so it is viewable workspace-wide

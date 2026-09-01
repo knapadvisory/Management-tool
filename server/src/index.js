@@ -37,6 +37,8 @@ import timeRouter from './routes/time.js';
 import pushRouter from './routes/push.js';
 import feeParserRouter from './routes/feeParser.js';
 import locationRouter from './routes/location.js';
+import leadsRouter from './routes/leads.js';
+import { intakeLead } from './leads.js';
 import setupSocket from './socket.js';
 import { startReminderScheduler, startAutoArchiveScheduler, startDeadlineReminderScheduler, startWeeklyDigestScheduler, startDocumentRequestChaseScheduler } from './reminders.js';
 import { createNotification } from './notifications.js';
@@ -50,6 +52,7 @@ app.set('io', io);
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // accept form-encoded posts (e.g. the website lead form)
 
 // The app's public base URL, for links inside emails. Honours a configured
 // APP_URL, otherwise derives it from the incoming request.
@@ -87,6 +90,24 @@ app.get('/api/config', (req, res) => {
     ice_servers: iceServers(),
     android_app_available: androidApkAvailable(),
   });
+});
+
+// Public lead intake — the website enquiry form POSTs here with the workspace's
+// secret key (query ?key=, x-lead-key header, or a `key` field). No login.
+app.post('/api/leads/intake', (req, res) => {
+  const key = String(req.query.key || req.get('x-lead-key') || req.body?.key || '').trim();
+  if (!key) return res.status(400).json({ error: 'Missing key' });
+  const ws = db.prepare('SELECT * FROM workspaces WHERE leads_intake_key = ?').get(key);
+  if (!ws) return res.status(403).json({ error: 'Invalid key' });
+
+  const name = String(req.body?.name || '').slice(0, 200);
+  const email = String(req.body?.email || '').slice(0, 200);
+  const phone = String(req.body?.phone || '').slice(0, 60);
+  const message = String(req.body?.message || '').slice(0, 4000);
+  if (!name.trim() && !email.trim() && !phone.trim()) return res.status(400).json({ error: 'Empty enquiry' });
+
+  intakeLead(app.get('io'), ws, { name, email, phone, message, source: 'website' });
+  res.json({ ok: true });
 });
 
 // Public account/data-deletion request (Google Play data-deletion requirement).
@@ -449,6 +470,7 @@ app.use('/api/notifications', requireAuth, notificationsRouter);
 app.use('/api/uploads', uploadsRouter); // POST is guarded inside; GET uses a query-param token
 app.use('/api/search', requireAuth, blockGuests, searchRouter);
 app.use('/api/location', requireAuth, blockGuests, locationRouter);
+app.use('/api/leads', requireAuth, blockGuests, leadsRouter);
 app.use('/api/files', requireAuth, blockGuests, filesRouter);
 app.use('/api/drive', requireAuth, blockGuests, driveRouter);
 app.use('/api/dashboard', requireAuth, blockGuests, dashboardRouter);
