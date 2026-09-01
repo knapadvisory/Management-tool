@@ -6,6 +6,9 @@ import Avatar from './Avatar.jsx';
 // Column accent colours, assigned by position so custom stages still get one.
 const STAGE_COLORS = ['#4f46e5', '#d97706', '#2563eb', '#16a34a', '#64748b', '#db2777', '#0891b2', '#7c3aed'];
 const digits = (s) => String(s || '').replace(/\D/g, '');
+// Reminders are stored as a UTC "YYYY-MM-DD HH:MM:SS" string (no zone marker).
+const parseUTC = (s) => new Date(String(s).replace(' ', 'T') + (String(s).endsWith('Z') ? '' : 'Z'));
+const fmtWhen = (s) => parseUTC(s).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 
 export default function LeadsView({ user, users = [], onOpenTask }) {
   const manageAll = user.role === 'admin' || user.role === 'sales';
@@ -84,7 +87,8 @@ export default function LeadsView({ user, users = [], onOpenTask }) {
                     <div className="lead-card-name">{l.name || l.email || l.phone || 'Enquiry'}</div>
                     {l.message && <div className="lead-card-msg">{l.message}</div>}
                     <div className="lead-card-foot">
-                      {l.phone && <span className="lead-chip">📞 {l.phone}</span>}
+                      {l.note_count > 0 && <span className="lead-chip" title={`${l.note_count} note(s)`}>📝 {l.note_count}</span>}
+                      {l.next_reminder && <span className="lead-chip lead-chip-due" title={`Follow-up ${fmtWhen(l.next_reminder)}`}>⏰</span>}
                       <span className={`lead-src src-${l.source}`}>{l.source}</span>
                       {l.owner_id && <Avatar user={{ name: l.owner_name, avatar_color: l.owner_avatar_color }} size={20} />}
                     </div>
@@ -99,8 +103,8 @@ export default function LeadsView({ user, users = [], onOpenTask }) {
 
       {selected && (
         <LeadDetail
-          lead={selected} users={users} stages={stages} onClose={() => setSelected(null)}
-          onPatch={patch} onDelete={remove} onOpenTask={onOpenTask}
+          lead={selected} user={user} users={users} stages={stages} onClose={() => setSelected(null)}
+          onPatch={patch} onDelete={remove} onOpenTask={onOpenTask} onRefresh={load}
         />
       )}
       {adding && <AddLead users={users} onClose={() => setAdding(false)} onAdded={() => { setAdding(false); load(); }} />}
@@ -110,8 +114,46 @@ export default function LeadsView({ user, users = [], onOpenTask }) {
   );
 }
 
-function LeadDetail({ lead, users, stages, onClose, onPatch, onDelete, onOpenTask }) {
+function LeadDetail({ lead, user, users, stages, onClose, onPatch, onDelete, onOpenTask, onRefresh }) {
   const wa = digits(lead.phone);
+  const [notes, setNotes] = useState([]);
+  const [reminders, setReminders] = useState([]);
+  const [noteText, setNoteText] = useState('');
+  const [remindAt, setRemindAt] = useState('');
+  const [remindNote, setRemindNote] = useState('');
+
+  const loadNotes = useCallback(() => { api(`/leads/${lead.id}/notes`).then((d) => setNotes(d.notes || [])).catch(() => {}); }, [lead.id]);
+  const loadReminders = useCallback(() => { api(`/leads/${lead.id}/reminders`).then((d) => setReminders(d.reminders || [])).catch(() => {}); }, [lead.id]);
+  useEffect(() => { loadNotes(); loadReminders(); }, [loadNotes, loadReminders]);
+
+  async function addNote(e) {
+    e.preventDefault();
+    if (!noteText.trim()) return;
+    const { note } = await api(`/leads/${lead.id}/notes`, { method: 'POST', body: { body: noteText.trim() } });
+    setNotes((n) => [note, ...n]); setNoteText(''); onRefresh?.();
+  }
+  async function delNote(id) {
+    await api(`/leads/${lead.id}/notes/${id}`, { method: 'DELETE' }).catch(() => {});
+    setNotes((n) => n.filter((x) => x.id !== id)); onRefresh?.();
+  }
+  async function addReminder(e) {
+    e.preventDefault();
+    if (!remindAt) return;
+    const iso = new Date(remindAt).toISOString();
+    const { reminders: rs } = await api(`/leads/${lead.id}/reminders`, { method: 'POST', body: { remind_at: iso, note: remindNote.trim() } });
+    setReminders(rs); setRemindAt(''); setRemindNote(''); onRefresh?.();
+  }
+  async function delReminder(id) {
+    const { reminders: rs } = await api(`/leads/${lead.id}/reminders/${id}`, { method: 'DELETE' });
+    setReminders(rs); onRefresh?.();
+  }
+  // A sensible default for the picker: tomorrow 10:00 local.
+  function quickPick(days) {
+    const d = new Date(); d.setDate(d.getDate() + days); d.setHours(10, 0, 0, 0);
+    const off = d.getTimezoneOffset();
+    setRemindAt(new Date(d.getTime() - off * 60000).toISOString().slice(0, 16));
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="lead-detail" onClick={(e) => e.stopPropagation()}>
@@ -150,6 +192,52 @@ function LeadDetail({ lead, users, stages, onClose, onPatch, onDelete, onOpenTas
             <div className="lead-message">{lead.message}</div>
           </>
         )}
+
+        {/* Follow-up reminders */}
+        <label className="lead-field-label">Follow-up reminders</label>
+        {reminders.length > 0 && (
+          <div className="lead-reminders">
+            {reminders.map((r) => (
+              <div key={r.id} className={`lead-reminder ${r.sent ? 'done' : ''}`}>
+                <span>{r.sent ? '✅' : '⏰'} {fmtWhen(r.remind_at)}{r.note ? ` — ${r.note}` : ''}</span>
+                <button className="icon-btn" title="Remove" onClick={() => delReminder(r.id)}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <form onSubmit={addReminder} className="lead-remind-form">
+          <div className="lead-quickpick">
+            <button type="button" className="btn btn-sm" onClick={() => quickPick(1)}>Tomorrow</button>
+            <button type="button" className="btn btn-sm" onClick={() => quickPick(3)}>In 3 days</button>
+            <button type="button" className="btn btn-sm" onClick={() => quickPick(7)}>Next week</button>
+          </div>
+          <input className="auth-input" type="datetime-local" value={remindAt} onChange={(e) => setRemindAt(e.target.value)} />
+          <input className="auth-input" placeholder="What to do (optional)" value={remindNote} onChange={(e) => setRemindNote(e.target.value)} />
+          <button className="btn btn-sm btn-primary" disabled={!remindAt}>Set reminder</button>
+        </form>
+
+        {/* Notes / remarks */}
+        <label className="lead-field-label">Notes &amp; remarks</label>
+        <form onSubmit={addNote} className="lead-note-form">
+          <textarea className="auth-input" rows={2} placeholder="Log a call, remark or next step…" value={noteText} onChange={(e) => setNoteText(e.target.value)} />
+          <button className="btn btn-sm btn-primary" disabled={!noteText.trim()}>Add note</button>
+        </form>
+        <div className="lead-notes">
+          {notes.map((n) => (
+            <div key={n.id} className="lead-note">
+              <Avatar user={{ name: n.author_name, avatar_color: n.author_color }} size={24} />
+              <div className="lead-note-body">
+                <div className="lead-note-meta">
+                  <strong>{n.author_name || 'Someone'}</strong>
+                  <span className="muted">{new Date(n.created_at + 'Z').toLocaleString()}</span>
+                  {(n.user_id === user.id || user.role === 'admin') && <button className="icon-btn lead-note-del" title="Delete" onClick={() => delNote(n.id)}>✕</button>}
+                </div>
+                <div className="lead-note-text">{n.body}</div>
+              </div>
+            </div>
+          ))}
+          {notes.length === 0 && <div className="muted" style={{ fontSize: 13 }}>No notes yet.</div>}
+        </div>
 
         <div className="lead-detail-foot">
           {lead.task_id && <button className="btn btn-sm" onClick={() => onOpenTask?.(lead.task_id)}>Open follow-up task →</button>}

@@ -656,6 +656,31 @@ CREATE TABLE IF NOT EXISTS lead_stages (
   position INTEGER NOT NULL DEFAULT 0,
   UNIQUE (workspace_id, key)
 );
+
+-- Free-text remarks logged against a lead (a running conversation trail).
+CREATE TABLE IF NOT EXISTS lead_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_lead_notes_lead ON lead_notes(lead_id, id);
+
+-- Scheduled follow-up reminders. A background scheduler fires each one when its
+-- time arrives, notifying the creator (and the lead owner).
+CREATE TABLE IF NOT EXISTS lead_reminders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id),
+  remind_at TEXT NOT NULL,
+  note TEXT DEFAULT '',
+  sent INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_lead_reminders_due ON lead_reminders(sent, remind_at);
 `);
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");

@@ -149,6 +149,30 @@ async function main() {
   const miaStage = await req('POST', '/api/leads/stages', { token: mia.token, body: { label: 'Sneaky' } });
   check('a member cannot add a stage', miaStage.status === 403);
 
+  // --- Notes / remarks (the lead is currently owned by Sam) ---
+  const noteRes = await req('POST', `/api/leads/${lead.id}/notes`, { token: a, body: { body: 'Called, asked to send a quote.' } });
+  check('a note can be added to a lead', noteRes.status === 201 && noteRes.data.note.body.startsWith('Called'));
+  const noteList = await req('GET', `/api/leads/${lead.id}/notes`, { token: a });
+  check('notes are listed newest-first', noteList.data.notes.length === 1);
+  const emptyNote = await req('POST', `/api/leads/${lead.id}/notes`, { token: a, body: { body: '   ' } });
+  check('an empty note is rejected', emptyNote.status === 400);
+  const boardWithNote = await req('GET', '/api/leads', { token: a });
+  check('the board carries a note count', boardWithNote.data.leads.find((l) => l.id === lead.id).note_count === 1);
+  const miaNote = await req('POST', `/api/leads/${lead.id}/notes`, { token: mia.token, body: { body: 'sneaky' } });
+  check('a member cannot note a lead that is not theirs', miaNote.status === 403);
+
+  // --- Follow-up reminders ---
+  const future = new Date(Date.now() + 3 * 86400000).toISOString();
+  const remRes = await req('POST', `/api/leads/${lead.id}/reminders`, { token: a, body: { remind_at: future, note: 'Chase the quote' } });
+  check('a follow-up reminder can be scheduled', remRes.status === 201 && remRes.data.reminders.length === 1);
+  const remId = remRes.data.reminders[0].id;
+  const badRem = await req('POST', `/api/leads/${lead.id}/reminders`, { token: a, body: { remind_at: 'not-a-date' } });
+  check('a reminder with a bad time is rejected', badRem.status === 400);
+  const boardWithRem = await req('GET', '/api/leads', { token: a });
+  check('the board carries the next reminder time', !!boardWithRem.data.leads.find((l) => l.id === lead.id).next_reminder);
+  const remDel = await req('DELETE', `/api/leads/${lead.id}/reminders/${remId}`, { token: a });
+  check('a reminder can be cancelled', remDel.data.reminders.length === 0);
+
   // Rotating the key invalidates the old one.
   const rotated = await req('POST', '/api/leads/settings/key', { token: a });
   check('the key can be rotated', rotated.data.key && rotated.data.key !== key);

@@ -7,7 +7,7 @@ import TaskModal from './TaskModal.jsx';
 const ICON = {
   dm: '✉️', channel_msg: '#️⃣', mention: '💬', task_assigned: '📌', task_chat: '💬', task_note: '📝', task_moved: '➡️', task_update: '🔔',
   task_reminder: '⏰', task_recurred: '🔁', task_deleted: '🗑️', task_status: '🚦', drive_share: '🏷️',
-  deadline_reminder: '⏳', deadline_digest: '📅',
+  deadline_reminder: '⏳', deadline_digest: '📅', lead: '🎯', lead_reminder: '⏰',
 };
 
 function timeAgo(iso) {
