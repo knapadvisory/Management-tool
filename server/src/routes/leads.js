@@ -79,10 +79,13 @@ router.get('/analytics', (req, res) => {
 router.post('/', (req, res) => {
   const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.workspaceId);
   const ownerId = canManageAll(req) ? (req.body?.owner_id || null) : req.user.id;
+  // Where the lead came from, e.g. referral / walk-in / phone. Kept short and
+  // normalised so it groups cleanly in analytics; falls back to 'manual'.
+  const source = String(req.body?.source || '').trim().toLowerCase().slice(0, 30) || 'manual';
   const { lead } = intakeLead(req.app.get('io'), ws, {
     name: String(req.body?.name || ''), email: String(req.body?.email || ''),
     phone: String(req.body?.phone || ''), message: String(req.body?.message || ''),
-    source: 'manual', owner_id: ownerId,
+    source, owner_id: ownerId,
   });
   res.json({ lead });
 });

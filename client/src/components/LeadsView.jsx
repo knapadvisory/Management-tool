@@ -318,13 +318,15 @@ function LeadDetail({ lead, user, users, stages, onClose, onPatch, onDelete, onO
   );
 }
 
+const SOURCE_SUGGESTIONS = ['Referral', 'Walk-in', 'Phone call', 'WhatsApp', 'Social media', 'Email', 'Event', 'Other'];
+
 function AddLead({ users, onClose, onAdded }) {
-  const [f, setF] = useState({ name: '', email: '', phone: '', message: '', owner_id: '' });
+  const [f, setF] = useState({ name: '', email: '', phone: '', message: '', owner_id: '', source: '' });
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   async function submit(e) {
     e.preventDefault(); setBusy(true);
-    try { await api('/leads', { method: 'POST', body: { ...f, owner_id: f.owner_id ? Number(f.owner_id) : null } }); onAdded(); }
+    try { await api('/leads', { method: 'POST', body: { ...f, source: f.source.trim() || 'manual', owner_id: f.owner_id ? Number(f.owner_id) : null } }); onAdded(); }
     catch { setBusy(false); }
   }
   return (
@@ -336,6 +338,10 @@ function AddLead({ users, onClose, onAdded }) {
           <input className="auth-input" placeholder="Email" value={f.email} onChange={set('email')} />
           <input className="auth-input" placeholder="Phone" value={f.phone} onChange={set('phone')} />
           <textarea className="auth-input" placeholder="Enquiry / message" rows={3} value={f.message} onChange={set('message')} />
+          <input className="auth-input" list="lead-source-list" placeholder="Source (e.g. Referral, Walk-in)" value={f.source} onChange={set('source')} />
+          <datalist id="lead-source-list">
+            {SOURCE_SUGGESTIONS.map((s) => <option key={s} value={s} />)}
+          </datalist>
           <select className="auth-input" value={f.owner_id} onChange={set('owner_id')}>
             <option value="">Assign owner (optional)</option>
             {users.filter((u) => u.role !== 'guest').map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}

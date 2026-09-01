@@ -113,6 +113,12 @@ async function main() {
   const miaAdd = await req('POST', '/api/leads', { token: mia.token, body: { name: 'Walk-in', owner_id: sam.user.id } });
   check('a member-added lead is assigned to them, not to whoever they named', miaAdd.data.lead.owner_id === mia.user.id);
 
+  // Manual adds record a source (normalised); blank falls back to 'manual'.
+  const srcAdd = await req('POST', '/api/leads', { token: a, body: { name: 'Ref Lead', source: 'Referral' } });
+  check('a manual lead records its source', srcAdd.data.lead.source === 'referral');
+  const noSrc = await req('POST', '/api/leads', { token: a, body: { name: 'No Source' } });
+  check('a manual lead with no source defaults to manual', noSrc.data.lead.source === 'manual');
+
   // --- Configurable pipeline stages ---
   const st0 = await req('GET', '/api/leads/stages', { token: a });
   check('the default pipeline has the five seeded stages', st0.data.stages.length === 5 && st0.data.stages[0].key === 'new');
