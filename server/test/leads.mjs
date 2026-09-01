@@ -113,6 +113,42 @@ async function main() {
   const miaAdd = await req('POST', '/api/leads', { token: mia.token, body: { name: 'Walk-in', owner_id: sam.user.id } });
   check('a member-added lead is assigned to them, not to whoever they named', miaAdd.data.lead.owner_id === mia.user.id);
 
+  // --- Configurable pipeline stages ---
+  const st0 = await req('GET', '/api/leads/stages', { token: a });
+  check('the default pipeline has the five seeded stages', st0.data.stages.length === 5 && st0.data.stages[0].key === 'new');
+
+  // Add a column.
+  const added = await req('POST', '/api/leads/stages', { token: a, body: { label: 'Proposal Sent' } });
+  check('an admin can add a stage', added.status === 201 && added.data.stages.some((s) => s.label === 'Proposal Sent'));
+  const proposal = added.data.stages.find((s) => s.label === 'Proposal Sent');
+  check('a new stage gets a slug key', proposal.key === 'proposal-sent');
+
+  // A lead can be moved into the new stage; an unknown stage is still rejected.
+  const toNew = await req('PATCH', `/api/leads/${lead.id}`, { token: a, body: { status: proposal.key } });
+  check('a lead can move into a custom stage', toNew.status === 200 && toNew.data.lead.status === proposal.key);
+  const bogus = await req('PATCH', `/api/leads/${lead.id}`, { token: a, body: { status: 'not-a-stage' } });
+  check('a status outside the pipeline is rejected', bogus.status === 400);
+
+  // Rename it.
+  const renamed = await req('PATCH', `/api/leads/stages/${proposal.id}`, { token: a, body: { label: 'Proposal' } });
+  check('an admin can rename a stage', renamed.data.stages.find((s) => s.id === proposal.id).label === 'Proposal');
+
+  // Reorder: move the new stage to the front.
+  const order = [proposal.id, ...st0.data.stages.map((s) => s.id)];
+  const reordered = await req('PATCH', '/api/leads/stages/reorder', { token: a, body: { order } });
+  check('an admin can reorder stages', reordered.data.stages[0].id === proposal.id);
+
+  // Delete it → the lead sitting in it falls back to another stage, not lost.
+  const del = await req('DELETE', `/api/leads/stages/${proposal.id}`, { token: a });
+  check('an admin can delete a stage', del.status === 200 && !del.data.stages.some((s) => s.id === proposal.id));
+  const afterDel = await req('GET', '/api/leads', { token: a });
+  const moved2 = afterDel.data.leads.find((l) => l.id === lead.id);
+  check('a lead in a deleted stage is reassigned, not orphaned', moved2 && del.data.stages.some((s) => s.key === moved2.status));
+
+  // A plain member cannot edit the pipeline.
+  const miaStage = await req('POST', '/api/leads/stages', { token: mia.token, body: { label: 'Sneaky' } });
+  check('a member cannot add a stage', miaStage.status === 403);
+
   // Rotating the key invalidates the old one.
   const rotated = await req('POST', '/api/leads/settings/key', { token: a });
   check('the key can be rotated', rotated.data.key && rotated.data.key !== key);

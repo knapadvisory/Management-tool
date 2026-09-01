@@ -644,6 +644,19 @@ CREATE TABLE IF NOT EXISTS leads (
 // workflow a follow-up task is auto-created in for each new lead.
 ensureColumn('workspaces', 'leads_intake_key', 'TEXT');
 ensureColumn('workspaces', 'leads_task_workflow_id', 'INTEGER');
+
+// Configurable pipeline columns. `key` is a stable slug stored on leads.status;
+// `label` is what the admin renames. Defaults are seeded lazily per workspace.
+db.exec(`
+CREATE TABLE IF NOT EXISTS lead_stages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  label TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (workspace_id, key)
+);
+`);
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
 // Marks an attachment as a profile photo so it is viewable workspace-wide
