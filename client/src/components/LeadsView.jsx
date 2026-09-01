@@ -18,6 +18,7 @@ export default function LeadsView({ user, users = [], onOpenTask }) {
   const [adding, setAdding] = useState(false);
   const [setup, setSetup] = useState(false);
   const [managing, setManaging] = useState(false);
+  const [insights, setInsights] = useState(false);
   const [drag, setDrag] = useState(null);
 
   const load = useCallback(() => { api('/leads').then((d) => setLeads(d.leads || [])).catch(() => {}); }, []);
@@ -55,6 +56,7 @@ export default function LeadsView({ user, users = [], onOpenTask }) {
         </div>
         <div className="leads-head-actions">
           <button className="btn" onClick={() => setAdding(true)}>＋ Add lead</button>
+          {manageAll && <button className="btn" onClick={() => setInsights(true)}>📊 Insights</button>}
           {user.role === 'admin' && <button className="btn" onClick={() => setManaging(true)}>▤ Stages</button>}
           {user.role === 'admin' && <button className="btn" onClick={() => setSetup(true)}>⚙ Website setup</button>}
         </div>
@@ -110,6 +112,74 @@ export default function LeadsView({ user, users = [], onOpenTask }) {
       {adding && <AddLead users={users} onClose={() => setAdding(false)} onAdded={() => { setAdding(false); load(); }} />}
       {setup && <LeadSetup onClose={() => setSetup(false)} />}
       {managing && <ManageStages stages={stages} onClose={() => setManaging(false)} onChange={setStages} />}
+      {insights && <LeadInsights onClose={() => setInsights(false)} />}
+    </div>
+  );
+}
+
+function LeadInsights({ onClose }) {
+  const [d, setD] = useState(null);
+  useEffect(() => { api('/leads/analytics').then(setD).catch(() => setD({ error: true })); }, []);
+  const maxStage = d && d.byStage ? Math.max(1, ...d.byStage.map((s) => s.count)) : 1;
+  const maxSrc = d && d.bySource ? Math.max(1, ...d.bySource.map((s) => s.count)) : 1;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620 }}>
+        <div className="modal-header"><strong>Lead insights</strong><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div style={{ padding: 16 }}>
+          {!d && <div className="muted">Loading…</div>}
+          {d && d.error && <div className="muted">Couldn't load analytics.</div>}
+          {d && !d.error && (
+            <>
+              <div className="insight-tiles">
+                <div className="insight-tile"><div className="insight-num">{d.total}</div><div className="insight-lbl">Total leads</div></div>
+                <div className="insight-tile"><div className="insight-num">{d.open}</div><div className="insight-lbl">Open</div></div>
+                <div className="insight-tile"><div className="insight-num">{d.won}</div><div className="insight-lbl">Won</div></div>
+                <div className="insight-tile"><div className="insight-num">{d.conversion}%</div><div className="insight-lbl">Win rate</div></div>
+                <div className="insight-tile"><div className="insight-num">{d.avgDaysToWin ?? '—'}</div><div className="insight-lbl">Avg days to win</div></div>
+                <div className="insight-tile"><div className="insight-num">{d.newThisWeek}</div><div className="insight-lbl">New this week</div></div>
+              </div>
+
+              <label className="lead-field-label">Leads by stage</label>
+              <div className="insight-bars">
+                {d.byStage.map((s, i) => (
+                  <div className="insight-bar-row" key={i}>
+                    <span className="insight-bar-lbl">{s.label}{s.outcome !== 'open' ? (s.outcome === 'won' ? ' ✅' : ' ✖') : ''}</span>
+                    <span className="insight-bar-track"><span className="insight-bar-fill" style={{ width: `${(s.count / maxStage) * 100}%`, background: STAGE_COLORS[i % STAGE_COLORS.length] }} /></span>
+                    <span className="insight-bar-val">{s.count}</span>
+                  </div>
+                ))}
+              </div>
+
+              <label className="lead-field-label">By source</label>
+              <div className="insight-bars">
+                {d.bySource.map((s, i) => (
+                  <div className="insight-bar-row" key={i}>
+                    <span className="insight-bar-lbl">{s.source}</span>
+                    <span className="insight-bar-track"><span className="insight-bar-fill" style={{ width: `${(s.count / maxSrc) * 100}%` }} /></span>
+                    <span className="insight-bar-val">{s.count}</span>
+                  </div>
+                ))}
+              </div>
+
+              {d.topOwners.length > 0 && (
+                <>
+                  <label className="lead-field-label">Top closers (won)</label>
+                  <div className="insight-owners">
+                    {d.topOwners.map((o, i) => (
+                      <div className="insight-owner" key={i}>
+                        <Avatar user={{ name: o.name, avatar_color: o.avatar_color }} size={24} />
+                        <span>{o.name}</span><span className="insight-bar-val">{o.won}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -344,6 +414,14 @@ function ManageStages({ stages, onClose, onChange }) {
                       onBlur={(e) => setAuto(s.id, { auto_reminder_days: e.target.value })}
                       onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} />
                     days
+                  </label>
+                  <label className="stage-auto-opt">
+                    Counts as
+                    <select className="auth-input stage-outcome" value={s.outcome || 'open'} onChange={(e) => setAuto(s.id, { outcome: e.target.value })}>
+                      <option value="open">Open</option>
+                      <option value="won">Won</option>
+                      <option value="lost">Lost</option>
+                    </select>
                   </label>
                 </div>
               </div>

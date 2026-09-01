@@ -33,6 +33,47 @@ router.get('/', (req, res) => {
   res.json({ leads });
 });
 
+// Pipeline analytics for managers (admin / sales), over every lead.
+router.get('/analytics', (req, res) => {
+  if (!canManageAll(req)) return res.status(403).json({ error: 'Managers only' });
+  const ws = req.workspaceId;
+  ensureStages(ws);
+
+  const byStage = db.prepare(`
+    SELECT s.label, s.outcome, s.position, COUNT(l.id) AS count
+    FROM lead_stages s
+    LEFT JOIN leads l ON l.status = s.key AND l.workspace_id = s.workspace_id
+    WHERE s.workspace_id = ? GROUP BY s.id ORDER BY s.position, s.id
+  `).all(ws);
+
+  const total = db.prepare('SELECT COUNT(*) AS n FROM leads WHERE workspace_id = ?').get(ws).n;
+  const won = byStage.filter((s) => s.outcome === 'won').reduce((a, s) => a + s.count, 0);
+  const lost = byStage.filter((s) => s.outcome === 'lost').reduce((a, s) => a + s.count, 0);
+  const open = total - won - lost;
+  const conversion = won + lost > 0 ? Math.round((won / (won + lost)) * 100) : 0;
+
+  const bySource = db.prepare('SELECT source, COUNT(*) AS count FROM leads WHERE workspace_id = ? GROUP BY source ORDER BY count DESC').all(ws);
+  const newThisWeek = db.prepare("SELECT COUNT(*) AS n FROM leads WHERE workspace_id = ? AND created_at >= datetime('now', '-7 days')").get(ws).n;
+  const newThisMonth = db.prepare("SELECT COUNT(*) AS n FROM leads WHERE workspace_id = ? AND created_at >= datetime('now', '-30 days')").get(ws).n;
+
+  const avgRow = db.prepare(`
+    SELECT AVG(julianday(l.closed_at) - julianday(l.created_at)) AS d
+    FROM leads l JOIN lead_stages s ON s.key = l.status AND s.workspace_id = l.workspace_id
+    WHERE l.workspace_id = ? AND s.outcome = 'won' AND l.closed_at IS NOT NULL
+  `).get(ws);
+  const avgDaysToWin = avgRow.d != null ? Math.round(avgRow.d * 10) / 10 : null;
+
+  const topOwners = db.prepare(`
+    SELECT u.name, u.avatar_color, COUNT(*) AS won
+    FROM leads l JOIN lead_stages s ON s.key = l.status AND s.workspace_id = l.workspace_id
+    JOIN users u ON u.id = l.owner_id
+    WHERE l.workspace_id = ? AND s.outcome = 'won'
+    GROUP BY l.owner_id ORDER BY won DESC LIMIT 5
+  `).all(ws);
+
+  res.json({ total, won, lost, open, conversion, avgDaysToWin, newThisWeek, newThisMonth, byStage, bySource, topOwners });
+});
+
 // Add a lead by hand (runs the same automations as website intake). A member
 // who is not manage-all can only file leads onto their own board.
 router.post('/', (req, res) => {
@@ -120,6 +161,10 @@ router.patch('/stages/:id', requireAdmin, (req, res) => {
     const d = b.auto_reminder_days === null || b.auto_reminder_days === '' ? null : Math.max(0, Math.min(365, parseInt(b.auto_reminder_days, 10) || 0));
     sets.push('auto_reminder_days = ?'); vals.push(d);
   }
+  if (b.outcome !== undefined) {
+    const o = ['open', 'won', 'lost'].includes(b.outcome) ? b.outcome : 'open';
+    sets.push('outcome = ?'); vals.push(o);
+  }
   if (sets.length) db.prepare(`UPDATE lead_stages SET ${sets.join(', ')} WHERE id = ?`).run(...vals, stage.id);
   emitStages(req);
   res.json({ stages: listStages(req.workspaceId) });
@@ -160,9 +205,15 @@ router.patch('/:id', (req, res) => {
   }
   const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id);
 
-  // Entering a new stage fires that stage's automations (task / reminder).
+  // Entering a new stage fires that stage's automations and stamps closed_at
+  // when the stage is a won/lost outcome (cleared when moved back to open).
   if (b.status !== undefined && b.status !== lead.status) {
     const stage = db.prepare('SELECT * FROM lead_stages WHERE workspace_id = ? AND key = ?').get(req.workspaceId, b.status);
+    if (stage && stage.outcome !== 'open') {
+      if (!lead.closed_at) db.prepare("UPDATE leads SET closed_at = datetime('now') WHERE id = ?").run(lead.id);
+    } else {
+      db.prepare('UPDATE leads SET closed_at = NULL WHERE id = ?').run(lead.id);
+    }
     const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.workspaceId);
     runStageAutomations(req.app.get('io'), ws, updated, stage, req.user.id);
   }
