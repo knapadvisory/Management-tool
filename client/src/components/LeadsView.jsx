@@ -188,13 +188,16 @@ function LeadDetail({ lead, user, users, stages, onClose, onPatch, onDelete, onO
   const wa = digits(lead.phone);
   const [notes, setNotes] = useState([]);
   const [reminders, setReminders] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [showTask, setShowTask] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [remindAt, setRemindAt] = useState('');
   const [remindNote, setRemindNote] = useState('');
 
   const loadNotes = useCallback(() => { api(`/leads/${lead.id}/notes`).then((d) => setNotes(d.notes || [])).catch(() => {}); }, [lead.id]);
   const loadReminders = useCallback(() => { api(`/leads/${lead.id}/reminders`).then((d) => setReminders(d.reminders || [])).catch(() => {}); }, [lead.id]);
-  useEffect(() => { loadNotes(); loadReminders(); }, [loadNotes, loadReminders]);
+  const loadTasks = useCallback(() => { api(`/leads/${lead.id}/tasks`).then((d) => setTasks(d.tasks || [])).catch(() => {}); }, [lead.id]);
+  useEffect(() => { loadNotes(); loadReminders(); loadTasks(); }, [loadNotes, loadReminders, loadTasks]);
 
   async function addNote(e) {
     e.preventDefault();
@@ -263,6 +266,26 @@ function LeadDetail({ lead, user, users, stages, onClose, onPatch, onDelete, onO
           </>
         )}
 
+        {/* Tasks raised from this lead */}
+        <div className="lead-section-head">
+          <label className="lead-field-label">Tasks</label>
+          <button className="btn btn-sm" onClick={() => setShowTask(true)}>＋ Create task</button>
+        </div>
+        {tasks.length > 0 ? (
+          <div className="lead-tasks">
+            {tasks.map((t) => (
+              <button key={t.id} className={`lead-task ${t.is_done ? 'done' : ''}`} onClick={() => onOpenTask?.(t.id)}>
+                <span className="lead-task-title">{t.title}</span>
+                <span className="lead-task-meta">
+                  {t.stage_name && <span className="lead-task-stage">{t.stage_name}</span>}
+                  {t.due_date && <span className="muted">{t.due_date}</span>}
+                  {t.assignee_name && <Avatar user={{ name: t.assignee_name, avatar_color: t.assignee_color }} size={20} />}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : <div className="muted" style={{ fontSize: 13, margin: '2px 0 6px' }}>No tasks yet.</div>}
+
         {/* Follow-up reminders */}
         <label className="lead-field-label">Follow-up reminders</label>
         {reminders.length > 0 && (
@@ -310,10 +333,81 @@ function LeadDetail({ lead, user, users, stages, onClose, onPatch, onDelete, onO
         </div>
 
         <div className="lead-detail-foot">
-          {lead.task_id && <button className="btn btn-sm" onClick={() => onOpenTask?.(lead.task_id)}>Open follow-up task →</button>}
           <button className="btn btn-sm btn-danger" onClick={() => onDelete(lead.id)}>Delete</button>
         </div>
       </div>
+      {showTask && (
+        <TaskFromLead
+          lead={lead} users={users}
+          onClose={() => setShowTask(false)}
+          onCreated={() => { setShowTask(false); loadTasks(); onRefresh?.(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Create a task tied to a lead — prefilled from the lead, linked via lead_id.
+function TaskFromLead({ lead, users, onClose, onCreated }) {
+  const who = lead.name || lead.email || lead.phone || 'lead';
+  const [workflows, setWorkflows] = useState([]);
+  const [form, setForm] = useState({
+    title: `Follow up: ${who}`, workflow_id: '',
+    assignee_id: lead.owner_id || '', priority: 'high', due_date: '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    api('/workflows').then((d) => {
+      const ws = d.workflows || d || [];
+      setWorkflows(ws);
+      setForm((f) => ({ ...f, workflow_id: f.workflow_id || ws[0]?.id || '' }));
+    }).catch(() => {});
+  }, []);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  async function submit(e) {
+    e.preventDefault();
+    if (!form.title.trim() || !form.workflow_id) return;
+    setBusy(true); setError(null);
+    const desc = [
+      `From lead: ${who}`,
+      lead.email && `Email: ${lead.email}`,
+      lead.phone && `Phone: ${lead.phone}`,
+      lead.message && `\n${lead.message}`,
+    ].filter(Boolean).join('\n');
+    try {
+      await api('/tasks', { method: 'POST', body: {
+        title: form.title.trim(), workflow_id: Number(form.workflow_id),
+        assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
+        priority: form.priority, due_date: form.due_date || null,
+        lead_id: lead.id, description: desc,
+      } });
+      onCreated();
+    } catch (err) { setError(err.message); setBusy(false); }
+  }
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={submit} style={{ maxWidth: 460 }}>
+        <div className="modal-header"><strong>Create task from lead</strong><button type="button" className="icon-btn" onClick={onClose}>✕</button></div>
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <input className="auth-input" placeholder="Task title" value={form.title} onChange={set('title')} required />
+          <select className="auth-input" value={form.workflow_id} onChange={set('workflow_id')}>
+            {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+          <select className="auth-input" value={form.assignee_id} onChange={set('assignee_id')}>
+            <option value="">Unassigned</option>
+            {users.filter((u) => u.role !== 'guest').map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <select className="auth-input" value={form.priority} onChange={set('priority')} style={{ flex: 1 }}>
+              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
+            </select>
+            <input className="auth-input" type="date" value={form.due_date} onChange={set('due_date')} style={{ flex: 1 }} />
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <button className="btn btn-primary" disabled={busy}>{busy ? 'Creating…' : 'Create task'}</button>
+        </div>
+      </form>
     </div>
   );
 }

@@ -33,8 +33,8 @@ export function autoCreateFollowupTask(workspace, lead, { titlePrefix = 'Follow 
   const due = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
 
   const info = db.prepare(
-    "INSERT INTO tasks (title, description, workflow_id, stage_id, assignee_id, creator_id, priority, due_date) VALUES (?, ?, ?, ?, ?, ?, 'high', ?)",
-  ).run(`${titlePrefix}: ${who}`, desc, wfId, stage.id, lead.owner_id || null, creator.id, due);
+    "INSERT INTO tasks (title, description, workflow_id, stage_id, assignee_id, creator_id, priority, due_date, lead_id, workspace_id) VALUES (?, ?, ?, ?, ?, ?, 'high', ?, ?, ?)",
+  ).run(`${titlePrefix}: ${who}`, desc, wfId, stage.id, lead.owner_id || null, creator.id, due, lead.id, workspace.id);
   const taskId = info.lastInsertRowid;
   db.prepare('UPDATE leads SET task_id = ? WHERE id = ?').run(taskId, lead.id);
   return taskId;

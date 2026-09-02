@@ -3237,3 +3237,13 @@ button.c360-stat:hover { border-color: var(--accent); }
 .insight-owner { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
 .insight-owner .insight-bar-val { margin-left: auto; }
 @media (max-width: 700px) { .insight-tiles { grid-template-columns: repeat(2, 1fr); } .insight-bar-lbl { flex-basis: 90px; } }
+
+/* ---------- Leads: linked tasks ---------- */
+.lead-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lead-tasks { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 8px; }
+.lead-task { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+.lead-task:hover { border-color: var(--accent); }
+.lead-task.done .lead-task-title { text-decoration: line-through; color: var(--muted); }
+.lead-task-title { font-size: 13.5px; font-weight: 600; }
+.lead-task-meta { display: flex; align-items: center; gap: 8px; flex: none; }
+.lead-task-stage { font-size: 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; }
