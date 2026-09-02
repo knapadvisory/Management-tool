@@ -602,7 +602,9 @@ export default function App() {
           { type: 'dashboard', ico: homeIco, label: 'Home' },
           { type: 'tasks', ico: taskIco, label: 'Tasks' },
           { type: 'messenger', ico: dmsIco, label: 'Chat', match: (t) => t === 'messenger' || t === 'channel' },
-          { type: 'files', ico: filesIco, label: 'Files', match: (t) => t === 'files' || t === 'drive' },
+          user.role === 'guest'
+            ? { type: 'files', ico: filesIco, label: 'Files', match: (t) => t === 'files' || t === 'drive' }
+            : { type: 'leads', emoji: '🎯', label: 'Leads' },
           { type: 'activity', ico: activityIco, label: 'Activity' },
         ].map((t) => {
           const active = t.match ? t.match(view?.type) : view?.type === t.type;
@@ -612,7 +614,9 @@ export default function App() {
               className={`tabbar-btn ${active ? 'active' : ''}`}
               onClick={() => { setView({ type: t.type }); setDrawerOpen(false); }}
             >
-              <img className="tabbar-ico" src={t.ico} alt="" />
+              {t.emoji
+                ? <span className="tabbar-ico tabbar-ico-emoji">{t.emoji}</span>
+                : <img className="tabbar-ico" src={t.ico} alt="" />}
               <span className="tabbar-label">{t.label}</span>
             </button>
           );
