@@ -639,7 +639,7 @@ router.post('/import', uploadImport.single('file'), async (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { title, description = '', workflow_id, project_id = null, client_id = null,
+  const { title, description = '', workflow_id, project_id = null, client_id = null, lead_id = null,
     priority = 'medium', due_date = null, tags = [], checklist = [], recurrence = 'none', reminders = [], assignor_id = null } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Task title is required' });
   if (!PRIORITIES.includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
@@ -655,15 +655,22 @@ router.post('/', (req, res) => {
   if (client_id && !db.prepare('SELECT id FROM clients WHERE id = ? AND workspace_id = ?').get(client_id, req.workspaceId)) {
     return res.status(400).json({ error: 'Client not found' });
   }
+  const lead = lead_id ? db.prepare('SELECT * FROM leads WHERE id = ? AND workspace_id = ?').get(lead_id, req.workspaceId) : null;
+  if (lead_id && !lead) return res.status(400).json({ error: 'Lead not found' });
   const firstStage = db.prepare('SELECT * FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
   if (!firstStage) return res.status(400).json({ error: 'This board has no stages yet — add a stage before creating tasks.' });
   // Assignor (reporting person) defaults to the creator; a valid workspace user may be chosen instead.
   const assignorId = (assignor_id && wsUser(assignor_id, req.workspaceId)) ? assignor_id : req.user.id;
   const info = db.prepare(`
-    INSERT INTO tasks (title, description, workflow_id, project_id, client_id, stage_id, assignee_id, creator_id, assignor_id, priority, due_date, recurrence, workspace_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(title.trim(), description, wf.id, project_id, client_id, firstStage.id, assignee_id, req.user.id, assignorId, priority, due_date, recurrence, req.workspaceId);
+    INSERT INTO tasks (title, description, workflow_id, project_id, client_id, lead_id, stage_id, assignee_id, creator_id, assignor_id, priority, due_date, recurrence, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(title.trim(), description, wf.id, project_id, client_id, lead ? lead.id : null, firstStage.id, assignee_id, req.user.id, assignorId, priority, due_date, recurrence, req.workspaceId);
   const taskId = info.lastInsertRowid;
+  // Point the lead at its first linked task and refresh the boards showing it.
+  if (lead) {
+    if (!lead.task_id) db.prepare('UPDATE leads SET task_id = ? WHERE id = ?').run(taskId, lead.id);
+    req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('leads:changed');
+  }
 
   const insReminder = db.prepare('INSERT INTO task_reminders (task_id, remind_at, created_by) VALUES (?, ?, ?)');
   (Array.isArray(reminders) ? reminders : []).forEach((r) => {

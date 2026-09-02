@@ -218,6 +218,14 @@ async function main() {
   const remDel = await req('DELETE', `/api/leads/${lead.id}/reminders/${remId}`, { token: a });
   check('a reminder can be cancelled', remDel.data.reminders.length === 0);
 
+  // --- Create a task from a lead (linked via lead_id) ---
+  const taskRes = await req('POST', '/api/tasks', { token: a, body: { title: 'Send proposal to Varun', workflow_id: wfId, lead_id: lead.id, priority: 'high' } });
+  check('a task can be created from a lead', taskRes.status === 200 || taskRes.status === 201);
+  const leadTasks = await req('GET', `/api/leads/${lead.id}/tasks`, { token: a });
+  check('the lead lists its linked task', leadTasks.data.tasks.some((t) => t.title === 'Send proposal to Varun'));
+  const badLink = await req('POST', '/api/tasks', { token: a, body: { title: 'X', workflow_id: wfId, lead_id: 999999 } });
+  check('a task cannot link to a lead outside the workspace', badLink.status === 400);
+
   // Rotating the key invalidates the old one.
   const rotated = await req('POST', '/api/leads/settings/key', { token: a });
   check('the key can be rotated', rotated.data.key && rotated.data.key !== key);

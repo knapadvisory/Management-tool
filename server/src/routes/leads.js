@@ -268,6 +268,20 @@ router.delete('/:id/notes/:noteId', (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Tasks raised from this lead ---
+router.get('/:id/tasks', (req, res) => {
+  if (!accessibleLead(req, res)) return;
+  const tasks = db.prepare(`
+    SELECT t.id, t.title, t.priority, t.due_date, s.name AS stage_name, s.is_done,
+           u.name AS assignee_name, u.avatar_color AS assignee_color
+    FROM tasks t
+    LEFT JOIN workflow_stages s ON s.id = t.stage_id
+    LEFT JOIN users u ON u.id = t.assignee_id
+    WHERE t.lead_id = ? ORDER BY t.id DESC
+  `).all(req.params.id);
+  res.json({ tasks });
+});
+
 // --- Follow-up reminders ---
 router.get('/:id/reminders', (req, res) => {
   if (!accessibleLead(req, res)) return;
