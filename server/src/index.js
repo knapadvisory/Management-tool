@@ -106,7 +106,11 @@ app.post('/api/leads/intake', (req, res) => {
   const message = String(req.body?.message || '').slice(0, 4000);
   if (!name.trim() && !email.trim() && !phone.trim()) return res.status(400).json({ error: 'Empty enquiry' });
 
-  intakeLead(app.get('io'), ws, { name, email, phone, message, source: 'website' });
+  // Optional source lets several sites share one key yet stay distinguishable
+  // in the board and insights (e.g. source=knapadvisory.com). Defaults to website.
+  const source = String(req.query.source || req.body?.source || 'website').trim().toLowerCase().slice(0, 40) || 'website';
+
+  intakeLead(app.get('io'), ws, { name, email, phone, message, source });
   res.json({ ok: true });
 });
 

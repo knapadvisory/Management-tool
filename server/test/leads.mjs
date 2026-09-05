@@ -229,6 +229,12 @@ async function main() {
   const badLink = await req('POST', '/api/tasks', { token: a, body: { title: 'X', workflow_id: wfId, lead_id: 999999 } });
   check('a task cannot link to a lead outside the workspace', badLink.status === 400);
 
+  // A second site can share the key and tag its own source.
+  const srcIntake = await req('POST', `/api/leads/intake?key=${encodeURIComponent(key)}&source=knapadvisory.com`, { form: { name: 'Site Two', email: 's2@x.test' } });
+  check('intake accepts a custom source', srcIntake.status === 200);
+  const withSrc = await req('GET', '/api/leads', { token: a });
+  check('a custom-source lead is tagged with its site', withSrc.data.leads.some((l) => l.source === 'knapadvisory.com'));
+
   // Rotating the key invalidates the old one.
   const rotated = await req('POST', '/api/leads/settings/key', { token: a });
   check('the key can be rotated', rotated.data.key && rotated.data.key !== key);
