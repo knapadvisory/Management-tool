@@ -46,7 +46,7 @@ function BlockForm({ users, onBlock }) {
   );
 }
 
-export default function TaskModal({ taskId, user, users, workflows = [], projects = [], clients = [], onClose, inline = false }) {
+export default function TaskModal({ taskId, user, users, workflows = [], projects = [], clients = [], onClose, onOpenLead, inline = false }) {
   const [tab, setTab] = useState('chat');
   const [task, setTask] = useState(null);
   const [comments, setComments] = useState([]);
@@ -317,6 +317,14 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
                 <option value="">No client</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+            </label>
+          )}
+          {task.lead && (
+            <label>Lead
+              <button type="button" className="task-lead-link" title="Open this lead"
+                onClick={() => { onOpenLead?.(task.lead.id); onClose?.(); }}>
+                🎯 {task.lead.name || task.lead.email || task.lead.phone || 'View lead'} →
+              </button>
             </label>
           )}
           <label>Priority

@@ -74,6 +74,7 @@ function taskWithMeta(task) {
   const workflow = db.prepare('SELECT id, name FROM workflows WHERE id = ?').get(task.workflow_id);
   const project = task.project_id ? db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) : null;
   const client = task.client_id ? db.prepare('SELECT id, name FROM clients WHERE id = ?').get(task.client_id) : null;
+  const lead = task.lead_id ? db.prepare('SELECT id, name, email, phone FROM leads WHERE id = ?').get(task.lead_id) : null;
   const commentCount = db.prepare('SELECT COUNT(*) AS n FROM task_comments WHERE task_id = ?').get(task.id).n;
   const tags = db.prepare('SELECT tag FROM task_tags WHERE task_id = ? ORDER BY tag').all(task.id).map((r) => r.tag);
   const cl = db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(is_done), 0) AS done FROM task_checklist WHERE task_id = ?').get(task.id);
@@ -100,6 +101,7 @@ function taskWithMeta(task) {
     workflow,
     project,
     client,
+    lead,
     comment_count: commentCount,
     tags,
     checklist_total: cl.total,
