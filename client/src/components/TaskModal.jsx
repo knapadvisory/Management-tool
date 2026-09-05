@@ -296,6 +296,13 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
         </div>
 
         <div className="task-fields">
+          {workflows.length > 1 && (
+            <label>Board
+              <select value={task.workflow_id} onChange={(e) => update({ workflow_id: Number(e.target.value) })}>
+                {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </label>
+          )}
           <label>Stage
             <select value={task.stage_id} onChange={(e) => update({ stage_id: Number(e.target.value) })}>
               {(workflow?.stages || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
