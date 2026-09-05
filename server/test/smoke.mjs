@@ -267,6 +267,15 @@ async function main() {
   check('task moved to next stage', moved.data.stage?.name === 'KYC');
   const badMove = await req('PATCH', `/api/tasks/${task.data.id}`, { token: b, body: { stage_id: 1 } });
   check('cross-workflow stage move rejected', badMove.status === 400);
+  // A task can be moved to a different board (workflow) and lands in its first stage.
+  const defWf = wfs.data.workflows[0];
+  const hop = await req('PATCH', `/api/tasks/${task.data.id}`, { token: b, body: { workflow_id: defWf.id } });
+  check('task moved to another board lands in its first stage', hop.data.task.workflow_id === defWf.id && hop.data.task.stage_id === defWf.stages[0].id);
+  const badBoard = await req('PATCH', `/api/tasks/${task.data.id}`, { token: b, body: { workflow_id: 999999 } });
+  check('moving a task to an unknown board is rejected', badBoard.status === 400);
+  // Restore this task to the Onboarding board / KYC stage for the checks below.
+  await req('PATCH', `/api/tasks/${task.data.id}`, { token: b, body: { workflow_id: wf.data.id } });
+  await req('PATCH', `/api/tasks/${task.data.id}`, { token: b, body: { stage_id: wf.data.stages[1].id } });
   const comment = await req('POST', `/api/tasks/${task.data.id}/comments`, {
     token: b,
     body: { content: 'On it' },

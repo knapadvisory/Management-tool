@@ -731,9 +731,21 @@ router.get('/:id', (req, res) => {
 router.patch('/:id', (req, res) => {
   const task = loadTask(req, res);
   if (!task) return;
-  const { title, description, stage_id, priority, due_date, start_date, project_id, client_id, recurrence, status, status_reason } = req.body;
+  const { title, description, stage_id, priority, due_date, start_date, project_id, client_id, recurrence, status, status_reason, workflow_id } = req.body;
   const newAssignees = incomingAssignees(req.body); // undefined = no change
   const oldAssignees = assigneeIdsFor(task.id);
+
+  // Move the task to a different board (workflow). It lands in that board's
+  // first column; the caller sends this on its own, so handle it and return.
+  if (workflow_id !== undefined && Number(workflow_id) !== task.workflow_id) {
+    const wf = db.prepare('SELECT id, name FROM workflows WHERE id = ? AND workspace_id = ?').get(workflow_id, req.workspaceId);
+    if (!wf) return res.status(400).json({ error: 'Board not found' });
+    const first = db.prepare('SELECT id FROM workflow_stages WHERE workflow_id = ? ORDER BY position LIMIT 1').get(wf.id);
+    if (!first) return res.status(400).json({ error: 'That board has no stages yet.' });
+    db.prepare("UPDATE tasks SET workflow_id = ?, stage_id = ?, updated_at = datetime('now') WHERE id = ?").run(wf.id, first.id, task.id);
+    logActivity(task.id, req.user.id, `moved this task to the “${wf.name}” board`);
+    return res.json({ task: emitChanged(req, task.id) });
+  }
 
   // Progress is the doer's to report: only an assignee may change the status.
   // Assigners, admins and watchers rate the work afterwards — they don't move
