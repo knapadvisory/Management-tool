@@ -3141,12 +3141,13 @@ button.c360-stat:hover { border-color: var(--accent); }
 .leads-head h2 { margin: 0 0 2px; }
 .leads-head-actions { display: flex; gap: 8px; flex: none; }
 
-.leads-board { display: grid; grid-template-columns: repeat(5, minmax(200px, 1fr)); gap: 12px; align-items: start; }
-.leads-col { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; min-height: 120px; transition: background .15s, border-color .15s; }
+/* Horizontally-scrolling Kanban — scales to any number of pipeline stages. */
+.leads-board { display: flex; gap: 12px; align-items: stretch; overflow-x: auto; overflow-y: hidden; padding-bottom: 10px; height: calc(100dvh - 210px); scroll-snap-type: x proximity; overscroll-behavior-x: contain; }
+.leads-col { flex: 0 0 272px; display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; max-height: 100%; scroll-snap-align: start; transition: background .15s, border-color .15s; }
 .leads-col.droppable { border-color: var(--accent); border-style: dashed; }
-.leads-col-head { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; padding: 2px 4px 10px; }
+.leads-col-head { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; padding: 2px 4px 10px; flex: none; }
 .leads-count { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; }
-.leads-col-body { display: flex; flex-direction: column; gap: 8px; }
+.leads-col-body { flex: 1; min-height: 40px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
 .leads-empty { text-align: center; padding: 8px 0; opacity: .5; }
 
 .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block; }
@@ -3183,8 +3184,8 @@ button.c360-stat:hover { border-color: var(--accent); }
 
 @media (max-width: 900px) {
   .leads-view { padding: 16px; }
-  .leads-board { grid-template-columns: 1fr; }
-  .lead-src { margin-left: 0; }
+  .leads-board { height: calc(100dvh - 250px); gap: 10px; }
+  .leads-col { flex-basis: 82vw; }
 }
 
 /* ---------- Leads: manage pipeline stages ---------- */
