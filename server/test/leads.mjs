@@ -223,6 +223,9 @@ async function main() {
   check('a task can be created from a lead', taskRes.status === 200 || taskRes.status === 201);
   const leadTasks = await req('GET', `/api/leads/${lead.id}/tasks`, { token: a });
   check('the lead lists its linked task', leadTasks.data.tasks.some((t) => t.title === 'Send proposal to Varun'));
+  const linkedTaskId = leadTasks.data.tasks.find((t) => t.title === 'Send proposal to Varun').id;
+  const taskDetail = await req('GET', `/api/tasks/${linkedTaskId}`, { token: a });
+  check('the task carries a back-link to its lead', taskDetail.data.task.lead && taskDetail.data.task.lead.id === lead.id);
   const badLink = await req('POST', '/api/tasks', { token: a, body: { title: 'X', workflow_id: wfId, lead_id: 999999 } });
   check('a task cannot link to a lead outside the workspace', badLink.status === 400);
 

@@ -88,6 +88,7 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [taskToOpen, setTaskToOpen] = useState(null);
+  const [leadToOpen, setLeadToOpen] = useState(null);
   const [avatarColors, setAvatarColors] = useState([]);
   const [settings, setSettings] = useState(null); // null or { section }
   const [drawerOpen, setDrawerOpen] = useState(false); // mobile sidebar drawer
@@ -556,7 +557,8 @@ export default function App() {
           <ChatView key={view.channel.id} channel={view.channel} user={user} users={users} onlineIds={onlineIds} onOpenDm={openDm} />
         )}
         {view?.type === 'tasks' && (
-          <TasksBoard user={user} users={users} openTaskRequest={taskToOpen} onTaskOpened={() => setTaskToOpen(null)} />
+          <TasksBoard user={user} users={users} openTaskRequest={taskToOpen} onTaskOpened={() => setTaskToOpen(null)}
+            onOpenLead={(id) => { setView({ type: 'leads' }); setLeadToOpen(id); }} />
         )}
         {view?.type === 'messenger' && (
           <Messenger user={user} users={users} channels={channels} onlineIds={onlineIds} onEnsureDm={ensureDm} onRefresh={refreshChannels} onNotifRefresh={refreshNotifications} />
@@ -587,6 +589,7 @@ export default function App() {
         )}
         {view?.type === 'leads' && (
           <LeadsView user={user} users={users}
+            openLeadRequest={leadToOpen} onLeadOpened={() => setLeadToOpen(null)}
             onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
         )}
         {view?.type === 'timesheet' && <TimesheetView user={user} />}

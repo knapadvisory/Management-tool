@@ -10,7 +10,7 @@ const digits = (s) => String(s || '').replace(/\D/g, '');
 const parseUTC = (s) => new Date(String(s).replace(' ', 'T') + (String(s).endsWith('Z') ? '' : 'Z'));
 const fmtWhen = (s) => parseUTC(s).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 
-export default function LeadsView({ user, users = [], onOpenTask }) {
+export default function LeadsView({ user, users = [], onOpenTask, openLeadRequest, onLeadOpened }) {
   const manageAll = user.role === 'admin' || user.role === 'sales';
   const [leads, setLeads] = useState([]);
   const [stages, setStages] = useState([]);
@@ -31,6 +31,13 @@ export default function LeadsView({ user, users = [], onOpenTask }) {
     const id = setInterval(load, 45000);
     return () => { s?.off('leads:changed', load); s?.off('leads:stages', loadStages); clearInterval(id); };
   }, [load, loadStages]);
+
+  // Open a specific lead when asked (e.g. from a linked task's "Lead" button).
+  useEffect(() => {
+    if (!openLeadRequest) return;
+    const found = leads.find((l) => l.id === openLeadRequest);
+    if (found) { setSelected(found); onLeadOpened?.(); }
+  }, [openLeadRequest, leads, onLeadOpened]);
 
   async function patch(id, body) {
     const { lead } = await api(`/leads/${id}`, { method: 'PATCH', body });

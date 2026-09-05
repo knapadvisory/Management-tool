@@ -15,7 +15,7 @@ import { TASK_STATUSES } from '../status.js';
 const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 const localYMD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened }) {
+export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened, onOpenLead }) {
   const [workflows, setWorkflows] = useState([]);
   const [workflowId, setWorkflowId] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -272,6 +272,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened 
           workflows={workflows}
           projects={projects}
           clients={clients}
+          onOpenLead={onOpenLead}
           onClose={() => setOpenTaskId(null)}
         />
       )}
