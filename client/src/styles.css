@@ -3318,3 +3318,8 @@ button.c360-stat:hover { border-color: var(--accent); }
   .cal-chip { font-size: 0; padding: 3px; } /* dots-only on small screens */
   .cal-chip .cal-dot { width: 7px; height: 7px; }
 }
+
+/* Calendar: public-holiday & festival chips (read-only) */
+.cal-holiday { cursor: default; background: color-mix(in srgb, #d97706 15%, transparent); color: #b45309; }
+.cal-holiday-national { background: color-mix(in srgb, #dc2626 15%, transparent); color: #b91c1c; font-weight: 600; }
+.cal-holiday-festival { background: color-mix(in srgb, #db2777 14%, transparent); color: #be185d; }

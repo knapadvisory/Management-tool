@@ -65,6 +65,13 @@ async function main() {
   const miaEdit = await req('PATCH', `/api/calendar-events/${ev.data.event.id}`, { token: mia.token, body: { title: 'hacked' } });
   check("a teammate cannot edit another user's event", miaEdit.status === 404);
 
+  // Public holidays are returned within range (national + festivals).
+  const jan = await req('GET', '/api/calendar-events?from=2026-01-01&to=2026-01-31', { token: a });
+  check('Republic Day is marked as a national holiday', (jan.data.holidays || []).some((h) => h.name === 'Republic Day' && h.date === '2026-01-26' && h.type === 'national'));
+  const nov = await req('GET', '/api/calendar-events?from=2026-11-01&to=2026-11-30', { token: a });
+  check('Diwali is marked in November 2026', (nov.data.holidays || []).some((h) => h.name.startsWith('Diwali')));
+  check('holidays are scoped to the range', !(jan.data.holidays || []).some((h) => h.date.startsWith('2026-11')));
+
   // The ICS feed includes meetings and personal events.
   await req('POST', '/api/meetings', { token: a, body: { title: 'Board call', scheduled_at: '2026-12-15T10:00:00Z', duration_min: 60 } });
   const urlRes = await req('GET', '/api/calendar/url', { token: a });
