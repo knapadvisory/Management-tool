@@ -2,6 +2,7 @@
 // Calendar view merges these with the user's meetings and task due-dates.
 import { Router } from 'express';
 import db from '../db.js';
+import { holidaysInRange } from '../holidays.js';
 
 const router = Router();
 // Accept an ISO datetime or a plain YYYY-MM-DD (all-day) → UTC store string.
@@ -22,7 +23,7 @@ router.get('/', (req, res) => {
     WHERE user_id = ? AND starts_at <= ? AND COALESCE(ends_at, starts_at) >= ?
     ORDER BY starts_at
   `).all(req.user.id, to, from);
-  res.json({ events });
+  res.json({ events, holidays: holidaysInRange(from, to) });
 });
 
 router.post('/', (req, res) => {

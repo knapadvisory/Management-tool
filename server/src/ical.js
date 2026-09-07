@@ -3,6 +3,7 @@
 // (Google, Apple, Outlook) poll the feed URL periodically, so it always reflects
 // the latest due dates without any push integration.
 import db from './db.js';
+import { HOLIDAYS } from './holidays.js';
 
 // Escape a text value for an iCal property (RFC 5545 §3.3.11).
 function esc(s) {
@@ -130,6 +131,13 @@ export function buildUserCalendar(user) {
       description: m.description || 'TeamHub meeting',
       category: 'Meeting',
       alarmMin: 10,
+    }, stamp)),
+    ...HOLIDAYS.map((h) => vevent({
+      uid: `holiday-${h.date}-${h.name.replace(/[^a-z0-9]/gi, '')}@teamhub`,
+      date: h.date,
+      summary: `${h.type === 'festival' ? '🎉' : '🇮🇳'} ${h.name}`,
+      description: h.type === 'national' ? 'National holiday' : h.type === 'gazetted' ? 'Gazetted holiday' : 'Festival',
+      category: 'Holiday',
     }, stamp)),
     ...calEvents.map((e) => (e.all_day
       ? vevent({ uid: `cal-${e.id}@teamhub`, date: e.starts_at.slice(0, 10), summary: e.title, description: e.notes, category: 'Personal' }, stamp)

@@ -13,6 +13,7 @@ const REMIND = [['', 'No reminder'], ['0', 'At start time'], ['5', '5 min before
 export default function CalendarView({ user, onOpenMeetings }) {
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [events, setEvents] = useState([]);
+  const [holidays, setHolidays] = useState([]);
   const [meetings, setMeetings] = useState([]);
   const [editing, setEditing] = useState(null); // event | { date } | null
 
@@ -22,7 +23,7 @@ export default function CalendarView({ user, onOpenMeetings }) {
   const gridEnd = days[41];
 
   const load = useCallback(() => {
-    api(`/calendar-events?from=${localYMD(gridStart)}&to=${localYMD(gridEnd)}`).then((d) => setEvents(d.events || [])).catch(() => {});
+    api(`/calendar-events?from=${localYMD(gridStart)}&to=${localYMD(gridEnd)}`).then((d) => { setEvents(d.events || []); setHolidays(d.holidays || []); }).catch(() => {});
     api('/meetings').then((d) => setMeetings(d.meetings || [])).catch(() => {});
   }, [gridStart.getTime(), gridEnd.getTime()]);
   useEffect(() => {
@@ -34,9 +35,12 @@ export default function CalendarView({ user, onOpenMeetings }) {
 
   const evKey = (e) => (e.all_day ? e.starts_at.slice(0, 10) : localYMD(parseUTC(e.starts_at)));
   const byDay = {};
+  for (const h of holidays) (byDay[h.date] ||= []).push({ kind: 'holiday', ...h });
   for (const e of events) (byDay[evKey(e)] ||= []).push({ kind: 'event', ...e });
   for (const m of meetings) (byDay[localYMD(parseUTC(m.scheduled_at))] ||= []).push({ kind: 'meeting', ...m });
-  for (const k in byDay) byDay[k].sort((a, b) => (a.all_day ? '' : a.starts_at || a.scheduled_at).localeCompare(b.all_day ? '' : b.starts_at || b.scheduled_at));
+  // Sort each day: holidays and all-day items first, then timed items by time.
+  const timeKey = (it) => (it.kind === 'holiday' || it.all_day) ? '' : (it.starts_at || it.scheduled_at || '');
+  for (const k in byDay) byDay[k].sort((a, b) => timeKey(a).localeCompare(timeKey(b)));
 
   const todayKey = localYMD(new Date());
   const shift = (n) => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + n, 1));
@@ -63,7 +67,11 @@ export default function CalendarView({ user, onOpenMeetings }) {
             <div key={key} className={`cal-cell ${dim ? 'dim' : ''} ${key === todayKey ? 'today' : ''}`} onClick={() => setEditing({ date: key })}>
               <div className="cal-daynum">{d.getDate()}</div>
               <div className="cal-items">
-                {items.slice(0, 4).map((it) => it.kind === 'meeting' ? (
+                {items.slice(0, 4).map((it) => it.kind === 'holiday' ? (
+                  <div key={`h${it.date}${it.name}`} className={`cal-chip cal-holiday cal-holiday-${it.type}`} title={`${it.name}${it.type === 'festival' ? ' (festival)' : it.type === 'national' ? ' (national holiday)' : ' (gazetted holiday)'}`} onClick={(e) => e.stopPropagation()}>
+                    <span className="cal-dot" /> {it.type === 'festival' ? '🎉' : '🏛️'} {it.name}
+                  </div>
+                ) : it.kind === 'meeting' ? (
                   <button key={`m${it.id}`} className="cal-chip cal-meeting" title={it.title}
                     onClick={(e) => { e.stopPropagation(); onOpenMeetings?.(); }}>
                     <span className="cal-dot" /> {it.call_type === 'audio' ? '📞' : '🎥'} {hhmm(it.scheduled_at)} {it.title}
