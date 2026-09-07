@@ -347,6 +347,15 @@ export default function setupSocket(io) {
         }
         roomId = `collab:${cid}`;
         collabId = cid;
+      } else if (kind === 'meeting') {
+        // A scheduled meeting: the room is keyed by meeting id and any host or
+        // invitee may open it (created on the first person to join).
+        const mid = Number(target_id);
+        const m = db.prepare('SELECT id, workspace_id, host_id, status FROM meetings WHERE id = ?').get(mid);
+        if (!m || m.workspace_id !== socket.user.workspace_id || m.status !== 'scheduled') return ack?.({ error: 'Meeting not found' });
+        const allowed = m.host_id === userId || db.prepare('SELECT 1 FROM meeting_invitees WHERE meeting_id = ? AND user_id = ?').get(mid, userId);
+        if (!allowed) return ack?.({ error: 'You are not on this meeting' });
+        roomId = `meeting:${mid}`;
       } else if (!roomId) {
         roomId = `conf:${randomUUID()}`;
       } else if (!callRooms.has(roomId)) {

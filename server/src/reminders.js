@@ -83,12 +83,30 @@ export function processDueLeadReminders(io) {
   }
 }
 
+// Nudge host + invitees ~10 minutes before a scheduled meeting starts.
+export function processDueMeetings(io) {
+  const due = db.prepare(`
+    SELECT * FROM meetings
+    WHERE status = 'scheduled' AND reminded = 0
+      AND scheduled_at <= datetime('now', '+10 minutes') AND scheduled_at >= datetime('now', '-2 minutes')
+  `).all();
+  for (const m of due) {
+    db.prepare('UPDATE meetings SET reminded = 1 WHERE id = ?').run(m.id);
+    const ids = new Set([m.host_id, ...db.prepare('SELECT user_id FROM meeting_invitees WHERE meeting_id = ?').all(m.id).map((r) => r.user_id)]);
+    for (const uid of ids) {
+      createNotification(io, { user_id: uid, type: 'meeting_reminder', actor_id: null, text: `Starting soon: ${m.title}` });
+      io?.to(`user:${uid}`).emit('meetings:changed');
+    }
+  }
+}
+
 export function startReminderScheduler(io) {
   // Run shortly after boot, then every minute. Reminders have minute
   // granularity, which is plenty for task due-date nudges.
   processDueReminders(io);
   processDueLeadReminders(io);
-  const timer = setInterval(() => { processDueReminders(io); processDueLeadReminders(io); }, 60 * 1000);
+  processDueMeetings(io);
+  const timer = setInterval(() => { processDueReminders(io); processDueLeadReminders(io); processDueMeetings(io); }, 60 * 1000);
   timer.unref?.(); // don't keep the process alive just for the scheduler
   return timer;
 }

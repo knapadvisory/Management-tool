@@ -694,6 +694,31 @@ ensureColumn('leads', 'closed_at', 'TEXT');
 ensureColumn('tasks', 'lead_id', 'INTEGER');
 // Files/audio attached to a lead note.
 ensureColumn('attachments', 'lead_note_id', 'INTEGER REFERENCES lead_notes(id)');
+
+// Scheduled meetings (video/audio). The live call reuses the group call-room
+// mesh, keyed meeting:<id>; these rows hold the schedule, invitees and notes.
+db.exec(`
+CREATE TABLE IF NOT EXISTS meetings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  scheduled_at TEXT NOT NULL,
+  duration_min INTEGER NOT NULL DEFAULT 30,
+  call_type TEXT NOT NULL DEFAULT 'video',
+  host_id INTEGER NOT NULL REFERENCES users(id),
+  notes TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'scheduled',
+  reminded INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_meetings_ws_time ON meetings(workspace_id, scheduled_at);
+CREATE TABLE IF NOT EXISTS meeting_invitees (
+  meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (meeting_id, user_id)
+);
+`);
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
 // Marks an attachment as a profile photo so it is viewable workspace-wide
