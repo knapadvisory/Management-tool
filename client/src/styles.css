@@ -3323,3 +3323,21 @@ button.c360-stat:hover { border-color: var(--accent); }
 .cal-holiday { cursor: default; background: color-mix(in srgb, #d97706 15%, transparent); color: #b45309; }
 .cal-holiday-national { background: color-mix(in srgb, #dc2626 15%, transparent); color: #b91c1c; font-weight: 600; }
 .cal-holiday-festival { background: color-mix(in srgb, #db2777 14%, transparent); color: #be185d; }
+
+/* Calendar: month/week toggle + week view */
+.cal-modeswitch { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-right: 4px; }
+.cal-modeswitch button { border: none; background: var(--surface); font-size: 13px; padding: 6px 12px; cursor: pointer; color: var(--text); }
+.cal-modeswitch button.on { background: var(--accent); color: #fff; }
+.cal-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; flex: 1; min-height: 0; }
+.cal-wcol { background: var(--surface); display: flex; flex-direction: column; min-height: 0; cursor: pointer; }
+.cal-wcol.today .cal-whead b { background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 8px; }
+.cal-wcol:hover { background: var(--surface-2); }
+.cal-whead { text-align: center; padding: 10px 4px 8px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.cal-whead b { font-size: 18px; color: var(--text); align-self: center; }
+.cal-witems { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 6px; }
+.cal-witems .cal-chip { white-space: normal; }
+.cal-wempty { text-align: center; color: var(--muted); opacity: .4; font-size: 12px; padding-top: 8px; }
+@media (max-width: 700px) {
+  .cal-week { grid-template-columns: 1fr; overflow-y: auto; }
+  .cal-witems .cal-chip { font-size: 12px; }
+}

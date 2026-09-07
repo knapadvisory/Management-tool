@@ -65,6 +65,17 @@ async function main() {
   const miaEdit = await req('PATCH', `/api/calendar-events/${ev.data.event.id}`, { token: mia.token, body: { title: 'hacked' } });
   check("a teammate cannot edit another user's event", miaEdit.status === 404);
 
+  // A weekly recurring event expands into one occurrence per week in range.
+  const rec = await req('POST', '/api/calendar-events', { token: a, body: { title: 'Team standup', starts_at: '2026-12-07T09:30:00Z', recurrence: 'weekly', remind_min: 5 } });
+  check('a recurring event is created', rec.status === 201 && rec.data.event.recurrence === 'weekly');
+  const decRec = await req('GET', '/api/calendar-events?from=2026-12-01&to=2026-12-31', { token: a });
+  const occ = decRec.data.events.filter((e) => e.id === rec.data.event.id);
+  check('the weekly event expands to multiple December occurrences', occ.length >= 4 && occ.every((o) => o.occurrence));
+  check('occurrences fall on different dates', new Set(occ.map((o) => o.starts_at.slice(0, 10))).size === occ.length);
+  check('an occurrence carries the series base start', occ[0].series_start === '2026-12-07 09:30:00');
+  const janRec = await req('GET', '/api/calendar-events?from=2027-01-01&to=2027-01-31', { token: a });
+  check('the weekly series continues into the next month', janRec.data.events.some((e) => e.id === rec.data.event.id));
+
   // Public holidays are returned within range (national + festivals).
   const jan = await req('GET', '/api/calendar-events?from=2026-01-01&to=2026-01-31', { token: a });
   check('Republic Day is marked as a national holiday', (jan.data.holidays || []).some((h) => h.name === 'Republic Day' && h.date === '2026-01-26' && h.type === 'national'));

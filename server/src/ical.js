@@ -34,13 +34,21 @@ const nextDay = (ymd) => {
 
 // A timed VEVENT (UTC). start/end are 'YYYY-MM-DD HH:MM:SS' UTC strings.
 const utcStamp = (s) => String(s).replace(' ', 'T').replace(/-/g, '').replace(/:/g, '').slice(0, 15) + 'Z';
-function veventTimed({ uid, start, end, summary, description, category, alarmMin }, stamp) {
+const RRULE = { daily: 'FREQ=DAILY', weekly: 'FREQ=WEEKLY', monthly: 'FREQ=MONTHLY' };
+const rrule = (recurrence, until) => {
+  const base = RRULE[recurrence];
+  if (!base) return null;
+  const u = until ? `;UNTIL=${String(until).slice(0, 10).replace(/-/g, '')}T235959Z` : '';
+  return `RRULE:${base}${u}`;
+};
+function veventTimed({ uid, start, end, summary, description, category, alarmMin, recurrence, until }, stamp) {
   const lines = [
     'BEGIN:VEVENT',
     `UID:${uid}`,
     `DTSTAMP:${stamp}`,
     `DTSTART:${utcStamp(start)}`,
     end ? `DTEND:${utcStamp(end)}` : null,
+    recurrence ? rrule(recurrence, until) : null,
     `SUMMARY:${esc(summary)}`,
     description ? `DESCRIPTION:${esc(description)}` : null,
     `CATEGORIES:${category}`,
@@ -55,13 +63,14 @@ function veventTimed({ uid, start, end, summary, description, category, alarmMin
   return lines.map(fold).join('\r\n');
 }
 
-function vevent({ uid, date, summary, description, category }, stamp) {
+function vevent({ uid, date, summary, description, category, recurrence, until }, stamp) {
   const lines = [
     'BEGIN:VEVENT',
     `UID:${uid}`,
     `DTSTAMP:${stamp}`,
     `DTSTART;VALUE=DATE:${dateCompact(date)}`,
     `DTEND;VALUE=DATE:${nextDay(date)}`,
+    recurrence ? rrule(recurrence, until) : null,
     `SUMMARY:${esc(summary)}`,
     description ? `DESCRIPTION:${esc(description)}` : null,
     `CATEGORIES:${category}`,
@@ -140,7 +149,7 @@ export function buildUserCalendar(user) {
       category: 'Holiday',
     }, stamp)),
     ...calEvents.map((e) => (e.all_day
-      ? vevent({ uid: `cal-${e.id}@teamhub`, date: e.starts_at.slice(0, 10), summary: e.title, description: e.notes, category: 'Personal' }, stamp)
+      ? vevent({ uid: `cal-${e.id}@teamhub`, date: e.starts_at.slice(0, 10), summary: e.title, description: e.notes, category: 'Personal', recurrence: e.recurrence !== 'none' ? e.recurrence : null, until: e.repeat_until }, stamp)
       : veventTimed({
         uid: `cal-${e.id}@teamhub`,
         start: e.starts_at,
@@ -149,6 +158,8 @@ export function buildUserCalendar(user) {
         description: e.notes,
         category: 'Personal',
         alarmMin: e.remind_min != null ? e.remind_min : null,
+        recurrence: e.recurrence !== 'none' ? e.recurrence : null,
+        until: e.repeat_until,
       }, stamp))),
   ];
 

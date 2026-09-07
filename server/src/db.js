@@ -737,6 +737,11 @@ CREATE TABLE IF NOT EXISTS calendar_events (
 );
 CREATE INDEX IF NOT EXISTS idx_calendar_user_time ON calendar_events(user_id, starts_at);
 `);
+// Recurring calendar events: repeat rule + optional end, and the last occurrence
+// date already reminded (so each occurrence nudges once).
+ensureColumn('calendar_events', 'recurrence', "TEXT NOT NULL DEFAULT 'none'");
+ensureColumn('calendar_events', 'repeat_until', 'TEXT');
+ensureColumn('calendar_events', 'reminded_occurrence', 'TEXT');
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
 // Marks an attachment as a profile photo so it is viewable workspace-wide
