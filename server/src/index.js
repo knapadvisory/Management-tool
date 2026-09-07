@@ -38,6 +38,7 @@ import pushRouter from './routes/push.js';
 import feeParserRouter from './routes/feeParser.js';
 import locationRouter from './routes/location.js';
 import leadsRouter from './routes/leads.js';
+import meetingsRouter from './routes/meetings.js';
 import { intakeLead } from './leads.js';
 import setupSocket from './socket.js';
 import { startReminderScheduler, startAutoArchiveScheduler, startDeadlineReminderScheduler, startWeeklyDigestScheduler, startDocumentRequestChaseScheduler } from './reminders.js';
@@ -475,6 +476,7 @@ app.use('/api/uploads', uploadsRouter); // POST is guarded inside; GET uses a qu
 app.use('/api/search', requireAuth, blockGuests, searchRouter);
 app.use('/api/location', requireAuth, blockGuests, locationRouter);
 app.use('/api/leads', requireAuth, blockGuests, leadsRouter);
+app.use('/api/meetings', requireAuth, blockGuests, meetingsRouter);
 app.use('/api/files', requireAuth, blockGuests, filesRouter);
 app.use('/api/drive', requireAuth, blockGuests, driveRouter);
 app.use('/api/dashboard', requireAuth, blockGuests, dashboardRouter);
