@@ -692,6 +692,8 @@ ensureColumn('lead_stages', 'outcome', "TEXT NOT NULL DEFAULT 'open'");
 ensureColumn('leads', 'closed_at', 'TEXT');
 // Tasks can be linked back to the lead they were raised from.
 ensureColumn('tasks', 'lead_id', 'INTEGER');
+// Files/audio attached to a lead note.
+ensureColumn('attachments', 'lead_note_id', 'INTEGER REFERENCES lead_notes(id)');
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");
 // Marks an attachment as a profile photo so it is viewable workspace-wide

@@ -202,6 +202,12 @@ router.get('/:id', (req, res) => {
   } else if (att.client_id) {
     // Client documents are visible to the workspace's staff, not to guests.
     if (me.role === 'guest') return res.status(403).json({ error: 'Not allowed' });
+  } else if (att.lead_note_id) {
+    // Lead-note files: visible to whoever can see the lead (admin/sales, or the
+    // owning member). Workspace membership was already checked above.
+    const lead = db.prepare('SELECT l.owner_id FROM lead_notes n JOIN leads l ON l.id = n.lead_id WHERE n.id = ?').get(att.lead_note_id);
+    const manageAll = me.role === 'admin' || me.role === 'sales';
+    if (!lead || (!manageAll && lead.owner_id !== userId)) return res.status(403).json({ error: 'Not allowed' });
   } else if (att.uploader_id !== userId) {
     return res.status(403).json({ error: 'Not allowed' });
   }

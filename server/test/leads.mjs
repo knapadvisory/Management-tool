@@ -206,6 +206,18 @@ async function main() {
   const miaNote = await req('POST', `/api/leads/${lead.id}/notes`, { token: mia.token, body: { body: 'sneaky' } });
   check('a member cannot note a lead that is not theirs', miaNote.status === 403);
 
+  // A note can carry a file/audio attachment (upload → link → serve).
+  const fd = new FormData();
+  fd.append('files', new Blob(['fake audio bytes'], { type: 'audio/mpeg' }), 'call-recording.mp3');
+  const up = await (await fetch(`${BASE}/api/uploads`, { method: 'POST', headers: { Authorization: `Bearer ${a}` }, body: fd })).json();
+  const attId = up.attachments[0].id;
+  const fileNote = await req('POST', `/api/leads/${lead.id}/notes`, { token: a, body: { body: 'Client call', attachment_ids: [attId] } });
+  check('a note keeps its attachment', fileNote.data.note.attachments?.length === 1 && fileNote.data.note.attachments[0].mime_type === 'audio/mpeg');
+  const audioFetch = await fetch(`${BASE}/api/uploads/${attId}?token=${a}`);
+  check('a note attachment is viewable by the team', audioFetch.status === 200);
+  const fileOnly = await req('POST', `/api/leads/${lead.id}/notes`, { token: a, body: { attachment_ids: [] } });
+  check('a note with neither text nor file is rejected', fileOnly.status === 400);
+
   // --- Follow-up reminders ---
   const future = new Date(Date.now() + 3 * 86400000).toISOString();
   const remRes = await req('POST', `/api/leads/${lead.id}/reminders`, { token: a, body: { remind_at: future, note: 'Chase the quote' } });

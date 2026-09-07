@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { api } from '../api.js';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { api, uploadFiles, fileUrl, downloadUrl } from '../api.js';
 import { getSocket } from '../socket.js';
 import Avatar from './Avatar.jsx';
 
@@ -9,6 +9,34 @@ const digits = (s) => String(s || '').replace(/\D/g, '');
 // Reminders are stored as a UTC "YYYY-MM-DD HH:MM:SS" string (no zone marker).
 const parseUTC = (s) => new Date(String(s).replace(' ', 'T') + (String(s).endsWith('Z') ? '' : 'Z'));
 const fmtWhen = (s) => parseUTC(s).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+const fmtSize = (b) => (b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+const fileIcon = (mime = '', name = '') => {
+  if (/^image\//.test(mime)) return '🖼️';
+  if (/^audio\//.test(mime)) return '🎧';
+  if (/^video\//.test(mime)) return '🎬';
+  if (/pdf/.test(mime) || /\.pdf$/i.test(name)) return '📕';
+  if (/(sheet|excel|csv)/.test(mime) || /\.(xlsx?|csv)$/i.test(name)) return '📊';
+  if (/(word|document)/.test(mime) || /\.docx?$/i.test(name)) return '📄';
+  return '📎';
+};
+
+// Render a lead-note attachment: audio gets a player, images a thumbnail, the
+// rest a downloadable chip.
+function NoteAttachment({ att }) {
+  const mime = att.mime_type || '';
+  if (/^audio\//.test(mime)) {
+    return <audio className="lead-note-audio" controls preload="none" src={fileUrl(att.id)} />;
+  }
+  if (/^image\//.test(mime)) {
+    return <a href={fileUrl(att.id)} target="_blank" rel="noreferrer" className="lead-note-img"><img src={fileUrl(att.id)} alt={att.original_name} /></a>;
+  }
+  return (
+    <a className="lead-file-chip lead-file-dl" href={downloadUrl(att.id)}>
+      {fileIcon(mime, att.original_name)} <span className="lead-file-name">{att.original_name}</span>
+      <span className="muted">{fmtSize(att.size)}</span>
+    </a>
+  );
+}
 
 export default function LeadsView({ user, users = [], onOpenTask, openLeadRequest, onLeadOpened }) {
   const manageAll = user.role === 'admin' || user.role === 'sales';
@@ -198,6 +226,9 @@ function LeadDetail({ lead, user, users, stages, onClose, onPatch, onDelete, onO
   const [tasks, setTasks] = useState([]);
   const [showTask, setShowTask] = useState(false);
   const [noteText, setNoteText] = useState('');
+  const [noteFiles, setNoteFiles] = useState([]);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const fileRef = useRef(null);
   const [remindAt, setRemindAt] = useState('');
   const [remindNote, setRemindNote] = useState('');
 
@@ -208,9 +239,20 @@ function LeadDetail({ lead, user, users, stages, onClose, onPatch, onDelete, onO
 
   async function addNote(e) {
     e.preventDefault();
-    if (!noteText.trim()) return;
-    const { note } = await api(`/leads/${lead.id}/notes`, { method: 'POST', body: { body: noteText.trim() } });
-    setNotes((n) => [note, ...n]); setNoteText(''); onRefresh?.();
+    if (!noteText.trim() && noteFiles.length === 0) return;
+    setNoteBusy(true);
+    try {
+      let attachment_ids = [];
+      if (noteFiles.length) {
+        const uploaded = await uploadFiles(noteFiles);
+        attachment_ids = uploaded.map((a) => a.id);
+      }
+      const { note } = await api(`/leads/${lead.id}/notes`, { method: 'POST', body: { body: noteText.trim(), attachment_ids } });
+      setNotes((n) => [note, ...n]); setNoteText(''); setNoteFiles([]);
+      if (fileRef.current) fileRef.current.value = '';
+      onRefresh?.();
+    } catch (err) { window.alert(err.message || 'Could not save the note'); }
+    finally { setNoteBusy(false); }
   }
   async function delNote(id) {
     await api(`/leads/${lead.id}/notes/${id}`, { method: 'DELETE' }).catch(() => {});
@@ -320,7 +362,21 @@ function LeadDetail({ lead, user, users, stages, onClose, onPatch, onDelete, onO
         <label className="lead-field-label">Notes &amp; remarks</label>
         <form onSubmit={addNote} className="lead-note-form">
           <textarea className="auth-input" rows={2} placeholder="Log a call, remark or next step…" value={noteText} onChange={(e) => setNoteText(e.target.value)} />
-          <button className="btn btn-sm btn-primary" disabled={!noteText.trim()}>Add note</button>
+          {noteFiles.length > 0 && (
+            <div className="lead-note-picked">
+              {noteFiles.map((f, i) => (
+                <span className="lead-file-chip" key={i}>{fileIcon(f.type, f.name)} {f.name}
+                  <button type="button" className="lead-file-rm" onClick={() => setNoteFiles((fs) => fs.filter((_, j) => j !== i))}>✕</button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input ref={fileRef} type="file" multiple hidden
+            onChange={(e) => { setNoteFiles((fs) => [...fs, ...Array.from(e.target.files || [])]); }} />
+          <div className="lead-note-actions">
+            <button type="button" className="btn btn-sm" onClick={() => fileRef.current?.click()}>📎 Attach file / audio</button>
+            <button className="btn btn-sm btn-primary" disabled={noteBusy || (!noteText.trim() && noteFiles.length === 0)}>{noteBusy ? 'Saving…' : 'Add note'}</button>
+          </div>
         </form>
         <div className="lead-notes">
           {notes.map((n) => (
@@ -332,7 +388,8 @@ function LeadDetail({ lead, user, users, stages, onClose, onPatch, onDelete, onO
                   <span className="muted">{new Date(n.created_at + 'Z').toLocaleString()}</span>
                   {(n.user_id === user.id || user.role === 'admin') && <button className="icon-btn lead-note-del" title="Delete" onClick={() => delNote(n.id)}>✕</button>}
                 </div>
-                <div className="lead-note-text">{n.body}</div>
+                {n.body && <div className="lead-note-text">{n.body}</div>}
+                {(n.attachments || []).map((a) => <NoteAttachment key={a.id} att={a} />)}
               </div>
             </div>
           ))}
