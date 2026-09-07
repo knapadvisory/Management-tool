@@ -231,7 +231,10 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// --- Notes / remarks ---
+// --- Notes / remarks (with optional file/audio attachments) ---
+const noteAttachments = db.prepare('SELECT id, original_name, mime_type, size FROM attachments WHERE lead_note_id = ? ORDER BY id');
+const withAttachments = (note) => ({ ...note, attachments: noteAttachments.all(note.id) });
+
 router.get('/:id/notes', (req, res) => {
   if (!accessibleLead(req, res)) return;
   const notes = db.prepare(`
@@ -239,23 +242,32 @@ router.get('/:id/notes', (req, res) => {
     FROM lead_notes n LEFT JOIN users u ON u.id = n.user_id
     WHERE n.lead_id = ? ORDER BY n.id DESC
   `).all(req.params.id);
-  res.json({ notes });
+  res.json({ notes: notes.map(withAttachments) });
 });
 
 router.post('/:id/notes', (req, res) => {
   const lead = accessibleLead(req, res);
   if (!lead) return;
   const body = String(req.body?.body || '').trim().slice(0, 5000);
-  if (!body) return res.status(400).json({ error: 'A note is required' });
+  // A note needs either text or at least one attached file.
+  const ids = Array.isArray(req.body?.attachment_ids) ? req.body.attachment_ids.map(Number).filter(Boolean) : [];
+  if (!body && ids.length === 0) return res.status(400).json({ error: 'Add a note or attach a file' });
   const info = db.prepare('INSERT INTO lead_notes (workspace_id, lead_id, user_id, body) VALUES (?, ?, ?, ?)')
     .run(req.workspaceId, lead.id, req.user.id, body);
+  const noteId = info.lastInsertRowid;
+  // Link the uploaded files to this note — only ones this user just uploaded and
+  // hasn't attached elsewhere, kept inside the workspace.
+  if (ids.length) {
+    const link = db.prepare('UPDATE attachments SET lead_note_id = ? WHERE id = ? AND workspace_id = ? AND uploader_id = ? AND lead_note_id IS NULL AND message_id IS NULL AND task_id IS NULL');
+    for (const id of ids) link.run(noteId, id, req.workspaceId, req.user.id);
+  }
   db.prepare("UPDATE leads SET updated_at = datetime('now') WHERE id = ?").run(lead.id);
   const note = db.prepare(`
     SELECT n.id, n.body, n.created_at, n.user_id, u.name AS author_name, u.avatar_color AS author_color
     FROM lead_notes n LEFT JOIN users u ON u.id = n.user_id WHERE n.id = ?
-  `).get(info.lastInsertRowid);
+  `).get(noteId);
   req.app.get('io')?.to(`workspace:${req.workspaceId}`).emit('leads:changed');
-  res.status(201).json({ note });
+  res.status(201).json({ note: withAttachments(note) });
 });
 
 router.delete('/:id/notes/:noteId', (req, res) => {
@@ -264,6 +276,8 @@ router.delete('/:id/notes/:noteId', (req, res) => {
   const note = db.prepare('SELECT * FROM lead_notes WHERE id = ? AND lead_id = ?').get(req.params.noteId, lead.id);
   if (!note) return res.json({ ok: true });
   if (note.user_id !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Only the author or an admin can delete this note' });
+  // Remove the note's attachment rows (files on disk are reclaimed separately).
+  db.prepare('DELETE FROM attachments WHERE lead_note_id = ?').run(note.id);
   db.prepare('DELETE FROM lead_notes WHERE id = ?').run(note.id);
   res.json({ ok: true });
 });

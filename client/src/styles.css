@@ -3252,3 +3252,15 @@ button.c360-stat:hover { border-color: var(--accent); }
 /* Linked-lead button inside the task modal */
 .task-lead-link { display: inline-flex; align-items: center; gap: 4px; width: 100%; justify-content: flex-start; text-align: left; padding: 8px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-size: 14px; font-weight: 600; cursor: pointer; }
 .task-lead-link:hover { border-color: var(--accent); }
+
+/* ---------- Leads: note attachments ---------- */
+.lead-note-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lead-note-picked { display: flex; flex-wrap: wrap; gap: 6px; }
+.lead-file-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; max-width: 100%; color: var(--text); text-decoration: none; }
+.lead-file-chip .lead-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.lead-file-dl:hover { border-color: var(--accent); }
+.lead-file-rm { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0 2px; }
+.lead-note-audio { width: 100%; height: 34px; margin-top: 6px; }
+.lead-note-img { display: inline-block; margin-top: 6px; }
+.lead-note-img img { max-width: 180px; max-height: 140px; border-radius: 8px; border: 1px solid var(--border); }
+.lead-note-body .lead-file-chip, .lead-note-body .lead-note-img { margin-top: 6px; }
