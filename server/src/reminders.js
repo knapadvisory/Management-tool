@@ -100,13 +100,31 @@ export function processDueMeetings(io) {
   }
 }
 
+// Fire personal calendar-event reminders (remind_min minutes before start).
+export function processDueCalendar(io) {
+  const now = Date.now();
+  const rows = db.prepare(`
+    SELECT * FROM calendar_events
+    WHERE reminded = 0 AND remind_min IS NOT NULL
+      AND starts_at >= datetime('now', '-2 minutes') AND starts_at <= datetime('now', '+7 days')
+  `).all();
+  for (const ev of rows) {
+    const startMs = new Date(ev.starts_at.replace(' ', 'T') + 'Z').getTime();
+    if (now < startMs - ev.remind_min * 60000) continue; // not yet within the reminder window
+    db.prepare('UPDATE calendar_events SET reminded = 1 WHERE id = ?').run(ev.id);
+    createNotification(io, { user_id: ev.user_id, type: 'calendar_reminder', actor_id: null, text: `Reminder: ${ev.title}` });
+    io?.to(`user:${ev.user_id}`).emit('calendar:changed');
+  }
+}
+
 export function startReminderScheduler(io) {
   // Run shortly after boot, then every minute. Reminders have minute
   // granularity, which is plenty for task due-date nudges.
   processDueReminders(io);
   processDueLeadReminders(io);
   processDueMeetings(io);
-  const timer = setInterval(() => { processDueReminders(io); processDueLeadReminders(io); processDueMeetings(io); }, 60 * 1000);
+  processDueCalendar(io);
+  const timer = setInterval(() => { processDueReminders(io); processDueLeadReminders(io); processDueMeetings(io); processDueCalendar(io); }, 60 * 1000);
   timer.unref?.(); // don't keep the process alive just for the scheduler
   return timer;
 }

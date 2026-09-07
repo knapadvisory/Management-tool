@@ -134,7 +134,15 @@ export default function Sidebar({
             className={`nav-item ${view?.type === 'meetings' ? 'active' : ''}`}
             onClick={() => onSelectView('meetings')}
           >
-            <span className="nav-ico nav-ico-emoji">📅</span> Meetings
+            <span className="nav-ico nav-ico-emoji">🎥</span> Meetings
+          </button>
+        )}
+        {user.role !== 'guest' && (
+          <button
+            className={`nav-item ${view?.type === 'calendar' ? 'active' : ''}`}
+            onClick={() => onSelectView('calendar')}
+          >
+            <span className="nav-ico nav-ico-emoji">📅</span> Calendar
           </button>
         )}
         <button
