@@ -32,6 +32,7 @@ import SettingsModal from './components/SettingsModal.jsx';
 import LocationSharing from './components/LocationSharing.jsx';
 import LeadsView from './components/LeadsView.jsx';
 import MeetingsView from './components/MeetingsView.jsx';
+import CalendarView from './components/CalendarView.jsx';
 import DashboardView from './components/DashboardView.jsx';
 import GuestJoin from './components/GuestJoin.jsx';
 import GuestApp from './components/GuestApp.jsx';
@@ -594,6 +595,7 @@ export default function App() {
             onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
         )}
         {view?.type === 'meetings' && <MeetingsView user={user} users={users} />}
+        {view?.type === 'calendar' && <CalendarView user={user} onOpenMeetings={() => setView({ type: 'meetings' })} />}
         {view?.type === 'timesheet' && <TimesheetView user={user} />}
         {view?.type === 'analytics' && user.role !== 'guest' && <AnalyticsView user={user} users={users} />}
         {view?.type === 'workflows' && <WorkflowsView user={user} onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />}

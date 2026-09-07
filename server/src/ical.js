@@ -31,6 +31,29 @@ const nextDay = (ymd) => {
   return d.toISOString().slice(0, 10).replace(/-/g, '');
 };
 
+// A timed VEVENT (UTC). start/end are 'YYYY-MM-DD HH:MM:SS' UTC strings.
+const utcStamp = (s) => String(s).replace(' ', 'T').replace(/-/g, '').replace(/:/g, '').slice(0, 15) + 'Z';
+function veventTimed({ uid, start, end, summary, description, category, alarmMin }, stamp) {
+  const lines = [
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${stamp}`,
+    `DTSTART:${utcStamp(start)}`,
+    end ? `DTEND:${utcStamp(end)}` : null,
+    `SUMMARY:${esc(summary)}`,
+    description ? `DESCRIPTION:${esc(description)}` : null,
+    `CATEGORIES:${category}`,
+    'STATUS:CONFIRMED',
+    alarmMin != null ? 'BEGIN:VALARM' : null,
+    alarmMin != null ? 'ACTION:DISPLAY' : null,
+    alarmMin != null ? `DESCRIPTION:${esc(summary)}` : null,
+    alarmMin != null ? `TRIGGER:-PT${alarmMin}M` : null,
+    alarmMin != null ? 'END:VALARM' : null,
+    'END:VEVENT',
+  ].filter(Boolean);
+  return lines.map(fold).join('\r\n');
+}
+
 function vevent({ uid, date, summary, description, category }, stamp) {
   const lines = [
     'BEGIN:VEVENT',
@@ -72,6 +95,18 @@ export function buildUserCalendar(user) {
     ORDER BY d.due_date
   `).all(ws, user.id);
 
+  // Scheduled meetings the user hosts or is invited to.
+  const meetings = db.prepare(`
+    SELECT DISTINCT m.id, m.title, m.description, m.scheduled_at, m.duration_min, m.call_type
+    FROM meetings m LEFT JOIN meeting_invitees mi ON mi.meeting_id = m.id
+    WHERE m.workspace_id = ? AND m.status = 'scheduled' AND (m.host_id = ? OR mi.user_id = ?)
+    ORDER BY m.scheduled_at
+  `).all(ws, user.id, user.id);
+
+  // The user's own calendar events.
+  const calEvents = db.prepare('SELECT * FROM calendar_events WHERE user_id = ? ORDER BY starts_at').all(user.id);
+  const plusMin = (s, min) => new Date(new Date(s.replace(' ', 'T') + 'Z').getTime() + min * 60000).toISOString().slice(0, 19).replace('T', ' ');
+
   const events = [
     ...tasks.map((t) => vevent({
       uid: `task-${t.id}@teamhub`,
@@ -87,6 +122,26 @@ export function buildUserCalendar(user) {
       description: `Compliance filing for ${d.client_name}`,
       category: 'Compliance',
     }, stamp)),
+    ...meetings.map((m) => veventTimed({
+      uid: `meeting-${m.id}@teamhub`,
+      start: m.scheduled_at,
+      end: plusMin(m.scheduled_at, m.duration_min || 30),
+      summary: `${m.call_type === 'audio' ? '📞' : '🎥'} ${m.title}`,
+      description: m.description || 'TeamHub meeting',
+      category: 'Meeting',
+      alarmMin: 10,
+    }, stamp)),
+    ...calEvents.map((e) => (e.all_day
+      ? vevent({ uid: `cal-${e.id}@teamhub`, date: e.starts_at.slice(0, 10), summary: e.title, description: e.notes, category: 'Personal' }, stamp)
+      : veventTimed({
+        uid: `cal-${e.id}@teamhub`,
+        start: e.starts_at,
+        end: e.ends_at || plusMin(e.starts_at, 30),
+        summary: e.title,
+        description: e.notes,
+        category: 'Personal',
+        alarmMin: e.remind_min != null ? e.remind_min : null,
+      }, stamp))),
   ];
 
   const header = [

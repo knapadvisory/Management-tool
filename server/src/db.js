@@ -718,6 +718,24 @@ CREATE TABLE IF NOT EXISTS meeting_invitees (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   PRIMARY KEY (meeting_id, user_id)
 );
+
+-- Personal calendar entries (reminders / blocks / anything). Private to the
+-- owner; shown alongside meetings and task due-dates on the Calendar.
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT,
+  all_day INTEGER NOT NULL DEFAULT 0,
+  notes TEXT DEFAULT '',
+  color TEXT DEFAULT '',
+  remind_min INTEGER,
+  reminded INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_calendar_user_time ON calendar_events(user_id, starts_at);
 `);
 // Optional profile photo: the id of an uploaded (is_avatar) attachment, or ''.
 ensureColumn('users', 'avatar_url', "TEXT DEFAULT ''");

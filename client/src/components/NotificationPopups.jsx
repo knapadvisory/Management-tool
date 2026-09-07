@@ -8,7 +8,7 @@ const ICON = {
   task_update: '✏️', task_moved: '↕️', task_status: '🔁', task_note: '🗒️',
   task_chat: '💬', task_reminder: '🔔', task_recurred: '🔁', task_deleted: '🗑️',
   lead: '🎯', lead_reminder: '⏰',
-  meeting_invite: '📅', meeting_reminder: '📅', meeting_update: '📅',
+  meeting_invite: '🎥', meeting_reminder: '🎥', meeting_update: '🎥', calendar_reminder: '📅',
 };
 
 export default function NotificationPopups({ popups = [], onOpen, onClose }) {
