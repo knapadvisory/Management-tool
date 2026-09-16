@@ -645,6 +645,17 @@ CREATE TABLE IF NOT EXISTS leads (
 ensureColumn('workspaces', 'leads_intake_key', 'TEXT');
 ensureColumn('workspaces', 'leads_task_workflow_id', 'INTEGER');
 
+// WhatsApp Business Cloud API config (per workspace) + which board new WhatsApp
+// tasks land on. A teammate links their WhatsApp number on their profile so the
+// bot knows who is messaging.
+ensureColumn('workspaces', 'wa_phone_number_id', 'TEXT');
+ensureColumn('workspaces', 'wa_access_token', 'TEXT');
+ensureColumn('workspaces', 'wa_verify_token', 'TEXT');
+ensureColumn('workspaces', 'wa_enabled', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('workspaces', 'wa_task_workflow_id', 'INTEGER');
+ensureColumn('users', 'whatsapp_number', 'TEXT');
+db.exec(`CREATE TABLE IF NOT EXISTS wa_seen (message_id TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT (datetime('now')));`);
+
 // Configurable pipeline columns. `key` is a stable slug stored on leads.status;
 // `label` is what the admin renames. Defaults are seeded lazily per workspace.
 db.exec(`

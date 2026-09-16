@@ -38,6 +38,8 @@ import pushRouter from './routes/push.js';
 import feeParserRouter from './routes/feeParser.js';
 import locationRouter from './routes/location.js';
 import leadsRouter from './routes/leads.js';
+import whatsappRouter from './routes/whatsapp.js';
+import { processInbound, OUTBOX } from './whatsapp.js';
 import meetingsRouter from './routes/meetings.js';
 import calendarEventsRouter from './routes/calendar.js';
 import { intakeLead } from './leads.js';
@@ -93,6 +95,26 @@ app.get('/api/config', (req, res) => {
     android_app_available: androidApkAvailable(),
   });
 });
+
+// --- WhatsApp Business Cloud API webhook (public, no login) ---
+// Meta's verification handshake: echo the challenge when the verify token matches.
+app.get('/api/whatsapp/webhook', (req, res) => {
+  const token = req.query['hub.verify_token'];
+  if (req.query['hub.mode'] === 'subscribe' && token &&
+      db.prepare('SELECT 1 FROM workspaces WHERE wa_verify_token = ?').get(String(token))) {
+    return res.status(200).send(String(req.query['hub.challenge'] || ''));
+  }
+  res.sendStatus(403);
+});
+// Inbound messages. Ack immediately (Meta retries on non-200), then process.
+app.post('/api/whatsapp/webhook', (req, res) => {
+  res.sendStatus(200);
+  Promise.resolve(processInbound(app.get('io'), req.body)).catch(() => {});
+});
+// Test-only: read what the bot would have sent (WA_DRY_RUN).
+if (process.env.WA_DRY_RUN) {
+  app.get('/api/whatsapp/_outbox', (req, res) => res.json({ outbox: OUTBOX }));
+}
 
 // Public lead intake — the website enquiry form POSTs here with the workspace's
 // secret key (query ?key=, x-lead-key header, or a `key` field). No login.
@@ -477,6 +499,7 @@ app.use('/api/uploads', uploadsRouter); // POST is guarded inside; GET uses a qu
 app.use('/api/search', requireAuth, blockGuests, searchRouter);
 app.use('/api/location', requireAuth, blockGuests, locationRouter);
 app.use('/api/leads', requireAuth, blockGuests, leadsRouter);
+app.use('/api/whatsapp', requireAuth, blockGuests, whatsappRouter);
 app.use('/api/meetings', requireAuth, blockGuests, meetingsRouter);
 app.use('/api/calendar-events', requireAuth, blockGuests, calendarEventsRouter);
 app.use('/api/files', requireAuth, blockGuests, filesRouter);
