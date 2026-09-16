@@ -14,6 +14,7 @@ const SECTIONS = [
   { key: 'notifications', tkey: 'settings.notifications', icon: '🔔' },
   { key: 'messages', tkey: 'settings.messages', icon: '💬' },
   { key: 'calendar', tkey: 'settings.calendar', icon: '📅' },
+  { key: 'whatsapp', label: 'WhatsApp', icon: '🟢' },
   { key: 'language', tkey: 'settings.language', icon: '🌐' },
   { key: 'accessibility', tkey: 'settings.accessibility', icon: '♿' },
   { key: 'location', tkey: 'settings.location', icon: '📍' },
@@ -34,7 +35,7 @@ export default function SettingsModal({ user, colors = [], initialSection = 'pro
           <nav className="settings-nav">
             {SECTIONS.map((s) => (
               <button key={s.key} className={`settings-nav-item ${section === s.key ? 'active' : ''}`} onClick={() => setSection(s.key)}>
-                <span className="settings-nav-icon">{s.icon}</span> {t(s.tkey)}
+                <span className="settings-nav-icon">{s.icon}</span> {s.label || t(s.tkey)}
               </button>
             ))}
             {onLogout && (
@@ -49,6 +50,7 @@ export default function SettingsModal({ user, colors = [], initialSection = 'pro
             {section === 'notifications' && <NotificationsPanel />}
             {section === 'messages' && <MessagesPanel />}
             {section === 'calendar' && <CalendarPanel />}
+            {section === 'whatsapp' && <WhatsAppPanel user={user} />}
             {section === 'language' && <LanguagePanel />}
             {section === 'accessibility' && <AccessibilityPanel />}
             {section === 'location' && <LocationPanel />}
@@ -345,6 +347,89 @@ function CalendarPanel() {
           </ul>
           <p className="muted settings-hint" style={{ marginTop: 10 }}>Keep this link private — anyone who has it can see your task titles and due dates. Use “Reset link” if it’s ever exposed.</p>
         </>
+      )}
+    </div>
+  );
+}
+
+function WhatsAppPanel({ user }) {
+  const [num, setNum] = React.useState('');
+  const [savedNum, setSavedNum] = React.useState(false);
+  const [cfg, setCfg] = React.useState(null);
+  const [token, setToken] = React.useState('');
+  const [savedCfg, setSavedCfg] = React.useState(false);
+  const [copied, setCopied] = React.useState(null);
+
+  React.useEffect(() => {
+    api('/whatsapp/me').then((d) => setNum(d.whatsapp_number || '')).catch(() => {});
+    if (user.role === 'admin') api('/whatsapp/config').then(setCfg).catch(() => {});
+  }, [user.role]);
+
+  const copy = (text, which) => { navigator.clipboard?.writeText(text); setCopied(which); setTimeout(() => setCopied(null), 1500); };
+  async function saveNum() { await api('/whatsapp/me', { method: 'PUT', body: { whatsapp_number: num } }); setSavedNum(true); setTimeout(() => setSavedNum(false), 1500); }
+  async function saveCfg(patch) {
+    await api('/whatsapp/config', { method: 'PUT', body: patch });
+    const d = await api('/whatsapp/config'); setCfg(d); setToken('');
+    setSavedCfg(true); setTimeout(() => setSavedCfg(false), 1500);
+  }
+
+  return (
+    <div>
+      <h3 className="settings-title">WhatsApp</h3>
+      <p className="muted settings-hint">Manage your tasks by messaging your firm’s WhatsApp bot: <i>“task Call Sharma tomorrow @ravi”</i>, <i>“my tasks”</i>, <i>“done 142”</i>.</p>
+
+      <label className="profile-label">Your WhatsApp number</label>
+      <div className="cal-url-row">
+        <input className="auth-input" placeholder="+91 98xxxxxxxx" value={num} onChange={(e) => setNum(e.target.value)} />
+        <button className="cal-btn" onClick={saveNum}>{savedNum ? 'Saved ✓' : 'Save'}</button>
+      </div>
+      <p className="muted settings-hint">Include your country code. The bot only responds to numbers linked here.</p>
+
+      {user.role === 'admin' && cfg && (
+        <div style={{ marginTop: 22, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <div className="profile-section-title">Admin · Cloud API connection</div>
+          <p className="muted settings-hint">Connect a Meta WhatsApp Business number so your team can run tasks over chat. You need a Meta Business account and a dedicated number (not on the normal WhatsApp app).</p>
+
+          <label className="profile-label">Webhook URL (paste into Meta)</label>
+          <div className="cal-url-row">
+            <input className="auth-input cal-url" readOnly value={cfg.webhook_url} onFocus={(e) => e.target.select()} />
+            <button className="cal-btn" onClick={() => copy(cfg.webhook_url, 'url')}>{copied === 'url' ? 'Copied ✓' : 'Copy'}</button>
+          </div>
+          <label className="profile-label">Verify token (paste into Meta)</label>
+          <div className="cal-url-row">
+            <input className="auth-input cal-url" readOnly value={cfg.verify_token} onFocus={(e) => e.target.select()} />
+            <button className="cal-btn" onClick={() => copy(cfg.verify_token, 'vt')}>{copied === 'vt' ? 'Copied ✓' : 'Copy'}</button>
+          </div>
+
+          <label className="profile-label">Phone number ID</label>
+          <input className="auth-input" placeholder="From Meta → WhatsApp → API Setup" defaultValue={cfg.phone_number_id}
+            onBlur={(e) => { if (e.target.value.trim() !== cfg.phone_number_id) saveCfg({ phone_number_id: e.target.value.trim() }); }} />
+
+          <label className="profile-label">Access token {cfg.has_token && <span className="muted">· saved</span>}</label>
+          <div className="cal-url-row">
+            <input className="auth-input" type="password" placeholder={cfg.has_token ? '•••••••• (enter to replace)' : 'Permanent access token'} value={token} onChange={(e) => setToken(e.target.value)} />
+            <button className="cal-btn" disabled={!token.trim()} onClick={() => saveCfg({ access_token: token.trim() })}>Save</button>
+          </div>
+
+          <label className="profile-label">Create tasks on board</label>
+          <select className="auth-input" value={cfg.task_workflow_id || ''} onChange={(e) => saveCfg({ task_workflow_id: e.target.value ? Number(e.target.value) : null })}>
+            <option value="">First board</option>
+            {cfg.workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+
+          <label className="cal-check" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="checkbox" checked={cfg.enabled} onChange={(e) => saveCfg({ enabled: e.target.checked })} /> Bot enabled {savedCfg && <span className="muted">· saved ✓</span>}
+          </label>
+
+          <div className="profile-section-title" style={{ marginTop: 16 }}>Setup steps</div>
+          <ul className="cal-help">
+            <li>In <b>Meta for Developers</b>, create an app → add <b>WhatsApp</b>, and pick/add your business number.</li>
+            <li>Copy the <b>Phone number ID</b> and a <b>permanent access token</b> into the fields above.</li>
+            <li>Under WhatsApp → <b>Configuration → Webhook</b>, paste the Webhook URL and Verify token above, then <b>Subscribe</b> to the <i>messages</i> field.</li>
+            <li>Turn on <b>Bot enabled</b>, add each teammate’s number to their profile, and message the number to test.</li>
+          </ul>
+          <p className="muted settings-hint">Note: WhatsApp only allows free-form messages within 24 h of a person’s last message; proactive nudges outside that window need Meta-approved templates.</p>
+        </div>
       )}
     </div>
   );
