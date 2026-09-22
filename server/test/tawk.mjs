@@ -104,10 +104,34 @@ async function main() {
   check('no duplicate lead is created on enrichment', kavya.length === 1);
   check('the enriched lead now carries the phone', kavya[0] && kavya[0].phone.replace(/\s/g, '') === '9820011223');
 
+  // The real chat:transcript_created shape: everything nested under `chat`, and the
+  // visitor's name/phone arrive inside a pre-chat message body, not as fields.
+  const transcript = {
+    time: '2026-09-22T12:20:35.615Z', event: 'chat:transcript_created',
+    property: { id: '699ed4a16', name: 'Startup Advisory' },
+    chat: {
+      id: '02498dc0-b680-11f1-993c-356b5d606bbd', domain: 'www.startupadvisory.in',
+      visitor: { name: 'neeraj', city: 'Delhi', country: 'India' },
+      messages: [
+        { sender: { t: 's', n: 'Customer Support' }, type: 'msg', msg: '👋 Hi! How can we help?\n[option]Want a company registration\n[option]need to consult', time: '2026-09-22T12:20:35.615Z' },
+        { sender: { t: 'v' }, type: 'msg', msg: 'Name : neeraj\r\nPhone : +919643386726\r\nYour requirements please : hello', time: '2026-09-22T12:20:49.628Z' },
+        { sender: { id: '06c3ac79', t: 'a', n: 'Vipin' }, type: 'msg', msg: 'Hi Neeraj! How can we assist you today?', time: '2026-09-22T12:21:00.454Z' },
+        { sender: { t: 'v' }, type: 'msg', msg: 'need gst registration', time: '2026-09-22T12:21:16.870Z' },
+      ],
+    },
+  };
+  const tr = await tawk(key, transcript);
+  check('a nested chat:transcript_created becomes a lead', tr.status === 200 && !!tr.data.lead_id);
+  const nr = (await req('GET', '/api/leads', { token: a })).data.leads.find((l) => l.name === 'neeraj' && l.phone);
+  check('the visitor name is read from the nested chat', nr && nr.name === 'neeraj');
+  check('the phone is pulled from the pre-chat message body', nr && nr.phone.replace(/\s/g, '') === '+919643386726');
+  check('the enquiry keeps the visitor ask, not the Name/Phone lines', nr && /hello/.test(nr.message) && /gst registration/i.test(nr.message) && !/Phone :/.test(nr.message));
+  check('the chat domain is captured as the page', nr && nr.page_url === 'https://www.startupadvisory.in');
+
   // A chat with a name and a timestamp but no phone must NOT show the date as the phone.
-  const dated = await tawk(key, { event: 'chat:end', chatId: 'chat-dated', time: '2026-09-22T12:25:03.000Z', createdOn: '2026-09-22', visitor: { name: 'neeraj', city: 'delhi' }, message: { text: 'need company registration' } });
+  const dated = await tawk(key, { event: 'chat:end', chatId: 'chat-dated', time: '2026-09-22T12:25:03.000Z', createdOn: '2026-09-22', visitor: { name: 'Ramesh', city: 'delhi' }, message: { text: 'need company registration' } });
   check('a dated chat becomes a lead', dated.status === 200 && !!dated.data.lead_id);
-  const nj = (await req('GET', '/api/leads', { token: a })).data.leads.find((l) => l.name === 'neeraj');
+  const nj = (await req('GET', '/api/leads', { token: a })).data.leads.find((l) => l.name === 'Ramesh');
   check('a timestamp is not mistaken for a phone number', nj && !nj.phone);
 
   // The last raw payload is captured for diagnostics.
