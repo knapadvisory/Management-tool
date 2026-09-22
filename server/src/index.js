@@ -159,14 +159,23 @@ function extractPhone(payload, email) {
 }
 // Human-readable enquiry text, never "[object Object]".
 function extractMessage(payload) {
-  const msgs = payload.messages || payload.transcript?.messages;
+  const msgs = payload.messages || payload.transcript?.messages || payload.chat?.messages;
   if (Array.isArray(msgs) && msgs.length) {
-    const lines = msgs.map((m) => {
-      if (typeof m === 'string') return m;
-      const who = (m.sender && (m.sender.t || m.sender.n || m.sender.name)) || m.name || m.from || '';
-      const txt = m.msg || m.message || m.text || (typeof m.body === 'string' ? m.body : '');
-      return txt ? `${who ? who + ': ' : ''}${txt}` : '';
-    }).filter(Boolean);
+    // Tawk's pre-chat answers arrive as one visitor message like
+    // "Name : x\r\nPhone : y\r\nYour requirements please : z" — keep just the ask.
+    const clean = (t) => String(t || '')
+      .replace(/\[option\][^\n\r]*/gi, '')                            // bot menu options
+      .replace(/^\s*name\s*[:：].*$/gim, '')                          // structured Name: line (captured separately)
+      .replace(/^\s*(phone|mobile|email|e-?mail)\s*[:：].*$/gim, '')  // structured Phone/Email: line
+      .replace(/^\s*(your\s+)?requirements?\s*(please)?\s*[:：]\s*/gim, '') // unwrap the requirement label
+      .replace(/\r/g, '')
+      .replace(/\n{2,}/g, '\n')
+      .trim();
+    const textOf = (m) => (typeof m === 'string' ? m : (m.msg || m.message || m.text || (typeof m.body === 'string' ? m.body : '')));
+    const isVisitor = (m) => { const t = m && m.sender && (m.sender.t || m.sender.type); return t === 'v' || t === 'visitor' || (m && !m.sender); };
+    const pickLines = (arr) => arr.map((m) => clean(textOf(m))).filter(Boolean);
+    const visitorLines = pickLines(msgs.filter(isVisitor));
+    const lines = visitorLines.length ? visitorLines : pickLines(msgs);
     if (lines.length) return lines.join('\n');
   }
   const pick = (v) => (typeof v === 'string' ? v : (v && typeof v === 'object' ? (v.text || v.msg || v.message || v.value || '') : ''));
@@ -196,10 +205,13 @@ app.post('/api/leads/tawk', (req, res) => {
       return res.status(401).json({ error: 'Bad signature' });
     }
   }
-  const b = req.body || {};
+  const raw = req.body || {};
   // Keep the raw body so an admin can inspect the exact shape Tawk sends.
-  try { db.prepare('UPDATE workspaces SET tawk_last_payload = ? WHERE id = ?').run(JSON.stringify(b).slice(0, 20000), ws.id); } catch { /* ignore */ }
+  try { db.prepare('UPDATE workspaces SET tawk_last_payload = ? WHERE id = ?').run(JSON.stringify(raw).slice(0, 20000), ws.id); } catch { /* ignore */ }
 
+  // Some events (chat:transcript_created) nest everything under `chat`. Unwrap it
+  // so visitor / messages / id are reachable, while keeping event & property.
+  const b = raw.chat && typeof raw.chat === 'object' ? { ...raw, ...raw.chat } : raw;
   const v = b.visitor || b.requester || {};
   const email = String(v.email || walkFind(b, /^e-?mail$/i) || '').slice(0, 200);
   // Name: the visitor object, or any "name" field; ignore Tawk's generated V… handle.
@@ -209,7 +221,7 @@ app.post('/api/leads/tawk', (req, res) => {
   const message = extractMessage(b).slice(0, 4000);
   if (!name && !email && !phone) return res.json({ ok: true, skipped: 'no contact info' });
 
-  const ref = String(b.chatId || b.ticketId || b.chat?.id || b.time || '').slice(0, 120);
+  const ref = String(b.chatId || b.ticketId || b.id || b.chat?.id || b.time || '').slice(0, 120);
   if (ref) {
     const existing = db.prepare('SELECT * FROM leads WHERE workspace_id = ? AND source_ref = ?').get(ws.id, ref);
     if (existing) {
@@ -217,7 +229,7 @@ app.post('/api/leads/tawk', (req, res) => {
       // may finally carry the phone/email/real name — enrich rather than drop it.
       const anon = (s) => /^v\d{6,}$/i.test(String(s || '').replace(/\s/g, ''));
       const sets = []; const vals = [];
-      if (phone && !existing.phone) { sets.push('phone = ?'); vals.push(phone); }
+      if (phone && (!existing.phone || looksDateOrTime(existing.phone))) { sets.push('phone = ?'); vals.push(phone); }
       if (email && !existing.email) { sets.push('email = ?'); vals.push(email); }
       if (name && (!existing.name || anon(existing.name))) { sets.push('name = ?'); vals.push(name); }
       if (message && message.length > String(existing.message || '').length) { sets.push('message = ?'); vals.push(message); }
@@ -230,7 +242,7 @@ app.post('/api/leads/tawk', (req, res) => {
   }
   const { lead } = intakeLead(app.get('io'), ws, {
     name, email, phone, message, source: 'tawk',
-    page_url: b.property?.url || b.pageUrl || v.url || '',
+    page_url: b.property?.url || b.pageUrl || v.url || (b.domain ? `https://${b.domain}` : ''),
     ip: String(v.ip || '').slice(0, 60),
   });
   if (ref) db.prepare('UPDATE leads SET source_ref = ? WHERE id = ?').run(ref, lead.id);
