@@ -86,9 +86,27 @@ async function main() {
   check('the enquiry text is read from a message object (not [object Object])', meena && meena.message === 'Interested in a demo visit');
   check('the phone is found under a pre-chat field', meena && meena.phone.replace(/\s/g, '') === '+919000011111');
 
+  // Tawk fires chat:start first (anonymous, no phone yet) then chat:end with the
+  // phone typed during the chat. The start is skipped; the end must still land.
+  const cs = await tawk(key, { event: 'chat:start', chatId: 'chat-flow', visitor: { name: 'V1790078452819300', city: 'delhi', country: 'IN' }, message: { sender: { type: 'visitor' }, text: 'Want a company registration', type: 'msg' } });
+  check('an anonymous chat:start (no phone) is skipped', cs.data.skipped === 'no contact info');
+  const ce = await tawk(key, { event: 'chat:end', chatId: 'chat-flow', visitor: { name: 'Arjun', email: 'arjun@x.test' }, messages: [{ sender: { t: 'v' }, msg: 'Want a company registration. My number is 90111 22334' }] });
+  check('the later chat:end creates the lead with the phone', ce.status === 200 && !!ce.data.lead_id);
+  const arjun = (await req('GET', '/api/leads', { token: a })).data.leads.find((l) => l.name === 'Arjun');
+  check('the chat:end lead has the phone from the transcript', arjun && arjun.phone.replace(/\s/g, '') === '9011122334');
+
+  // If a named chat:start already made a lead, a later event enriches it with the phone.
+  const es = await tawk(key, { event: 'chat:start', chatId: 'chat-enrich', visitor: { name: 'Kavya', city: 'delhi' }, message: { text: 'Need trademark help' } });
+  check('a named chat:start becomes a lead without a phone', es.status === 200 && !!es.data.lead_id);
+  const ee = await tawk(key, { event: 'chat:end', chatId: 'chat-enrich', visitor: { name: 'Kavya', phone: '98200 11223' } });
+  check('a later event enriches the same lead (not a duplicate)', ee.data.enriched && !ee.data.lead_id);
+  const kavya = (await req('GET', '/api/leads', { token: a })).data.leads.filter((l) => l.name === 'Kavya');
+  check('no duplicate lead is created on enrichment', kavya.length === 1);
+  check('the enriched lead now carries the phone', kavya[0] && kavya[0].phone.replace(/\s/g, '') === '9820011223');
+
   // The last raw payload is captured for diagnostics.
   const dbg = await req('GET', '/api/leads/settings/tawk-debug', { token: a });
-  check('the last Tawk payload is stored for diagnostics', dbg.data.payload && dbg.data.payload.chatId === 'chat-tricky');
+  check('the last Tawk payload is stored for diagnostics', dbg.data.payload && dbg.data.payload.chatId === 'chat-enrich');
 
   // Signature enforcement once a secret is set.
   await req('PUT', '/api/leads/settings/tawk-secret', { token: a, body: { secret: 's3cr3t' } });
