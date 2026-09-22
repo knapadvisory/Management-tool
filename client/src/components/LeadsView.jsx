@@ -305,6 +305,7 @@ function LeadDetail({ lead, user, users, stages, onClose, onPatch, onDelete, onO
           {lead.email && <div><span className="muted">Email</span> {lead.email}</div>}
           {lead.phone && <div><span className="muted">Phone</span> {lead.phone}</div>}
           <div><span className="muted">Source</span> {lead.source}</div>
+          {lead.ip && <div><span className="muted">IP</span> <a href={`https://ipinfo.io/${lead.ip}`} target="_blank" rel="noreferrer">{lead.ip}</a></div>}
           <div><span className="muted">Received</span> {new Date(lead.created_at).toLocaleString()}</div>
         </div>
 
@@ -615,6 +616,7 @@ $data = array(
   'email'   => $_POST['email'],
   'phone'   => $_POST['phone'],
   'message' => $_POST['message'],
+  'ip'      => $_SERVER['REMOTE_ADDR'], // the visitor's IP
 );
 $ch = curl_init(${JSON.stringify(url)});
 curl_setopt($ch, CURLOPT_POST, true);

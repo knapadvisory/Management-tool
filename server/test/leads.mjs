@@ -55,9 +55,9 @@ async function main() {
   const badKey = await req('POST', '/api/leads/intake?key=nope', { body: { name: 'X' } });
   check('intake with a wrong key is rejected', badKey.status === 403);
 
-  // The website posts a form-encoded enquiry (like the PHP form).
+  // The website posts a form-encoded enquiry (like the PHP form), forwarding the visitor IP.
   const intake = await req('POST', `/api/leads/intake?key=${encodeURIComponent(key)}`, {
-    form: { name: 'Varun', email: 'varun.krrish@gmail.com', phone: '9560936794', message: 'How much to close a CG account?' },
+    form: { name: 'Varun', email: 'varun.krrish@gmail.com', phone: '9560936794', message: 'How much to close a CG account?', ip: '203.0.113.9' },
   });
   check('a website enquiry is accepted (form-encoded)', intake.status === 200 && intake.data.ok === true);
 
@@ -66,6 +66,7 @@ async function main() {
   check('the lead appears on the board', list.data.leads.length === 1 && list.data.leads[0].name === 'Varun');
   const lead = list.data.leads[0];
   check('source is website', lead.source === 'website');
+  check('the forwarded visitor IP is captured', lead.ip === '203.0.113.9');
   check('a follow-up task was auto-created and linked', !!lead.task_id);
   check('new lead starts in the "new" column', lead.status === 'new');
 
@@ -246,6 +247,14 @@ async function main() {
   check('intake accepts a custom source', srcIntake.status === 200);
   const withSrc = await req('GET', '/api/leads', { token: a });
   check('a custom-source lead is tagged with its site', withSrc.data.leads.some((l) => l.source === 'knapadvisory.com'));
+
+  // When the site doesn't forward an IP, the request's X-Forwarded-For is used.
+  await fetch(`${BASE}/api/leads/intake?key=${encodeURIComponent(key)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': '198.51.100.7, 10.0.0.1' },
+    body: new URLSearchParams({ name: 'XFF Visitor' }).toString(),
+  });
+  const xffLead = (await req('GET', '/api/leads', { token: a })).data.leads.find((l) => l.name === 'XFF Visitor');
+  check('the request IP is captured when the site forwards none', xffLead && xffLead.ip === '198.51.100.7');
 
   // Rotating the key invalidates the old one.
   const rotated = await req('POST', '/api/leads/settings/key', { token: a });

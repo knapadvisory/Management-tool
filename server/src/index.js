@@ -134,7 +134,12 @@ app.post('/api/leads/intake', (req, res) => {
   // in the board and insights (e.g. source=knapadvisory.com). Defaults to website.
   const source = String(req.query.source || req.body?.source || 'website').trim().toLowerCase().slice(0, 40) || 'website';
 
-  intakeLead(app.get('io'), ws, { name, email, phone, message, source });
+  // Visitor IP: prefer the one the site forwards (its PHP sees the real visitor);
+  // otherwise fall back to the request's IP (first X-Forwarded-For hop, or socket).
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const ip = String(req.body?.ip || fwd || req.socket?.remoteAddress || '').replace(/^::ffff:/, '').slice(0, 60);
+
+  intakeLead(app.get('io'), ws, { name, email, phone, message, source, ip });
   res.json({ ok: true });
 });
 
