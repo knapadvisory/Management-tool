@@ -100,9 +100,18 @@ router.get('/settings', requireAdmin, (req, res) => {
   res.json({
     key: ws.leads_intake_key,
     intake_path: '/api/leads/intake',
+    tawk_path: '/api/leads/tawk',
+    tawk_secret_set: !!ws.tawk_secret,
     task_workflow_id: ws.leads_task_workflow_id || null,
     workflows: db.prepare('SELECT id, name FROM workflows WHERE workspace_id = ? ORDER BY id').all(req.workspaceId),
   });
+});
+
+// Set (or clear) the Tawk.to webhook signing secret.
+router.put('/settings/tawk-secret', requireAdmin, (req, res) => {
+  const secret = req.body?.secret ? String(req.body.secret).trim().slice(0, 200) : null;
+  db.prepare('UPDATE workspaces SET tawk_secret = ? WHERE id = ?').run(secret, req.workspaceId);
+  res.json({ tawk_secret_set: !!secret });
 });
 
 router.post('/settings/key', requireAdmin, (req, res) => {

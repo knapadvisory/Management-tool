@@ -652,6 +652,10 @@ ensureColumn('leads', 'referrer', "TEXT DEFAULT ''");
 ensureColumn('leads', 'utm_source', "TEXT DEFAULT ''");
 ensureColumn('leads', 'utm_medium', "TEXT DEFAULT ''");
 ensureColumn('leads', 'utm_campaign', "TEXT DEFAULT ''");
+// Tawk.to live-chat: signing secret for the webhook, and a per-lead external ref
+// (chat/ticket id) so retries don't create duplicates.
+ensureColumn('workspaces', 'tawk_secret', 'TEXT');
+ensureColumn('leads', 'source_ref', "TEXT DEFAULT ''");
 
 // WhatsApp Business Cloud API config (per workspace) + which board new WhatsApp
 // tasks land on. A teammate links their WhatsApp number on their profile so the
