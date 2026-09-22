@@ -116,6 +116,62 @@ if (process.env.WA_DRY_RUN) {
   app.get('/api/whatsapp/_outbox', (req, res) => res.json({ outbox: OUTBOX }));
 }
 
+// --- Tawk payload extraction (tolerant of Tawk's varying webhook shapes) ---
+// Walk every string in a nested object, calling cb(key, value).
+function walkStrings(obj, cb, depth = 0) {
+  if (!obj || depth > 6) return;
+  if (Array.isArray(obj)) { for (const x of obj) walkStrings(x, cb, depth + 1); return; }
+  if (typeof obj === 'object') for (const k of Object.keys(obj)) {
+    const val = obj[k];
+    if (typeof val === 'string') cb(k, val);
+    else if (val && typeof val === 'object') walkStrings(val, cb, depth + 1);
+  }
+}
+// First string whose KEY matches keyRe (e.g. an email/name field anywhere).
+function walkFind(obj, keyRe) {
+  let out = '';
+  walkStrings(obj, (k, val) => { if (!out && keyRe.test(k) && val.trim()) out = val.trim(); });
+  return out;
+}
+const PHONE_RE = /(\+?\d[\d\s().-]{6,}\d)/g;
+// Best phone: prefer a field whose key mentions phone; else a phone-shaped run of digits.
+function extractPhone(payload, email) {
+  let best = ''; let bestScore = -1;
+  walkStrings(payload, (k, val) => {
+    if (val === email) return;
+    const keyHit = /phone|mobile|contact|whats?app|tel|number|cell/i.test(k);
+    const cands = [];
+    if (keyHit) { const d = (val.match(/\d/g) || []).length; if (d >= 7 && d <= 15) cands.push(val.trim()); }
+    for (const m of val.match(PHONE_RE) || []) { const d = (m.match(/\d/g) || []).length; if (d >= 7 && d <= 15) cands.push(m.trim()); }
+    for (const c of cands) { const d = (c.match(/\d/g) || []).length; const score = (keyHit ? 100 : 0) + d; if (score > bestScore) { bestScore = score; best = c; } }
+  });
+  return best;
+}
+// Human-readable enquiry text, never "[object Object]".
+function extractMessage(payload) {
+  const msgs = payload.messages || payload.transcript?.messages;
+  if (Array.isArray(msgs) && msgs.length) {
+    const lines = msgs.map((m) => {
+      if (typeof m === 'string') return m;
+      const who = (m.sender && (m.sender.t || m.sender.n || m.sender.name)) || m.name || m.from || '';
+      const txt = m.msg || m.message || m.text || (typeof m.body === 'string' ? m.body : '');
+      return txt ? `${who ? who + ': ' : ''}${txt}` : '';
+    }).filter(Boolean);
+    if (lines.length) return lines.join('\n');
+  }
+  const pick = (v) => (typeof v === 'string' ? v : (v && typeof v === 'object' ? (v.text || v.msg || v.message || v.value || '') : ''));
+  for (const src of [payload, payload.ticket, payload.visitor, payload.requester]) {
+    if (!src) continue;
+    for (const k of ['message', 'question', 'enquiry', 'subject', 'body', 'comment', 'note', 'text']) {
+      const t = pick(src[k]); if (typeof t === 'string' && t.trim()) return t.trim();
+    }
+  }
+  // Pre-chat "questions" arrays: [{ question, answer }] or { label, value }.
+  let out = '';
+  walkStrings(payload, (k, val) => { if (!out && /answer|value|response/i.test(k) && val.trim() && !/^https?:/i.test(val)) out = val.trim(); });
+  return out;
+}
+
 // Tawk.to live-chat webhook — chat:end / ticket:create events drop the visitor's
 // name/phone onto the Leads board. Mapped to a workspace by the intake key, and
 // (if a secret is set) verified against the X-Tawk-Signature HMAC-SHA1.
@@ -131,18 +187,16 @@ app.post('/api/leads/tawk', (req, res) => {
     }
   }
   const b = req.body || {};
+  // Keep the raw body so an admin can inspect the exact shape Tawk sends.
+  try { db.prepare('UPDATE workspaces SET tawk_last_payload = ? WHERE id = ?').run(JSON.stringify(b).slice(0, 20000), ws.id); } catch { /* ignore */ }
+
   const v = b.visitor || b.requester || {};
-  // Tawk uses a generated handle like "V15617..." when the visitor gave no name.
-  let name = String(v.name || '').slice(0, 200);
-  if (/^v\d{6,}$/i.test(name)) name = '';
-  const email = String(v.email || '').slice(0, 200);
-  const transcript = Array.isArray(b.messages)
-    ? b.messages.map((m) => `${m.sender?.t || m.name || ''}: ${m.msg || m.message || m.text || ''}`.trim()).filter(Boolean).join('\n')
-    : '';
-  const ticketMsg = b.ticket ? [b.ticket.subject, b.ticket.message].filter(Boolean).join('\n') : '';
-  const message = String(ticketMsg || transcript || b.message || '').slice(0, 4000);
-  // Phone: an explicit field, else the first phone-shaped number in the chat.
-  const phone = String(v.phone || v.phoneNumber || (message.match(/(\+?\d[\d\s-]{7,}\d)/) || [])[0] || '').slice(0, 60);
+  const email = String(v.email || walkFind(b, /^e-?mail$/i) || '').slice(0, 200);
+  // Name: the visitor object, or any "name" field; ignore Tawk's generated V… handle.
+  let name = String(v.name || walkFind(b, /^(name|full[_ ]?name|visitor[_ ]?name)$/i) || '').slice(0, 200);
+  if (/^v\d{6,}$/i.test(name.replace(/\s/g, ''))) name = '';
+  const phone = String(extractPhone(b, email) || '').slice(0, 60);
+  const message = extractMessage(b).slice(0, 4000);
   if (!name && !email && !phone) return res.json({ ok: true, skipped: 'no contact info' });
 
   const ref = String(b.chatId || b.ticketId || b.chat?.id || b.time || '').slice(0, 120);
