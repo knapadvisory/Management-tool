@@ -5,11 +5,17 @@ import db from './db.js';
 import { createNotification } from './notifications.js';
 import { firstStageKey } from './leadStages.js';
 
-export function createLead(workspaceId, { name = '', email = '', phone = '', message = '', source = 'manual', owner_id = null, ip = '' }) {
+export function createLead(workspaceId, data = {}) {
+  const { name = '', email = '', phone = '', message = '', source = 'manual', owner_id = null, ip = '',
+    page_url = '', referrer = '', utm_source = '', utm_medium = '', utm_campaign = '' } = data;
   const status = firstStageKey(workspaceId);
-  const info = db.prepare(
-    'INSERT INTO leads (workspace_id, name, email, phone, message, source, status, owner_id, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-  ).run(workspaceId, name.trim(), email.trim(), phone.trim(), message.trim(), source, status, owner_id, String(ip || '').slice(0, 60));
+  const s = (v, n = 300) => String(v || '').slice(0, n);
+  const info = db.prepare(`
+    INSERT INTO leads (workspace_id, name, email, phone, message, source, status, owner_id, ip,
+      page_url, referrer, utm_source, utm_medium, utm_campaign)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(workspaceId, name.trim(), email.trim(), phone.trim(), message.trim(), source, status, owner_id, s(ip, 60),
+    s(page_url, 500), s(referrer, 500), s(utm_source, 100), s(utm_medium, 100), s(utm_campaign, 150));
   return db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid);
 }
 

@@ -57,7 +57,8 @@ async function main() {
 
   // The website posts a form-encoded enquiry (like the PHP form), forwarding the visitor IP.
   const intake = await req('POST', `/api/leads/intake?key=${encodeURIComponent(key)}`, {
-    form: { name: 'Varun', email: 'varun.krrish@gmail.com', phone: '9560936794', message: 'How much to close a CG account?', ip: '203.0.113.9' },
+    form: { name: 'Varun', email: 'varun.krrish@gmail.com', phone: '9560936794', message: 'How much to close a CG account?', ip: '203.0.113.9',
+      page_url: 'https://knapadvisory.com/contact', referrer: 'https://google.com/', utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'gst-2026' },
   });
   check('a website enquiry is accepted (form-encoded)', intake.status === 200 && intake.data.ok === true);
 
@@ -67,6 +68,9 @@ async function main() {
   const lead = list.data.leads[0];
   check('source is website', lead.source === 'website');
   check('the forwarded visitor IP is captured', lead.ip === '203.0.113.9');
+  check('the enquiry page URL is captured', lead.page_url === 'https://knapadvisory.com/contact');
+  check('the referrer is captured', lead.referrer === 'https://google.com/');
+  check('the UTM campaign tags are captured', lead.utm_source === 'google' && lead.utm_medium === 'cpc' && lead.utm_campaign === 'gst-2026');
   check('a follow-up task was auto-created and linked', !!lead.task_id);
   check('new lead starts in the "new" column', lead.status === 'new');
 

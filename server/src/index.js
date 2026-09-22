@@ -139,7 +139,14 @@ app.post('/api/leads/intake', (req, res) => {
   const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   const ip = String(req.body?.ip || fwd || req.socket?.remoteAddress || '').replace(/^::ffff:/, '').slice(0, 60);
 
-  intakeLead(app.get('io'), ws, { name, email, phone, message, source, ip });
+  // Where the enquiry came from (forwarded by the site; page_url falls back to the referer header).
+  const b = req.body || {};
+  const page_url = String(b.page_url || req.get('referer') || '');
+  intakeLead(app.get('io'), ws, {
+    name, email, phone, message, source, ip, page_url,
+    referrer: String(b.referrer || ''),
+    utm_source: String(b.utm_source || ''), utm_medium: String(b.utm_medium || ''), utm_campaign: String(b.utm_campaign || ''),
+  });
   res.json({ ok: true });
 });
 
