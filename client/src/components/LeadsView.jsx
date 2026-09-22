@@ -306,6 +306,11 @@ function LeadDetail({ lead, user, users, stages, onClose, onPatch, onDelete, onO
           {lead.phone && <div><span className="muted">Phone</span> {lead.phone}</div>}
           <div><span className="muted">Source</span> {lead.source}</div>
           {lead.ip && <div><span className="muted">IP</span> <a href={`https://ipinfo.io/${lead.ip}`} target="_blank" rel="noreferrer">{lead.ip}</a></div>}
+          {lead.page_url && <div><span className="muted">Page</span> <a href={lead.page_url} target="_blank" rel="noreferrer" title={lead.page_url}>{lead.page_url.replace(/^https?:\/\//, '').slice(0, 48)}</a></div>}
+          {lead.referrer && <div><span className="muted">Referrer</span> {lead.referrer.replace(/^https?:\/\//, '').slice(0, 48)}</div>}
+          {(lead.utm_source || lead.utm_medium || lead.utm_campaign) && (
+            <div><span className="muted">Campaign</span> {[lead.utm_source, lead.utm_medium, lead.utm_campaign].filter(Boolean).join(' / ')}</div>
+          )}
           <div><span className="muted">Received</span> {new Date(lead.created_at).toLocaleString()}</div>
         </div>
 
@@ -612,11 +617,16 @@ function LeadSetup({ onClose }) {
   const url = `${window.location.origin}${s.intake_path}?key=${s.key}`;
   const php = `<?php
 $data = array(
-  'name'    => $_POST['name'],
-  'email'   => $_POST['email'],
-  'phone'   => $_POST['phone'],
-  'message' => $_POST['message'],
-  'ip'      => $_SERVER['REMOTE_ADDR'], // the visitor's IP
+  'name'         => $_POST['name'],
+  'email'        => $_POST['email'],
+  'phone'        => $_POST['phone'],
+  'message'      => $_POST['message'],
+  'ip'           => $_SERVER['REMOTE_ADDR'],                 // visitor IP
+  'page_url'     => $_POST['page_url'] ?? ($_SERVER['HTTP_REFERER'] ?? ''), // page they enquired from
+  'referrer'     => $_POST['referrer'] ?? '',                // where they came from
+  'utm_source'   => $_POST['utm_source'] ?? '',
+  'utm_medium'   => $_POST['utm_medium'] ?? '',
+  'utm_campaign' => $_POST['utm_campaign'] ?? '',
 );
 $ch = curl_init(${JSON.stringify(url)});
 curl_setopt($ch, CURLOPT_POST, true);
@@ -625,6 +635,18 @@ curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_exec($ch);
 curl_close($ch);
 ?>`;
+  // Optional: drop this in your form's page so page_url / referrer / utm_* are filled automatically.
+  const jsSnippet = `<script>
+(function(){
+  var f = document.querySelector('form'); // your enquiry form
+  if(!f) return;
+  var p = new URLSearchParams(location.search);
+  var add = function(n,v){ var i=document.createElement('input'); i.type='hidden'; i.name=n; i.value=v||''; f.appendChild(i); };
+  add('page_url', location.href);
+  add('referrer', document.referrer);
+  ['utm_source','utm_medium','utm_campaign'].forEach(function(k){ add(k, p.get(k)); });
+})();
+</script>`;
   const copy = (text, which) => { navigator.clipboard?.writeText(text); setCopied(which); setTimeout(() => setCopied(null), 1500); };
   async function rotate() {
     if (!window.confirm('Rotate the key? Your website will stop sending leads until you update it with the new URL.')) return;
@@ -659,6 +681,13 @@ curl_close($ch);
             <pre className="lead-snippet">{php}</pre>
           </div>
           <button className="btn btn-sm" onClick={() => copy(php, 'php')}>{copied === 'php' ? 'Copied ✓' : 'Copy snippet'}</button>
+
+          <label className="lead-field-label">Optional: capture page &amp; campaign (add to your form’s page)</label>
+          <p className="muted" style={{ fontSize: 12, margin: '2px 0 6px' }}>Auto-fills the enquiry page URL, referrer and any utm_* tags in the address bar, so you can see where each lead came from.</p>
+          <div className="lead-copyrow">
+            <pre className="lead-snippet">{jsSnippet}</pre>
+          </div>
+          <button className="btn btn-sm" onClick={() => copy(jsSnippet, 'js')}>{copied === 'js' ? 'Copied ✓' : 'Copy JS'}</button>
 
           <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
             <button className="btn btn-sm btn-danger" onClick={rotate}>Rotate key</button>

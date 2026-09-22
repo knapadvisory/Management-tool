@@ -646,6 +646,12 @@ ensureColumn('workspaces', 'leads_intake_key', 'TEXT');
 ensureColumn('workspaces', 'leads_task_workflow_id', 'INTEGER');
 // The visitor's IP for a website enquiry (forwarded by the site, or the request IP).
 ensureColumn('leads', 'ip', "TEXT DEFAULT ''");
+// Where the enquiry came from: the page, external referrer, and UTM campaign tags.
+ensureColumn('leads', 'page_url', "TEXT DEFAULT ''");
+ensureColumn('leads', 'referrer', "TEXT DEFAULT ''");
+ensureColumn('leads', 'utm_source', "TEXT DEFAULT ''");
+ensureColumn('leads', 'utm_medium', "TEXT DEFAULT ''");
+ensureColumn('leads', 'utm_campaign', "TEXT DEFAULT ''");
 
 // WhatsApp Business Cloud API config (per workspace) + which board new WhatsApp
 // tasks land on. A teammate links their WhatsApp number on their profile so the
