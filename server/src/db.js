@@ -655,6 +655,7 @@ ensureColumn('leads', 'utm_campaign', "TEXT DEFAULT ''");
 // Tawk.to live-chat: signing secret for the webhook, and a per-lead external ref
 // (chat/ticket id) so retries don't create duplicates.
 ensureColumn('workspaces', 'tawk_secret', 'TEXT');
+ensureColumn('workspaces', 'tawk_last_payload', 'TEXT'); // last raw webhook body, for field-mapping diagnostics
 ensureColumn('leads', 'source_ref', "TEXT DEFAULT ''");
 
 // WhatsApp Business Cloud API config (per workspace) + which board new WhatsApp

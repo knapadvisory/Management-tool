@@ -114,6 +114,14 @@ router.put('/settings/tawk-secret', requireAdmin, (req, res) => {
   res.json({ tawk_secret_set: !!secret });
 });
 
+// The last raw payload Tawk sent — for diagnosing field mapping.
+router.get('/settings/tawk-debug', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT tawk_last_payload FROM workspaces WHERE id = ?').get(req.workspaceId);
+  let payload = null;
+  try { payload = row?.tawk_last_payload ? JSON.parse(row.tawk_last_payload) : null; } catch { payload = row?.tawk_last_payload || null; }
+  res.json({ payload });
+});
+
 router.post('/settings/key', requireAdmin, (req, res) => {
   const key = crypto.randomBytes(24).toString('base64url');
   db.prepare('UPDATE workspaces SET leads_intake_key = ? WHERE id = ?').run(key, req.workspaceId);

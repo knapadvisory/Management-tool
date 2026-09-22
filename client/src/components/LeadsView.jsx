@@ -611,6 +611,7 @@ function LeadSetup({ onClose }) {
   const [s, setS] = useState(null);
   const [copied, setCopied] = useState(null);
   const [tawkSecret, setTawkSecret] = useState('');
+  const [tawkDebug, setTawkDebug] = useState('');
   const load = useCallback(() => { api('/leads/settings').then(setS).catch(() => {}); }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -702,6 +703,10 @@ curl_close($ch);
             <div className="lead-copyrow" style={{ marginTop: 6 }}>
               <input className="auth-input" type="password" placeholder={s.tawk_secret_set ? 'Secret saved · enter to replace' : 'Paste Tawk webhook secret (recommended)'} value={tawkSecret} onChange={(e) => setTawkSecret(e.target.value)} />
               <button className="btn btn-sm" disabled={!tawkSecret.trim()} onClick={saveTawkSecret}>Save secret</button>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <button className="btn btn-sm" onClick={async () => { const d = await api('/leads/settings/tawk-debug').catch(() => ({})); setTawkDebug(d.payload ? JSON.stringify(d.payload, null, 2) : 'No Tawk webhook received yet. Send a test chat, then click again.'); }}>Show last received payload</button>
+              {tawkDebug && <pre className="lead-snippet" style={{ marginTop: 8, maxHeight: 220 }}>{tawkDebug}</pre>}
             </div>
           </div>
 

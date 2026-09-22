@@ -74,6 +74,22 @@ async function main() {
   const tk = await tawk(key, { event: 'ticket:create', ticketId: 'tk-1', requester: { name: 'Rahul', phone: '9811122233' }, ticket: { subject: 'Company registration', message: 'Please call me' } });
   check('a Tawk ticket becomes a lead', tk.status === 200 && !!tk.data.lead_id);
 
+  // A trickier real-world shape: message is an object, phone under a pre-chat field.
+  const tricky = await tawk(key, {
+    event: 'chat:end', chatId: 'chat-tricky',
+    visitor: { name: 'Meena', email: 'meena@x.test' },
+    message: { text: 'Interested in a demo visit' },
+    prechat: [{ label: 'Phone', answer: '+91 90000 11111' }],
+  });
+  check('a tricky payload still becomes a lead', tricky.status === 200 && !!tricky.data.lead_id);
+  const meena = (await req('GET', '/api/leads', { token: a })).data.leads.find((l) => l.name === 'Meena');
+  check('the enquiry text is read from a message object (not [object Object])', meena && meena.message === 'Interested in a demo visit');
+  check('the phone is found under a pre-chat field', meena && meena.phone.replace(/\s/g, '') === '+919000011111');
+
+  // The last raw payload is captured for diagnostics.
+  const dbg = await req('GET', '/api/leads/settings/tawk-debug', { token: a });
+  check('the last Tawk payload is stored for diagnostics', dbg.data.payload && dbg.data.payload.chatId === 'chat-tricky');
+
   // Signature enforcement once a secret is set.
   await req('PUT', '/api/leads/settings/tawk-secret', { token: a, body: { secret: 's3cr3t' } });
   const bad = await tawk(key, { event: 'chat:end', chatId: 'chat-9', visitor: { name: 'Nope', email: 'n@x.test' } }); // no signature
