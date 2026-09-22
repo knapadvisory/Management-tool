@@ -610,11 +610,14 @@ function ManageStages({ stages, onClose, onChange }) {
 function LeadSetup({ onClose }) {
   const [s, setS] = useState(null);
   const [copied, setCopied] = useState(null);
+  const [tawkSecret, setTawkSecret] = useState('');
   const load = useCallback(() => { api('/leads/settings').then(setS).catch(() => {}); }, []);
   useEffect(() => { load(); }, [load]);
 
   if (!s) return null;
   const url = `${window.location.origin}${s.intake_path}?key=${s.key}`;
+  const tawkUrl = `${window.location.origin}${s.tawk_path}?key=${s.key}`;
+  async function saveTawkSecret() { await api('/leads/settings/tawk-secret', { method: 'PUT', body: { secret: tawkSecret } }); setTawkSecret(''); load(); }
   const php = `<?php
 $data = array(
   'name'         => $_POST['name'],
@@ -688,6 +691,19 @@ curl_close($ch);
             <pre className="lead-snippet">{jsSnippet}</pre>
           </div>
           <button className="btn btn-sm" onClick={() => copy(jsSnippet, 'js')}>{copied === 'js' ? 'Copied ✓' : 'Copy JS'}</button>
+
+          <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+            <label className="lead-field-label">💬 Tawk.to live chat</label>
+            <p className="muted" style={{ fontSize: 12, margin: '2px 0 6px' }}>In your Tawk dashboard → <b>Administration → Webhooks</b>, add this endpoint and switch it on. When a visitor leaves their name/phone in chat, it lands here as a lead {s.tawk_secret_set ? '(signature verified ✓)' : ''}.</p>
+            <div className="lead-copyrow">
+              <code className="lead-code">{tawkUrl}</code>
+              <button className="btn btn-sm" onClick={() => copy(tawkUrl, 'tawk')}>{copied === 'tawk' ? 'Copied ✓' : 'Copy'}</button>
+            </div>
+            <div className="lead-copyrow" style={{ marginTop: 6 }}>
+              <input className="auth-input" type="password" placeholder={s.tawk_secret_set ? 'Secret saved · enter to replace' : 'Paste Tawk webhook secret (recommended)'} value={tawkSecret} onChange={(e) => setTawkSecret(e.target.value)} />
+              <button className="btn btn-sm" disabled={!tawkSecret.trim()} onClick={saveTawkSecret}>Save secret</button>
+            </div>
+          </div>
 
           <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
             <button className="btn btn-sm btn-danger" onClick={rotate}>Rotate key</button>

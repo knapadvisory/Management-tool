@@ -55,7 +55,7 @@ const io = new Server(server, { cors: { origin: true } });
 app.set('io', io);
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } })); // keep raw body for webhook signatures
 app.use(express.urlencoded({ extended: true })); // accept form-encoded posts (e.g. the website lead form)
 
 // The app's public base URL, for links inside emails. Honours a configured
@@ -115,6 +115,48 @@ app.post('/api/whatsapp/webhook', (req, res) => {
 if (process.env.WA_DRY_RUN) {
   app.get('/api/whatsapp/_outbox', (req, res) => res.json({ outbox: OUTBOX }));
 }
+
+// Tawk.to live-chat webhook — chat:end / ticket:create events drop the visitor's
+// name/phone onto the Leads board. Mapped to a workspace by the intake key, and
+// (if a secret is set) verified against the X-Tawk-Signature HMAC-SHA1.
+app.post('/api/leads/tawk', (req, res) => {
+  const key = String(req.query.key || req.get('x-lead-key') || '').trim();
+  const ws = key && db.prepare('SELECT * FROM workspaces WHERE leads_intake_key = ?').get(key);
+  if (!ws) return res.status(403).json({ error: 'Invalid key' });
+  if (ws.tawk_secret) {
+    const expected = crypto.createHmac('sha1', ws.tawk_secret).update(req.rawBody || Buffer.from('')).digest('hex');
+    const got = String(req.get('x-tawk-signature') || '');
+    if (got.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected))) {
+      return res.status(401).json({ error: 'Bad signature' });
+    }
+  }
+  const b = req.body || {};
+  const v = b.visitor || b.requester || {};
+  // Tawk uses a generated handle like "V15617..." when the visitor gave no name.
+  let name = String(v.name || '').slice(0, 200);
+  if (/^v\d{6,}$/i.test(name)) name = '';
+  const email = String(v.email || '').slice(0, 200);
+  const transcript = Array.isArray(b.messages)
+    ? b.messages.map((m) => `${m.sender?.t || m.name || ''}: ${m.msg || m.message || m.text || ''}`.trim()).filter(Boolean).join('\n')
+    : '';
+  const ticketMsg = b.ticket ? [b.ticket.subject, b.ticket.message].filter(Boolean).join('\n') : '';
+  const message = String(ticketMsg || transcript || b.message || '').slice(0, 4000);
+  // Phone: an explicit field, else the first phone-shaped number in the chat.
+  const phone = String(v.phone || v.phoneNumber || (message.match(/(\+?\d[\d\s-]{7,}\d)/) || [])[0] || '').slice(0, 60);
+  if (!name && !email && !phone) return res.json({ ok: true, skipped: 'no contact info' });
+
+  const ref = String(b.chatId || b.ticketId || b.chat?.id || b.time || '').slice(0, 120);
+  if (ref && db.prepare('SELECT 1 FROM leads WHERE workspace_id = ? AND source_ref = ?').get(ws.id, ref)) {
+    return res.json({ ok: true, duplicate: true });
+  }
+  const { lead } = intakeLead(app.get('io'), ws, {
+    name, email, phone, message, source: 'tawk',
+    page_url: b.property?.url || b.pageUrl || v.url || '',
+    ip: String(v.ip || '').slice(0, 60),
+  });
+  if (ref) db.prepare('UPDATE leads SET source_ref = ? WHERE id = ?').run(ref, lead.id);
+  res.json({ ok: true, lead_id: lead.id });
+});
 
 // Public lead intake — the website enquiry form POSTs here with the workspace's
 // secret key (query ?key=, x-lead-key header, or a `key` field). No login.
