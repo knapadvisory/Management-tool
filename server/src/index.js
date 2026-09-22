@@ -200,8 +200,23 @@ app.post('/api/leads/tawk', (req, res) => {
   if (!name && !email && !phone) return res.json({ ok: true, skipped: 'no contact info' });
 
   const ref = String(b.chatId || b.ticketId || b.chat?.id || b.time || '').slice(0, 120);
-  if (ref && db.prepare('SELECT 1 FROM leads WHERE workspace_id = ? AND source_ref = ?').get(ws.id, ref)) {
-    return res.json({ ok: true, duplicate: true });
+  if (ref) {
+    const existing = db.prepare('SELECT * FROM leads WHERE workspace_id = ? AND source_ref = ?').get(ws.id, ref);
+    if (existing) {
+      // A later event for the same chat (Tawk fires chat:start first, then chat:end)
+      // may finally carry the phone/email/real name — enrich rather than drop it.
+      const anon = (s) => /^v\d{6,}$/i.test(String(s || '').replace(/\s/g, ''));
+      const sets = []; const vals = [];
+      if (phone && !existing.phone) { sets.push('phone = ?'); vals.push(phone); }
+      if (email && !existing.email) { sets.push('email = ?'); vals.push(email); }
+      if (name && (!existing.name || anon(existing.name))) { sets.push('name = ?'); vals.push(name); }
+      if (message && message.length > String(existing.message || '').length) { sets.push('message = ?'); vals.push(message); }
+      if (sets.length) {
+        db.prepare(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`).run(...vals, existing.id);
+        return res.json({ ok: true, enriched: existing.id });
+      }
+      return res.json({ ok: true, duplicate: true });
+    }
   }
   const { lead } = intakeLead(app.get('io'), ws, {
     name, email, phone, message, source: 'tawk',

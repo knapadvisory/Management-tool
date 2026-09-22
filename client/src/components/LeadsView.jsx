@@ -696,6 +696,7 @@ curl_close($ch);
           <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
             <label className="lead-field-label">💬 Tawk.to live chat</label>
             <p className="muted" style={{ fontSize: 12, margin: '2px 0 6px' }}>In your Tawk dashboard → <b>Administration → Webhooks</b>, add this endpoint and switch it on. When a visitor leaves their name/phone in chat, it lands here as a lead {s.tawk_secret_set ? '(signature verified ✓)' : ''}.</p>
+            <p className="muted" style={{ fontSize: 12, margin: '2px 0 6px' }}>⚠️ Enable the <b>Chat End</b> and <b>Ticket Create</b> events (not just Chat Start). The visitor's phone/email is only known once the chat ends, so <b>Chat Start</b> alone arrives anonymous. For reliable capture, turn on a <b>pre-chat form</b> in Tawk asking Name + Phone — those then arrive with every chat.</p>
             <div className="lead-copyrow">
               <code className="lead-code">{tawkUrl}</code>
               <button className="btn btn-sm" onClick={() => copy(tawkUrl, 'tawk')}>{copied === 'tawk' ? 'Copied ✓' : 'Copy'}</button>
