@@ -134,16 +134,26 @@ function walkFind(obj, keyRe) {
   return out;
 }
 const PHONE_RE = /(\+?\d[\d\s().-]{6,}\d)/g;
+// Keys that hold numbers which are never phones (timestamps, ids, geo, money).
+const PHONE_BAD_KEY = /time|date|created|updated|modif|stamp|expire|epoch|_at$|^ts$|id$|zip|postal|pin ?code|amount|price|order|lat|lng|lon/i;
+// A value that is really a date/time, so its digit run must not be read as a phone.
+const looksDateOrTime = (s) => /\d{4}-\d{1,2}-\d{1,2}/.test(s) || /\d{1,2}:\d{2}/.test(s) || /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(s) || /\b\d{13}\b/.test(s);
 // Best phone: prefer a field whose key mentions phone; else a phone-shaped run of digits.
 function extractPhone(payload, email) {
   let best = ''; let bestScore = -1;
   walkStrings(payload, (k, val) => {
     if (val === email) return;
+    if (PHONE_BAD_KEY.test(k)) return;   // never mine phones out of timestamps / ids / pincodes
+    if (looksDateOrTime(val)) return;    // skip date/time values outright (e.g. "2026-09-22")
     const keyHit = /phone|mobile|contact|whats?app|tel|number|cell/i.test(k);
     const cands = [];
     if (keyHit) { const d = (val.match(/\d/g) || []).length; if (d >= 7 && d <= 15) cands.push(val.trim()); }
     for (const m of val.match(PHONE_RE) || []) { const d = (m.match(/\d/g) || []).length; if (d >= 7 && d <= 15) cands.push(m.trim()); }
-    for (const c of cands) { const d = (c.match(/\d/g) || []).length; const score = (keyHit ? 100 : 0) + d; if (score > bestScore) { bestScore = score; best = c; } }
+    for (const c of cands) {
+      if (looksDateOrTime(c)) continue;
+      const d = (c.match(/\d/g) || []).length; const score = (keyHit ? 100 : 0) + d;
+      if (score > bestScore) { bestScore = score; best = c; }
+    }
   });
   return best;
 }

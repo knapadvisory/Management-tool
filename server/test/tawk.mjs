@@ -104,9 +104,15 @@ async function main() {
   check('no duplicate lead is created on enrichment', kavya.length === 1);
   check('the enriched lead now carries the phone', kavya[0] && kavya[0].phone.replace(/\s/g, '') === '9820011223');
 
+  // A chat with a name and a timestamp but no phone must NOT show the date as the phone.
+  const dated = await tawk(key, { event: 'chat:end', chatId: 'chat-dated', time: '2026-09-22T12:25:03.000Z', createdOn: '2026-09-22', visitor: { name: 'neeraj', city: 'delhi' }, message: { text: 'need company registration' } });
+  check('a dated chat becomes a lead', dated.status === 200 && !!dated.data.lead_id);
+  const nj = (await req('GET', '/api/leads', { token: a })).data.leads.find((l) => l.name === 'neeraj');
+  check('a timestamp is not mistaken for a phone number', nj && !nj.phone);
+
   // The last raw payload is captured for diagnostics.
   const dbg = await req('GET', '/api/leads/settings/tawk-debug', { token: a });
-  check('the last Tawk payload is stored for diagnostics', dbg.data.payload && dbg.data.payload.chatId === 'chat-enrich');
+  check('the last Tawk payload is stored for diagnostics', dbg.data.payload && dbg.data.payload.chatId === 'chat-dated');
 
   // Signature enforcement once a secret is set.
   await req('PUT', '/api/leads/settings/tawk-secret', { token: a, body: { secret: 's3cr3t' } });
