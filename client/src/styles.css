@@ -3221,6 +3221,13 @@ button.c360-stat:hover { border-color: var(--accent); }
 .stage-auto-opt { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
 .stage-auto-opt input[type="checkbox"] { width: auto; }
 .stage-days { width: 54px; padding: 4px 6px; text-align: center; }
+/* Per-stage designed auto-task rule */
+.stage-rule { flex: 1 1 100%; display: flex; flex-direction: column; gap: 8px; margin: 4px 0 2px; padding: 10px; border: 1px dashed var(--border); border-radius: 8px; background: var(--surface-2); }
+.stage-rule > .auth-input { width: 100%; }
+.stage-rule textarea.auth-input { resize: vertical; }
+.stage-rule-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.stage-rule-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.stage-rule-grid .auth-input { width: 100%; padding: 5px 6px; }
 
 /* ---------- Leads: insights panel ---------- */
 .stage-outcome { width: auto; padding: 4px 6px; }

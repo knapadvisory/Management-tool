@@ -185,6 +185,31 @@ router.patch('/stages/:id', requireAdmin, (req, res) => {
     const o = ['open', 'won', 'lost'].includes(b.outcome) ? b.outcome : 'open';
     sets.push('outcome = ?'); vals.push(o);
   }
+  // The designed auto-task rule for this stage.
+  if (b.auto_task_title !== undefined) { sets.push('auto_task_title = ?'); vals.push(String(b.auto_task_title || '').slice(0, 200)); }
+  if (b.auto_task_desc !== undefined) { sets.push('auto_task_desc = ?'); vals.push(String(b.auto_task_desc || '').slice(0, 4000)); }
+  if (b.auto_task_assignee_id !== undefined) {
+    const uid = b.auto_task_assignee_id || null;
+    if (uid && !db.prepare('SELECT 1 FROM users WHERE id = ? AND workspace_id = ?').get(uid, req.workspaceId)) {
+      return res.status(400).json({ error: 'Unknown teammate' });
+    }
+    sets.push('auto_task_assignee_id = ?'); vals.push(uid);
+  }
+  if (b.auto_task_priority !== undefined) {
+    const p = ['low', 'medium', 'high', 'urgent'].includes(b.auto_task_priority) ? b.auto_task_priority : 'high';
+    sets.push('auto_task_priority = ?'); vals.push(p);
+  }
+  if (b.auto_task_due_days !== undefined) {
+    const d = Math.max(0, Math.min(365, parseInt(b.auto_task_due_days, 10) || 0));
+    sets.push('auto_task_due_days = ?'); vals.push(d);
+  }
+  if (b.auto_task_workflow_id !== undefined) {
+    const wf = b.auto_task_workflow_id || null;
+    if (wf && !db.prepare('SELECT 1 FROM workflows WHERE id = ? AND workspace_id = ?').get(wf, req.workspaceId)) {
+      return res.status(400).json({ error: 'Unknown board' });
+    }
+    sets.push('auto_task_workflow_id = ?'); vals.push(wf);
+  }
   if (sets.length) db.prepare(`UPDATE lead_stages SET ${sets.join(', ')} WHERE id = ?`).run(...vals, stage.id);
   emitStages(req);
   res.json({ stages: listStages(req.workspaceId) });

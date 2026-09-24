@@ -183,6 +183,27 @@ async function main() {
   const remAgain = await req('GET', `/api/leads/${fresh.id}/reminders`, { token: a });
   check('staying in a stage does not re-fire its automations', remAgain.data.reminders.length === 1);
 
+  // --- A designed per-stage task rule (title / assignee / priority / due) ---
+  const qualified = stagesNow.find((s) => s.key === 'qualified');
+  const rule = await req('PATCH', `/api/leads/stages/${qualified.id}`, { token: a, body: {
+    auto_task: true, auto_task_title: 'Share quotation', auto_task_desc: 'Send the fee quote',
+    auto_task_assignee_id: sam.user.id, auto_task_priority: 'urgent', auto_task_due_days: 5,
+  } });
+  const qRule = rule.data.stages.find((s) => s.id === qualified.id);
+  check('a stage stores a designed task rule', qRule.auto_task_title === 'Share quotation' && qRule.auto_task_priority === 'urgent' && qRule.auto_task_due_days === 5 && qRule.auto_task_assignee_id === sam.user.id);
+
+  const q1 = (await req('POST', '/api/leads', { token: a, body: { name: 'Quote Me' } })).data.lead;
+  await req('PATCH', `/api/leads/${q1.id}`, { token: a, body: { status: 'qualified' } });
+  const qLead = (await req('GET', '/api/leads', { token: a })).data.leads.find((l) => l.id === q1.id);
+  const qTask = (await req('GET', `/api/tasks/${qLead.task_id}`, { token: a })).data.task;
+  check('the designed rule sets the task title', /^Share quotation/.test(qTask.title));
+  check('the designed rule sets the task priority', qTask.priority === 'urgent');
+  check('the designed rule assigns the named teammate', qTask.assignee?.id === sam.user.id);
+
+  // A bad assignee / board on a rule is rejected.
+  const badRule = await req('PATCH', `/api/leads/stages/${qualified.id}`, { token: a, body: { auto_task_assignee_id: 999999 } });
+  check('a rule with an unknown assignee is rejected', badRule.status === 400);
+
   // --- Analytics ---
   // Move the fresh lead to "won" so there is a closed lead to measure.
   await req('PATCH', `/api/leads/${fresh.id}`, { token: a, body: { status: 'won' } });
