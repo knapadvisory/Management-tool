@@ -146,7 +146,7 @@ export default function LeadsView({ user, users = [], onOpenTask, openLeadReques
       )}
       {adding && <AddLead users={users} onClose={() => setAdding(false)} onAdded={() => { setAdding(false); load(); }} />}
       {setup && <LeadSetup onClose={() => setSetup(false)} />}
-      {managing && <ManageStages stages={stages} onClose={() => setManaging(false)} onChange={setStages} />}
+      {managing && <ManageStages stages={stages} users={users} onClose={() => setManaging(false)} onChange={setStages} />}
       {insights && <LeadInsights onClose={() => setInsights(false)} />}
     </div>
   );
@@ -517,11 +517,13 @@ function AddLead({ users, onClose, onAdded }) {
   );
 }
 
-function ManageStages({ stages, onClose, onChange }) {
+function ManageStages({ stages, users = [], onClose, onChange }) {
   const [items, setItems] = useState(stages);
   const [adding, setAdding] = useState('');
   const [busy, setBusy] = useState(false);
+  const [boards, setBoards] = useState([]);
   useEffect(() => { setItems(stages); }, [stages]);
+  useEffect(() => { api('/leads/settings').then((d) => setBoards(d.workflows || [])).catch(() => {}); }, []);
 
   const apply = (res) => { const s = res.stages || []; setItems(s); onChange(s); };
   async function addStage(e) {
@@ -572,8 +574,48 @@ function ManageStages({ stages, onClose, onChange }) {
                 <div className="stage-auto">
                   <label className="stage-auto-opt">
                     <input type="checkbox" checked={!!s.auto_task} onChange={(e) => setAuto(s.id, { auto_task: e.target.checked })} />
-                    Create a follow-up task
+                    Create a task on entry
                   </label>
+                  {!!s.auto_task && (
+                    <div className="stage-rule">
+                      <input className="auth-input" placeholder="Task title — e.g. Share quotation"
+                        defaultValue={s.auto_task_title || ''} key={`ttl-${s.id}`}
+                        onBlur={(e) => setAuto(s.id, { auto_task_title: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} />
+                      <textarea className="auth-input" rows={2} placeholder="Details for the task (optional)"
+                        defaultValue={s.auto_task_desc || ''} key={`dsc-${s.id}`}
+                        onBlur={(e) => setAuto(s.id, { auto_task_desc: e.target.value })} />
+                      <div className="stage-rule-grid">
+                        <label>Assign to
+                          <select className="auth-input" value={s.auto_task_assignee_id || ''}
+                            onChange={(e) => setAuto(s.id, { auto_task_assignee_id: e.target.value ? Number(e.target.value) : null })}>
+                            <option value="">Lead owner</option>
+                            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                          </select>
+                        </label>
+                        <label>Priority
+                          <select className="auth-input" value={s.auto_task_priority || 'high'}
+                            onChange={(e) => setAuto(s.id, { auto_task_priority: e.target.value })}>
+                            <option value="low">Low</option><option value="medium">Medium</option>
+                            <option value="high">High</option><option value="urgent">Urgent</option>
+                          </select>
+                        </label>
+                        <label>Due in
+                          <input className="auth-input" type="number" min="0" max="365"
+                            defaultValue={s.auto_task_due_days ?? 2} key={`due-${s.id}`}
+                            onBlur={(e) => setAuto(s.id, { auto_task_due_days: e.target.value })}
+                            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} /> days
+                        </label>
+                        <label>Board
+                          <select className="auth-input" value={s.auto_task_workflow_id || ''}
+                            onChange={(e) => setAuto(s.id, { auto_task_workflow_id: e.target.value ? Number(e.target.value) : null })}>
+                            <option value="">Default leads board</option>
+                            {boards.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  )}
                   <label className="stage-auto-opt">
                     <input type="checkbox" checked={s.auto_reminder_days != null}
                       onChange={(e) => setAuto(s.id, { auto_reminder_days: e.target.checked ? 2 : null })} />

@@ -710,6 +710,16 @@ CREATE INDEX IF NOT EXISTS idx_lead_reminders_due ON lead_reminders(sent, remind
 // a lead enters this column.
 ensureColumn('lead_stages', 'auto_task', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('lead_stages', 'auto_reminder_days', 'INTEGER');
+// A designed auto-task rule per stage: the exact task to raise when a lead
+// enters it (e.g. "Share quotation" on Qualified, "Registration work" on Won).
+// Blank title falls back to "<stage>: <lead>"; blank board falls back to the
+// workspace's default leads task board; blank assignee falls back to the owner.
+ensureColumn('lead_stages', 'auto_task_title', "TEXT NOT NULL DEFAULT ''");
+ensureColumn('lead_stages', 'auto_task_desc', "TEXT NOT NULL DEFAULT ''");
+ensureColumn('lead_stages', 'auto_task_assignee_id', 'INTEGER');
+ensureColumn('lead_stages', 'auto_task_priority', "TEXT NOT NULL DEFAULT 'high'");
+ensureColumn('lead_stages', 'auto_task_due_days', 'INTEGER NOT NULL DEFAULT 2');
+ensureColumn('lead_stages', 'auto_task_workflow_id', 'INTEGER');
 // Outcome marker so analytics knows which columns mean won / lost ('open' by
 // default). leads.closed_at records when a lead first reached a won/lost stage.
 ensureColumn('lead_stages', 'outcome', "TEXT NOT NULL DEFAULT 'open'");

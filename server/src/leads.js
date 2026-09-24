@@ -19,9 +19,18 @@ export function createLead(workspaceId, data = {}) {
   return db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid);
 }
 
-/** Auto-create a follow-up task in the workspace's configured leads workflow. */
-export function autoCreateFollowupTask(workspace, lead, { titlePrefix = 'Follow up' } = {}) {
-  const wfId = workspace.leads_task_workflow_id;
+const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+
+/**
+ * Auto-create a task when a lead enters a stage, following that stage's designed
+ * rule (title, description, board, assignee, priority, due date). Falls back to a
+ * generic "<stage>: <lead>" follow-up on the workspace's default leads board when
+ * a rule field is left blank. `pipelineStage` is the lead_stages row (optional —
+ * absent for the intake follow-up, which uses the defaults). `io` lets us notify.
+ */
+export function autoCreateFollowupTask(workspace, lead, { titlePrefix = 'Follow up', pipelineStage = null, io = null } = {}) {
+  // Which board the task lands on: the stage's chosen board, else the workspace default.
+  const wfId = (pipelineStage && pipelineStage.auto_task_workflow_id) || workspace.leads_task_workflow_id;
   if (!wfId) return null;
   const wf = db.prepare('SELECT id FROM workflows WHERE id = ? AND workspace_id = ?').get(wfId, workspace.id);
   if (!wf) return null;
@@ -31,17 +40,34 @@ export function autoCreateFollowupTask(workspace, lead, { titlePrefix = 'Follow 
   if (!creator) return null;
 
   const who = lead.name || lead.email || lead.phone || 'new enquiry';
+  const configuredTitle = (pipelineStage && pipelineStage.auto_task_title || '').trim();
+  const title = (configuredTitle ? `${configuredTitle} — ${who}` : `${titlePrefix}: ${who}`).slice(0, 200);
   const desc = [
+    (pipelineStage && pipelineStage.auto_task_desc || '').trim() || null,
     lead.email && `Email: ${lead.email}`,
     lead.phone && `Phone: ${lead.phone}`,
     lead.message && `\n${lead.message}`,
   ].filter(Boolean).join('\n');
-  const due = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+  // Assignee: the stage's named person (if still in the workspace), else the lead owner.
+  let assigneeId = pipelineStage && pipelineStage.auto_task_assignee_id;
+  if (assigneeId && !db.prepare('SELECT 1 FROM users WHERE id = ? AND workspace_id = ? AND deleted = 0').get(assigneeId, workspace.id)) assigneeId = null;
+  if (!assigneeId) assigneeId = lead.owner_id || null;
+  const priority = PRIORITIES.includes(pipelineStage && pipelineStage.auto_task_priority) ? pipelineStage.auto_task_priority : 'high';
+  const dueDays = pipelineStage && Number.isInteger(pipelineStage.auto_task_due_days) ? pipelineStage.auto_task_due_days : 2;
+  const due = new Date(Date.now() + Math.max(0, dueDays) * 86400000).toISOString().slice(0, 10);
 
   const info = db.prepare(
-    "INSERT INTO tasks (title, description, workflow_id, stage_id, assignee_id, creator_id, priority, due_date, lead_id, workspace_id) VALUES (?, ?, ?, ?, ?, ?, 'high', ?, ?, ?)",
-  ).run(`${titlePrefix}: ${who}`, desc, wfId, stage.id, lead.owner_id || null, creator.id, due, lead.id, workspace.id);
+    'INSERT INTO tasks (title, description, workflow_id, stage_id, assignee_id, creator_id, assignor_id, priority, due_date, lead_id, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(title, desc, wfId, stage.id, assigneeId, creator.id, creator.id, priority, due, lead.id, workspace.id);
   const taskId = info.lastInsertRowid;
+  // Make the assignee a real assignee + watcher so the task shows on their board.
+  if (assigneeId) {
+    db.prepare('INSERT OR IGNORE INTO task_assignees (task_id, user_id) VALUES (?, ?)').run(taskId, assigneeId);
+    db.prepare('INSERT OR IGNORE INTO task_watchers (task_id, user_id) VALUES (?, ?)').run(taskId, assigneeId);
+    if (io) createNotification(io, { user_id: assigneeId, type: 'task_assigned', actor_id: creator.id, task_id: taskId, text: `New task from the lead funnel: "${title}"` });
+  }
+  // Point the lead at its most recent auto-task (every task it spawned is still
+  // findable via the lead's task list); keeps the board's "open task" fresh.
   db.prepare('UPDATE leads SET task_id = ? WHERE id = ?').run(taskId, lead.id);
   return taskId;
 }
@@ -56,7 +82,7 @@ export function runStageAutomations(io, workspace, lead, stage, actorId = null) 
   if (!stage) return fired;
 
   if (stage.auto_task) {
-    fired.taskId = autoCreateFollowupTask(workspace, lead, { titlePrefix: `${stage.label}` });
+    fired.taskId = autoCreateFollowupTask(workspace, lead, { titlePrefix: `${stage.label}`, pipelineStage: stage, io });
   }
   if (stage.auto_reminder_days != null) {
     const at = new Date(Date.now() + Number(stage.auto_reminder_days) * 86400000)
