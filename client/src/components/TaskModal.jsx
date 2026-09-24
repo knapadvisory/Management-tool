@@ -6,6 +6,7 @@ import TaskChat from './TaskChat.jsx';
 import RemindersEditor from './RemindersEditor.jsx';
 import StatusControl from './StatusControl.jsx';
 import AssigneePicker from './AssigneePicker.jsx';
+import InvoicePromptModal from './InvoicePromptModal.jsx';
 
 // "2h 15m" / "45m" from a minute count.
 const fmtMins = (m) => { const h = Math.floor(m / 60); const mm = m % 60; return h ? `${h}h ${mm}m` : `${mm}m`; };
@@ -62,6 +63,7 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   const [uploading, setUploading] = useState(false);
   const [depQuery, setDepQuery] = useState('');
   const [depTasks, setDepTasks] = useState(null); // lazy-loaded blocker candidates
+  const [invoicePrompt, setInvoicePrompt] = useState(null); // {id,title} after completion
   const fileRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -85,15 +87,18 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
   useEffect(() => { load(); }, [load]);
 
   async function update(patch) {
+    let resp;
     try {
-      await api(`/tasks/${taskId}`, { method: 'PATCH', body: patch });
+      resp = await api(`/tasks/${taskId}`, { method: 'PATCH', body: patch });
     } catch (e) {
       // Completing a task that's still blocked: confirm, then override.
       if (e.code === 'blocked') {
         if (!window.confirm(`${e.message}\n\nComplete it anyway?`)) return;
-        await api(`/tasks/${taskId}`, { method: 'PATCH', body: { ...patch, force: true } });
+        resp = await api(`/tasks/${taskId}`, { method: 'PATCH', body: { ...patch, force: true } });
       } else { window.alert(e.message); return; }
     }
+    // Just completed and billing automation is armed → offer to raise an invoice.
+    if (resp?.invoice_prompt) setInvoicePrompt({ id: resp.id, title: resp.title });
     load();
   }
 
@@ -334,6 +339,13 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
               </button>
             </label>
           )}
+          {task.source_task && (
+            <label>Raised from
+              <div className="muted" title="This invoice task was created when that task was completed">
+                🧾 {task.source_task.title}
+              </div>
+            </label>
+          )}
           <label>Priority
             <select value={task.priority} onChange={(e) => update({ priority: e.target.value })}>
               <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
@@ -545,5 +557,13 @@ export default function TaskModal({ taskId, user, users, workflows = [], project
     </div>
   );
 
-  return inline ? inner : <div className="modal-overlay" onClick={onClose}>{inner}</div>;
+  const prompt = invoicePrompt && (
+    <InvoicePromptModal task={invoicePrompt} onClose={() => setInvoicePrompt(null)} onRaised={() => load()} />
+  );
+  return (
+    <>
+      {inline ? inner : <div className="modal-overlay" onClick={onClose}>{inner}</div>}
+      {prompt}
+    </>
+  );
 }
