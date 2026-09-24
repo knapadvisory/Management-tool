@@ -63,6 +63,8 @@ export default function AdminPanel({ user }) {
 
       <SignupPolicy />
 
+      <BillingAutomation />
+
       <InviteCodes />
 
       <TeamLocations />
@@ -668,6 +670,80 @@ function SignupPolicy() {
         <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}</button>
       </div>
       <p className="muted admin-policy-guests">👤 External guests currently in the workspace: <strong>{guestCount}</strong></p>
+      {err && <div className="form-error">{err}</div>}
+    </div>
+  );
+}
+
+// When a task is completed, whoever finished it is asked whether to raise an
+// invoice. On "Yes", a billing task is auto-created on the chosen board for the
+// responsible teammate. The admin sets these rules here.
+function BillingAutomation() {
+  const [cfg, setCfg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => { api('/tasks/billing/settings').then(setCfg).catch((e) => setErr(e.message)); }, []);
+
+  async function patch(body) {
+    setSaving(true); setErr(null); setSaved(false);
+    try {
+      const d = await api('/tasks/billing/settings', { method: 'PATCH', body });
+      setCfg(d); setSaved(true); setTimeout(() => setSaved(false), 2000);
+    } catch (e) { setErr(e.message); }
+    setSaving(false);
+  }
+
+  if (!cfg) return null;
+  const boards = cfg.workflows || [];
+  const people = cfg.users || [];
+
+  return (
+    <div className="admin-policy">
+      <div className="admin-policy-head">
+        <strong>🧾 Billing &amp; Payment automation</strong>
+        <span className={`policy-pill ${cfg.enabled ? 'on' : 'off'}`}>{cfg.enabled ? 'On' : 'Off'}</span>
+      </div>
+      <p className="muted">
+        When a task is completed, the person who finished it is asked <em>“Raise an invoice? Yes / No.”</em>
+        On <strong>Yes</strong>, a billing task is created on the board below for the responsible teammate —
+        the person who did the work is kept in the loop as a watcher.
+      </p>
+
+      <div className="admin-policy-row" style={{ flexWrap: 'wrap', gap: 12 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200, flex: 1 }}>
+          <span className="muted">Billing &amp; Payment board</span>
+          <select value={cfg.workflow_id || ''} onChange={(e) => patch({ workflow_id: e.target.value ? Number(e.target.value) : null })}>
+            <option value="">— choose a board —</option>
+            {boards.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200, flex: 1 }}>
+          <span className="muted">Who is responsible</span>
+          <select value={cfg.assignee_id || ''} onChange={(e) => patch({ assignee_id: e.target.value ? Number(e.target.value) : null })}>
+            <option value="">— unassigned —</option>
+            {people.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 140 }}>
+          <span className="muted">Default priority</span>
+          <select value={cfg.priority || 'high'} onChange={(e) => patch({ priority: e.target.value })}>
+            <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
+          </select>
+        </label>
+      </div>
+
+      <label className="settings-toggle" style={{ marginTop: 10 }}>
+        <input type="checkbox" checked={!!cfg.enabled} disabled={saving || !cfg.workflow_id}
+          onChange={(e) => patch({ enabled: e.target.checked })} />
+        <span className="settings-toggle-label">
+          Ask to raise an invoice when a task is completed
+          {!cfg.workflow_id && <span className="muted"> — choose a board first</span>}
+        </span>
+      </label>
+
+      {saved && <div className="auth-notice" style={{ marginTop: 8 }}>Saved ✓</div>}
       {err && <div className="form-error">{err}</div>}
     </div>
   );

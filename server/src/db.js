@@ -835,6 +835,17 @@ ensureColumn('tasks', 'start_date', 'TEXT');
 // cancel/delete, and rates it. Defaults to the creator; a self-created task can
 // name someone else so approvals/ratings route to a real reporting manager.
 ensureColumn('tasks', 'assignor_id', 'INTEGER REFERENCES users(id)');
+
+// Billing & Payment automation: when a task is completed, whoever finished it is
+// asked whether to raise an invoice. On "Yes", an invoice task is auto-created on
+// the configured board, assigned to the responsible teammate, at a default
+// priority (High). The admin sets these rules; the previous owner stays in the
+// loop as a watcher. source_task_id links the invoice task back to its trigger.
+ensureColumn('workspaces', 'billing_enabled', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('workspaces', 'billing_workflow_id', 'INTEGER');
+ensureColumn('workspaces', 'billing_assignee_id', 'INTEGER');
+ensureColumn('workspaces', 'billing_priority', "TEXT NOT NULL DEFAULT 'high'");
+ensureColumn('tasks', 'source_task_id', 'INTEGER');
 // --- Completed-task consistency backfill (idempotent) ---
 // A completed task must (a) carry a completed_at timestamp and (b) sit in its
 // workflow's done stage. Legacy rows — bulk-imported, or completed before these

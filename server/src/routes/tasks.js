@@ -75,6 +75,7 @@ function taskWithMeta(task) {
   const project = task.project_id ? db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) : null;
   const client = task.client_id ? db.prepare('SELECT id, name FROM clients WHERE id = ?').get(task.client_id) : null;
   const lead = task.lead_id ? db.prepare('SELECT id, name, email, phone FROM leads WHERE id = ?').get(task.lead_id) : null;
+  const sourceTask = task.source_task_id ? db.prepare('SELECT id, title FROM tasks WHERE id = ?').get(task.source_task_id) : null;
   const commentCount = db.prepare('SELECT COUNT(*) AS n FROM task_comments WHERE task_id = ?').get(task.id).n;
   const tags = db.prepare('SELECT tag FROM task_tags WHERE task_id = ? ORDER BY tag').all(task.id).map((r) => r.tag);
   const cl = db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(is_done), 0) AS done FROM task_checklist WHERE task_id = ?').get(task.id);
@@ -102,6 +103,7 @@ function taskWithMeta(task) {
     project,
     client,
     lead,
+    source_task: sourceTask,
     comment_count: commentCount,
     tags,
     checklist_total: cl.total,
@@ -219,6 +221,70 @@ function loadTask(req, res) {
   if (!task) { res.status(404).json({ error: 'Task not found' }); return null; }
   if (!canSeeTask(req.user, task)) { res.status(403).json({ error: 'You do not have access to this task' }); return null; }
   return task;
+}
+
+// --- Billing & Payment automation ---------------------------------------
+// True when the workspace has invoice-on-completion configured and this task is
+// eligible to trigger it (not itself an invoice task, and none raised yet).
+function invoiceRulesActive(ws) {
+  return !!(ws && ws.billing_enabled && ws.billing_workflow_id
+    && db.prepare('SELECT 1 FROM workflows WHERE id = ? AND workspace_id = ?').get(ws.billing_workflow_id, ws.id));
+}
+function shouldPromptInvoice(ws, task) {
+  if (!invoiceRulesActive(ws)) return false;
+  if (task.source_task_id) return false; // don't invoice an invoice task
+  if (db.prepare('SELECT 1 FROM tasks WHERE source_task_id = ? AND workspace_id = ?').get(task.id, ws.id)) return false;
+  return true;
+}
+// Create the "Raise invoice" task on the Billing & Payment board per the
+// workspace rules. `actor` finished the source task and is kept in the loop
+// alongside its previous owner(s). Returns the new task id (or an existing one).
+function createInvoiceTask(io, ws, sourceTask, actor) {
+  if (!invoiceRulesActive(ws)) return null;
+  const existing = db.prepare('SELECT id FROM tasks WHERE source_task_id = ? AND workspace_id = ?').get(sourceTask.id, ws.id);
+  if (existing) return existing.id;
+  const stage = db.prepare('SELECT id FROM workflow_stages WHERE workflow_id = ? ORDER BY position, id LIMIT 1').get(ws.billing_workflow_id);
+  if (!stage) return null;
+
+  const priority = PRIORITIES.includes(ws.billing_priority) ? ws.billing_priority : 'high';
+  const responsible = ws.billing_assignee_id && wsUser(ws.billing_assignee_id, ws.id) ? ws.billing_assignee_id : null;
+  const creator = actor?.id || sourceTask.creator_id;
+  const client = sourceTask.client_id ? db.prepare('SELECT name FROM clients WHERE id = ?').get(sourceTask.client_id) : null;
+  const prevOwner = sourceTask.assignee_id ? getUser(sourceTask.assignee_id) : null;
+  const title = `Raise invoice — ${sourceTask.title}`.slice(0, 200);
+  const desc = [
+    `Auto-created because the task "${sourceTask.title}" was completed.`,
+    client ? `Client: ${client.name}` : null,
+    prevOwner ? `Work done by: ${prevOwner.name}` : null,
+  ].filter(Boolean).join('\n');
+  const due = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+
+  const info = db.prepare(
+    `INSERT INTO tasks (title, description, workflow_id, stage_id, assignee_id, creator_id, assignor_id, priority, due_date, client_id, source_task_id, workspace_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(title, desc, ws.billing_workflow_id, stage.id, responsible, creator, creator, priority, due, sourceTask.client_id || null, sourceTask.id, ws.id);
+  const taskId = info.lastInsertRowid;
+
+  if (responsible) setAssignees(taskId, [responsible]); // also makes them a watcher
+  // Keep the previous owner(s) and the person who completed the work in the loop.
+  const loop = new Set(assigneeIdsFor(sourceTask.id));
+  if (sourceTask.assignee_id) loop.add(sourceTask.assignee_id);
+  if (actor?.id) loop.add(actor.id);
+  for (const id of loop) addWatcher(taskId, id);
+  logActivity(taskId, creator, `raised this invoice task from "${sourceTask.title}"`);
+
+  if (responsible && responsible !== creator) {
+    io?.to(`user:${responsible}`).emit('task:assigned', { task_id: taskId });
+    createNotification(io, { user_id: responsible, type: 'task_assigned', actor_id: creator, task_id: taskId, text: `Invoice to raise for "${sourceTask.title}"` });
+  }
+  for (const id of loop) {
+    if (id !== responsible && id !== creator) {
+      createNotification(io, { user_id: id, type: 'task_update', actor_id: creator, task_id: taskId, text: `An invoice task was raised for "${sourceTask.title}" — you're in the loop` });
+    }
+  }
+  const meta = taskWithMeta(db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId));
+  if (io) for (const uid of recipientsForTask(meta)) io.to(`user:${uid}`).emit('task:changed', { task: meta });
+  return taskId;
 }
 
 // --- Tasks list & CRUD ---
@@ -708,6 +774,57 @@ router.post('/', (req, res) => {
   res.status(201).json(task);
 });
 
+// --- Billing & Payment automation rules (admin only) ---
+function billingSettingsPayload(workspaceId) {
+  const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(workspaceId);
+  return {
+    enabled: !!ws.billing_enabled,
+    workflow_id: ws.billing_workflow_id || null,
+    assignee_id: ws.billing_assignee_id || null,
+    priority: ws.billing_priority || 'high',
+    workflows: db.prepare('SELECT id, name FROM workflows WHERE workspace_id = ? ORDER BY id').all(workspaceId),
+    users: db.prepare("SELECT id, name FROM users WHERE workspace_id = ? AND deleted = 0 AND active = 1 AND role != 'guest' ORDER BY name").all(workspaceId),
+  };
+}
+router.get('/billing/settings', (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+  res.json(billingSettingsPayload(req.workspaceId));
+});
+router.patch('/billing/settings', (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+  const { enabled, workflow_id, assignee_id, priority } = req.body || {};
+  if (workflow_id != null && !db.prepare('SELECT id FROM workflows WHERE id = ? AND workspace_id = ?').get(workflow_id, req.workspaceId)) {
+    return res.status(400).json({ error: 'Unknown board' });
+  }
+  if (assignee_id != null && !wsUser(assignee_id, req.workspaceId)) return res.status(400).json({ error: 'Unknown teammate' });
+  if (priority != null && !PRIORITIES.includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
+  if (enabled && !workflow_id && !db.prepare('SELECT billing_workflow_id FROM workspaces WHERE id = ?').get(req.workspaceId).billing_workflow_id) {
+    return res.status(400).json({ error: 'Choose the Billing & Payment board before turning this on.' });
+  }
+  const sets = []; const vals = [];
+  if (enabled !== undefined) { sets.push('billing_enabled = ?'); vals.push(enabled ? 1 : 0); }
+  if (workflow_id !== undefined) { sets.push('billing_workflow_id = ?'); vals.push(workflow_id || null); }
+  if (assignee_id !== undefined) { sets.push('billing_assignee_id = ?'); vals.push(assignee_id || null); }
+  if (priority !== undefined) { sets.push('billing_priority = ?'); vals.push(priority); }
+  if (sets.length) db.prepare(`UPDATE workspaces SET ${sets.join(', ')} WHERE id = ?`).run(...vals, req.workspaceId);
+  res.json(billingSettingsPayload(req.workspaceId));
+});
+
+// Raise an invoice task from a (usually just-completed) task, per the rules.
+router.post('/:id/raise-invoice', (req, res) => {
+  const task = loadTask(req, res);
+  if (!task) return;
+  const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.workspaceId);
+  if (!invoiceRulesActive(ws)) {
+    return res.status(400).json({ error: 'Billing automation is not set up. Ask an admin to configure it in Team administration.' });
+  }
+  const existing = db.prepare('SELECT id FROM tasks WHERE source_task_id = ? AND workspace_id = ?').get(task.id, req.workspaceId);
+  if (existing) return res.json({ ok: true, already: true, task: taskWithMeta(db.prepare('SELECT * FROM tasks WHERE id = ?').get(existing.id)) });
+  const taskId = createInvoiceTask(req.app.get('io'), ws, task, req.user);
+  if (!taskId) return res.status(400).json({ error: 'Could not create the invoice task — check the Billing & Payment board still has a column.' });
+  res.json({ ok: true, task: taskWithMeta(db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId)) });
+});
+
 router.get('/:id', (req, res) => {
   const task = loadTask(req, res);
   if (!task) return;
@@ -951,7 +1068,8 @@ router.patch('/:id', (req, res) => {
   // (completed status or a done stage); clear it (and any archive) if reopened.
   const now = db.prepare('SELECT t.status, t.completed_at, s.is_done FROM tasks t JOIN workflow_stages s ON s.id = t.stage_id WHERE t.id = ?').get(task.id);
   const isDoneNow = now.status === 'completed' || !!now.is_done;
-  if (isDoneNow && !now.completed_at) {
+  const justBecameDone = isDoneNow && !now.completed_at;
+  if (justBecameDone) {
     db.prepare(`UPDATE tasks SET completed_at = datetime('now') WHERE id = ?`).run(task.id);
     // Completing a task is FINAL — it never spawns a copy. If it was marked as
     // recurring, finishing it stops the recurrence, so the task is done exactly
@@ -993,6 +1111,12 @@ router.patch('/:id', (req, res) => {
       io?.to(`user:${id}`).emit('task:assigned', { task: updated, by: publicUser(req.user) });
       createNotification(io, { user_id: id, type: 'task_assigned', actor_id: req.user.id, task_id: task.id, text: `${req.user.name} assigned you "${updated.title}"` });
     }
+  }
+  // Just completed and billing automation is armed → ask the completer whether to
+  // raise an invoice. The client shows a Yes/No and calls POST /:id/raise-invoice.
+  if (justBecameDone) {
+    const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.workspaceId);
+    if (shouldPromptInvoice(ws, updated)) updated.invoice_prompt = true;
   }
   res.json(updated);
 });

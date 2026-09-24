@@ -9,6 +9,7 @@ import TaskTimelineView from './TaskTimelineView.jsx';
 import ProjectsModal from './ProjectsModal.jsx';
 import TemplatesModal from './TemplatesModal.jsx';
 import NewTaskModal from './NewTaskModal.jsx';
+import InvoicePromptModal from './InvoicePromptModal.jsx';
 import TaskImportModal from './TaskImportModal.jsx';
 import { TASK_STATUSES } from '../status.js';
 
@@ -32,6 +33,7 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened,
   const [showImport, setShowImport] = useState(false);
   const [dragTaskId, setDragTaskId] = useState(null);
   const [archivedView, setArchivedView] = useState(false);
+  const [invoicePrompt, setInvoicePrompt] = useState(null); // {id,title} after completing a task
 
   const allBoards = workflowId === 'all';
   const workflow = workflows.find((w) => w.id === workflowId);
@@ -137,7 +139,9 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened,
   }
 
   async function moveTask(taskId, stageId) {
-    await api(`/tasks/${taskId}`, { method: 'PATCH', body: { stage_id: stageId } });
+    const resp = await api(`/tasks/${taskId}`, { method: 'PATCH', body: { stage_id: stageId } }).catch((e) => { window.alert(e.message); return null; });
+    // Dragging a task into the done column can complete it → offer to invoice.
+    if (resp?.invoice_prompt) setInvoicePrompt({ id: resp.id, title: resp.title });
   }
 
   // Smart-date boundaries (local), for the "Today / Next 7 days / Upcoming" scopes.
@@ -307,6 +311,13 @@ export default function TasksBoard({ user, users, openTaskRequest, onTaskOpened,
         <TaskImportModal
           onClose={() => setShowImport(false)}
           onImported={() => { loadTasks(workflowId, archivedView); loadTags(); }}
+        />
+      )}
+      {invoicePrompt && (
+        <InvoicePromptModal
+          task={invoicePrompt}
+          onClose={() => setInvoicePrompt(null)}
+          onRaised={() => loadTasks(workflowId, archivedView)}
         />
       )}
     </div>
