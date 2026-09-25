@@ -856,6 +856,45 @@ ensureColumn('workspaces', 'billing_workflow_id', 'INTEGER');
 ensureColumn('workspaces', 'billing_assignee_id', 'INTEGER');
 ensureColumn('workspaces', 'billing_priority', "TEXT NOT NULL DEFAULT 'high'");
 ensureColumn('tasks', 'source_task_id', 'INTEGER');
+
+// --- Budgeting + Actual-vs-Budget (per client) ---
+// A budget is a set of line items across N monthly periods; each cell holds the
+// budgeted and actual amount. Built for a pre-revenue manufacturing unit (R&D,
+// tooling/capex, operations), and surfaced read-only in the client portal.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS budgets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    fy_start TEXT NOT NULL,                 -- first period, 'YYYY-MM'
+    months INTEGER NOT NULL DEFAULT 12,
+    currency TEXT NOT NULL DEFAULT 'INR',
+    notes TEXT NOT NULL DEFAULT '',
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_budgets_ws ON budgets(workspace_id, client_id);
+
+  CREATE TABLE IF NOT EXISTS budget_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    budget_id INTEGER NOT NULL REFERENCES budgets(id) ON DELETE CASCADE,
+    section TEXT NOT NULL DEFAULT 'Operating',
+    category TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'expense',   -- expense | capex | revenue
+    sort INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_budget_lines_budget ON budget_lines(budget_id, sort);
+
+  CREATE TABLE IF NOT EXISTS budget_cells (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    line_id INTEGER NOT NULL REFERENCES budget_lines(id) ON DELETE CASCADE,
+    month TEXT NOT NULL,                    -- 'YYYY-MM'
+    budget REAL NOT NULL DEFAULT 0,
+    actual REAL NOT NULL DEFAULT 0,
+    UNIQUE (line_id, month)
+  );
+`);
 // --- Completed-task consistency backfill (idempotent) ---
 // A completed task must (a) carry a completed_at timestamp and (b) sit in its
 // workflow's done stage. Legacy rows — bulk-imported, or completed before these

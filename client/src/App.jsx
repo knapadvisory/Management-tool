@@ -31,6 +31,7 @@ import SearchModal from './components/SearchModal.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import LocationSharing from './components/LocationSharing.jsx';
 import LeadsView from './components/LeadsView.jsx';
+import BudgetsView from './components/BudgetsView.jsx';
 import MeetingsView from './components/MeetingsView.jsx';
 import CalendarView from './components/CalendarView.jsx';
 import DashboardView from './components/DashboardView.jsx';
@@ -594,6 +595,7 @@ export default function App() {
             openLeadRequest={leadToOpen} onLeadOpened={() => setLeadToOpen(null)}
             onOpenTask={(id) => { setView({ type: 'tasks' }); setTaskToOpen(id); }} />
         )}
+        {view?.type === 'budgets' && user.role !== 'guest' && <BudgetsView user={user} />}
         {view?.type === 'meetings' && <MeetingsView user={user} users={users} />}
         {view?.type === 'calendar' && <CalendarView user={user} onOpenMeetings={() => setView({ type: 'meetings' })} />}
         {view?.type === 'timesheet' && <TimesheetView user={user} />}

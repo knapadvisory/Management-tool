@@ -10,6 +10,7 @@ import { clientDriveFolderId } from './clients.js';
 import { emailEnabled, sendMail, layout, button } from '../email.js';
 import { createNotification } from '../notifications.js';
 import { emitClientChanged } from '../realtime.js';
+import { budgetReport } from '../budgets.js';
 import { getSetting } from '../db.js';
 import jwt from 'jsonwebtoken';
 
@@ -148,6 +149,12 @@ router.get('/filings', requirePortal, (req, res) => {
       filed_on: d.completed_at ? String(d.completed_at).slice(0, 10) : null,
     }));
   res.json({ filings: rows });
+});
+
+// Read-only Actual-vs-Budget for the client's most recent budget.
+router.get('/budget', requirePortal, (req, res) => {
+  const b = db.prepare('SELECT id FROM budgets WHERE client_id = ? ORDER BY id DESC LIMIT 1').get(req.portal.client_id);
+  res.json({ report: b ? budgetReport(b.id) : null });
 });
 
 // --- Messages (two-way thread with the firm) ---
