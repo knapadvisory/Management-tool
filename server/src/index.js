@@ -38,6 +38,7 @@ import pushRouter from './routes/push.js';
 import feeParserRouter from './routes/feeParser.js';
 import locationRouter from './routes/location.js';
 import leadsRouter from './routes/leads.js';
+import budgetsRouter from './routes/budgets.js';
 import whatsappRouter from './routes/whatsapp.js';
 import { processInbound, OUTBOX } from './whatsapp.js';
 import meetingsRouter from './routes/meetings.js';
@@ -654,6 +655,7 @@ app.use('/api/time', requireAuth, blockGuests, timeRouter);
 app.use('/api/tools/fee-parser', requireAuth, blockGuests, feeParserRouter); // staff-only marketplace fee parser
 app.use('/api/push', requireAuth, pushRouter);
 app.use('/api/clients', requireAuth, blockGuests, clientsRouter);
+app.use('/api/budgets', requireAuth, blockGuests, budgetsRouter);
 app.use('/api/portal', portalRouter); // client portal — its own auth inside
 app.use('/api/analytics', requireAuth, blockGuests, analyticsRouter); // staff-only practice analytics
 // Bridge to KNAP-HRMS. Any member can open HR (they land in their own

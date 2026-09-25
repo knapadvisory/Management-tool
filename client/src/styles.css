@@ -3348,3 +3348,58 @@ button.c360-stat:hover { border-color: var(--accent); }
   .cal-week { grid-template-columns: 1fr; overflow-y: auto; }
   .cal-witems .cal-chip { font-size: 12px; }
 }
+
+/* ================= Budgets & Actuals (team console) ================= */
+.budget-view { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+.budget-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.budget-head h2 { margin: 0 0 2px; }
+.budget-head-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.budget-head-controls select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.budget-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.budget-title strong { font-size: 16px; }
+.budget-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.budget-actions select { margin-left: 6px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); }
+.budget-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 14px 0; }
+.budget-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.budget-kpi-val { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.budget-kpi-lbl { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.budget-kpi-hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.budget-kpi.bad .budget-kpi-val { color: #dc2626; }
+.budget-kpi.ok .budget-kpi-val { color: #16a34a; }
+.budget-trend { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; }
+.budget-trend-h { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.budget-legend i, .pt-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; margin: 0 3px 0 8px; }
+.budget-legend .lg-b, .pt-legend .ptlg.b { background: #94a3b8; }
+.budget-legend .lg-a, .pt-legend .ptlg.a { background: var(--accent, #4f46e5); }
+.budget-bars, .pt-bars { display: flex; gap: 6px; align-items: flex-end; height: 130px; overflow-x: auto; }
+.budget-bar-col, .pt-bar-col { flex: 1 1 0; min-width: 34px; display: flex; flex-direction: column; align-items: center; height: 100%; }
+.budget-bar-pair, .pt-bar-pair { display: flex; gap: 3px; align-items: flex-end; height: 100%; width: 100%; justify-content: center; }
+.budget-bar, .pt-bar { width: 40%; min-height: 2px; border-radius: 3px 3px 0 0; }
+.budget-bar.b, .pt-bar.b { background: #94a3b8; }
+.budget-bar.a, .pt-bar.a { background: var(--accent, #4f46e5); }
+.budget-bar-lbl, .pt-bar-lbl { font-size: 10px; color: var(--muted); margin-top: 4px; white-space: nowrap; }
+.budget-grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+.budget-grid { width: 100%; border-collapse: collapse; font-size: 13px; }
+.budget-grid th { text-align: right; padding: 9px 10px; font-size: 11.5px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); background: var(--surface-2); position: sticky; top: 0; }
+.budget-grid th.bg-cat { text-align: left; }
+.budget-grid td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--border); }
+.budget-grid td.bg-cat { text-align: left; }
+.budget-grid tr.bg-section td { background: var(--surface-2); font-weight: 700; font-size: 12.5px; text-align: left; }
+.budget-grid td.bg-addcell { text-align: right; }
+.bg-num { font-variant-numeric: tabular-nums; }
+.bg-over { color: #dc2626; }
+.bg-under { color: #16a34a; }
+.bg-input { width: 92px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; text-align: right; background: var(--surface); color: var(--text); font-variant-numeric: tabular-nums; }
+.bg-tag { display: inline-block; margin-left: 6px; font-size: 10px; padding: 1px 6px; border-radius: 8px; background: #e5e7eb; color: #374151; vertical-align: middle; }
+.bg-tag.rev { background: #dcfce7; color: #166534; }
+
+/* ================= Client portal — Budget ================= */
+.pt-legend { font-size: 12px; color: var(--pt-muted, #6b7280); }
+.pt-budrow { padding: 8px 0; }
+.pt-budrow-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+.pt-budrow-name { font-weight: 500; }
+.pt-budrow-fig { font-variant-numeric: tabular-nums; }
+.pt-budbar { height: 7px; border-radius: 4px; background: rgba(148,163,184,0.25); overflow: hidden; }
+.pt-budbar-fill { height: 100%; background: #4f46e5; border-radius: 4px; }
+.pt-budbar-fill.over { background: #dc2626; }
+@media (prefers-color-scheme: dark) { .bg-tag { background: #374151; color: #e5e7eb; } .bg-tag.rev { background: #14532d; color: #bbf7d0; } }

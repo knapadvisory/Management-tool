@@ -100,7 +100,9 @@ function PortalLogin() {
   );
 }
 
-const NAV = [['overview', 'Overview'], ['documents', 'Documents'], ['requests', 'Requests'], ['filings', 'Filings'], ['messages', 'Messages']];
+const NAV = [['overview', 'Overview'], ['budget', 'Budget'], ['documents', 'Documents'], ['requests', 'Requests'], ['filings', 'Filings'], ['messages', 'Messages']];
+const ptMoney = (n, currency = 'INR') => `${currency === 'INR' ? '₹' : ''}${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
+const ptPct = (n) => `${Math.round(Number(n) || 0)}%`;
 const fmtDue = (d) => (d ? fmtDate(d) : 'No date');
 const CH = { filed: 'pt-c-good', due: 'pt-c-warn', overdue: 'pt-c-bad', received: 'pt-c-good', pending: 'pt-c-bad', done: 'pt-c-good' };
 
@@ -110,6 +112,7 @@ function PortalHome({ user, firm, onSignOut }) {
   const [requests, setRequests] = useState(null);
   const [filings, setFilings] = useState(null);
   const [messages, setMessages] = useState(null);
+  const [budget, setBudget] = useState(undefined); // undefined = loading, null = none
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -117,7 +120,8 @@ function PortalHome({ user, firm, onSignOut }) {
   const loadReq = useCallback(() => papi('/requests').then((d) => setRequests(d.requests)).catch(() => setRequests([])), []);
   const loadFil = useCallback(() => papi('/filings').then((d) => setFilings(d.filings)).catch(() => setFilings([])), []);
   const loadMsg = useCallback(() => papi('/messages').then((d) => setMessages(d.messages)).catch(() => setMessages([])), []);
-  useEffect(() => { loadDocs(); loadReq(); loadFil(); loadMsg(); }, [loadDocs, loadReq, loadFil, loadMsg]);
+  const loadBudget = useCallback(() => papi('/budget').then((d) => setBudget(d.report)).catch(() => setBudget(null)), []);
+  useEffect(() => { loadDocs(); loadReq(); loadFil(); loadMsg(); loadBudget(); }, [loadDocs, loadReq, loadFil, loadMsg, loadBudget]);
 
   // Live updates over a dedicated portal socket. The server authenticates the
   // portal session token and joins this connection to its client's room, then
@@ -126,7 +130,7 @@ function PortalHome({ user, firm, onSignOut }) {
   // on that event, on (re)connect (to close any gap while disconnected), and on
   // tab focus as a belt-and-braces fallback. No polling.
   useEffect(() => {
-    const refresh = () => { loadDocs(); loadReq(); loadFil(); loadMsg(); };
+    const refresh = () => { loadDocs(); loadReq(); loadFil(); loadMsg(); loadBudget(); };
     const socket = io('/', { auth: { token: getPToken() } });
     socket.on('connect', refresh);
     socket.on('portal:changed', refresh);
@@ -222,6 +226,8 @@ function PortalHome({ user, firm, onSignOut }) {
             </section>
           </>
         )}
+
+        {view === 'budget' && <PortalBudget report={budget} />}
 
         {view === 'documents' && (
           <DocumentsView docs={docs} busy={busy} onUpload={(f) => upload(f)} onDownload={download} />
@@ -379,6 +385,71 @@ function FilingsView({ filings }) {
           </div>
         ))}
       </section>
+    </>
+  );
+}
+
+// Read-only Actual-vs-Budget dashboard for the signed-in client.
+function PortalBudget({ report }) {
+  if (report === undefined) return <div className="pt-muted">Loading…</div>;
+  if (report === null) {
+    return (
+      <>
+        <div className="pt-head"><div className="pt-eyebrow">Client portal</div><h1>Budget</h1>
+          <p className="pt-muted">Your budget report will appear here once your team publishes it.</p></div>
+        <section className="pt-block"><div className="pt-empty">No budget has been shared yet.</div></section>
+      </>
+    );
+  }
+  const cur = report.budget.currency;
+  const t = report.totals;
+  const max = Math.max(1, ...t.monthly.map((m) => Math.max(m.budget, m.actual)));
+  const over = t.actual > t.budget;
+  return (
+    <>
+      <div className="pt-head"><div className="pt-eyebrow">Client portal</div><h1>{report.budget.name}</h1>
+        <p className="pt-muted">Budget vs actual spend on your product development.</p></div>
+
+      <div className="pt-kpis">
+        <div className="pt-kpi"><div className="pt-kpi-num">{ptMoney(t.budget, cur)}</div><div className="pt-kpi-cap">Total budget</div></div>
+        <div className="pt-kpi"><div className={`pt-kpi-num ${over ? 'warn' : ''}`}>{ptMoney(t.actual, cur)}</div><div className="pt-kpi-cap">Actual spent</div></div>
+        <div className="pt-kpi"><div className={`pt-kpi-num ${t.variance < 0 ? 'warn' : ''}`}>{ptMoney(t.variance, cur)}</div><div className="pt-kpi-cap">{t.variance < 0 ? 'Over budget' : 'Remaining'}</div></div>
+        <div className="pt-kpi"><div className="pt-kpi-num">{ptPct(t.pct_spent)}</div><div className="pt-kpi-cap">Budget used</div></div>
+      </div>
+
+      <section className="pt-block">
+        <div className="pt-block-h"><span>Monthly budget vs actual</span><span className="pt-legend"><i className="ptlg b" /> Budget <i className="ptlg a" /> Actual</span></div>
+        <div className="pt-bars">
+          {t.monthly.map((m) => (
+            <div className="pt-bar-col" key={m.month} title={`${m.label}: budget ${ptMoney(m.budget, cur)} · actual ${ptMoney(m.actual, cur)}`}>
+              <div className="pt-bar-pair">
+                <div className="pt-bar b" style={{ height: `${(m.budget / max) * 100}%` }} />
+                <div className="pt-bar a" style={{ height: `${(m.actual / max) * 100}%` }} />
+              </div>
+              <div className="pt-bar-lbl">{m.label}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {report.sections.map((sec) => (
+        <section className="pt-block" key={sec.name}>
+          <div className="pt-block-h"><span>{sec.name}</span><span>{ptMoney(sec.total_actual, cur)} / {ptMoney(sec.total_budget, cur)}</span></div>
+          {sec.lines.map((l) => {
+            const used = l.total_budget ? Math.min(100, (l.total_actual / l.total_budget) * 100) : 0;
+            const lineOver = l.kind !== 'revenue' && l.total_actual > l.total_budget;
+            return (
+              <div key={l.id} className="pt-budrow">
+                <div className="pt-budrow-top">
+                  <span className="pt-budrow-name">{l.category}</span>
+                  <span className="pt-budrow-fig">{ptMoney(l.total_actual, cur)} <span className="pt-muted">/ {ptMoney(l.total_budget, cur)}</span></span>
+                </div>
+                <div className="pt-budbar"><div className={`pt-budbar-fill ${lineOver ? 'over' : ''}`} style={{ width: `${used}%` }} /></div>
+              </div>
+            );
+          })}
+        </section>
+      ))}
     </>
   );
 }
