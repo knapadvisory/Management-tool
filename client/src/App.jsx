@@ -416,13 +416,25 @@ export default function App() {
       setNotifications((ns) => ns.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
       setUnreadCount((c) => Math.max(0, c - 1));
     }
+    const type = n.type || '';
     if (n.channel_id) {
       // Collab conversations live in a separate list, so search both.
       const ch = channels.find((c) => c.id === n.channel_id) || collabs.find((c) => c.id === n.channel_id);
       if (ch) setView({ type: 'channel', channel: ch });
+      else setView({ type: 'messenger' }); // conversation not loaded here — open chat home
     } else if (n.task_id) {
       setView({ type: 'tasks' });
       setTaskToOpen(n.task_id);
+    } else if (type.startsWith('meeting')) {
+      setView({ type: 'meetings' });
+    } else if (type === 'calendar_reminder') {
+      setView({ type: 'calendar' });
+    } else if (type === 'lead' || type === 'lead_reminder') {
+      setView({ type: 'leads' });
+    } else if (type === 'deadline_reminder' || type === 'deadline_digest' || type === 'doc_request_chase' || type === 'portal') {
+      setView({ type: 'clients' });
+    } else if (type === 'join_request' && user?.role === 'admin') {
+      setView({ type: 'admin' });
     }
   }
 
@@ -580,6 +592,7 @@ export default function App() {
             channels={channels} collabs={collabs}
             notifications={notifications} unreadCount={unreadCount}
             onMarkAllRead={markAllRead} onMarkRead={markNotificationRead}
+            onNavigate={selectNotification}
           />
         )}
         {(view?.type === 'files' || view?.type === 'drive') && (
