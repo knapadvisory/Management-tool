@@ -33,7 +33,7 @@ const FILTERS = [
 // conversation or the task on the right, Slack-style.
 export default function ActivityView({
   user, users = [], onlineIds = [], channels = [], collabs = [],
-  notifications = [], unreadCount = 0, onMarkAllRead, onMarkRead,
+  notifications = [], unreadCount = 0, onMarkAllRead, onMarkRead, onNavigate,
 }) {
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
@@ -55,8 +55,19 @@ export default function ActivityView({
   });
 
   function open(n) {
-    setSelected(n);
-    if (!n.is_read) onMarkRead?.(n);
+    // A task or a chat renders inline on the right; everything else (a meeting,
+    // calendar reminder, lead, client/compliance item, join request) opens its
+    // source screen via the app-level router.
+    const inline = n.task_id || (n.channel_id && [...channels, ...collabs].some((c) => c.id === n.channel_id));
+    if (inline) {
+      setSelected(n);
+      if (!n.is_read) onMarkRead?.(n);
+    } else if (onNavigate) {
+      onNavigate(n); // marks read + switches to the owning view
+    } else {
+      setSelected(n);
+      if (!n.is_read) onMarkRead?.(n);
+    }
   }
 
   const selectedChannel = selected?.channel_id
